@@ -74,22 +74,20 @@ module fv_moving_nest_mod
   use GFS_init,               only: GFS_grid_populate
 
   use boundary_mod,           only: update_coarse_grid, update_coarse_grid_mpp
-  use bounding_box_mod,       only: bbox, bbox_get_C2F_index, fill_bbox, show_bbox
+  use bounding_box_mod,       only: bbox, bbox_get_C2F_index, fill_bbox
   use constants_mod,          only: cp_air, omega, rdgas, grav, rvgas, kappa, pstd_mks, hlv
   use field_manager_mod,      only: MODEL_ATMOS
-  use fms_io_mod,             only: read_data, write_data, get_global_att_value, fms_io_init, fms_io_exit
   use fv_arrays_mod,          only: fv_atmos_type, fv_nest_type, fv_grid_type, R_GRID
   use fv_arrays_mod,          only: allocate_fv_nest_bc_type, deallocate_fv_nest_bc_type
   use fv_grid_tools_mod,      only: init_grid
   use fv_grid_utils_mod,      only: grid_utils_init, ptop_min, dist2side_latlon
   use fv_mapz_mod,            only: Lagrangian_to_Eulerian, moist_cv, compute_total_energy
-  use fv_moving_nest_utils_mod, only: check_array, check_local_array, show_atm, show_atm_grids, show_nest_grid, show_tile_geo, grid_equal
   use fv_nesting_mod,         only: dealloc_nested_buffers
   use fv_nwp_nudge_mod,       only: do_adiabatic_init
   use init_hydro_mod,         only: p_var
   use tracer_manager_mod,     only: get_tracer_index, get_tracer_names
   use fv_moving_nest_types_mod, only: fv_moving_nest_prog_type, fv_moving_nest_physics_type, Moving_nest
-  use fv_moving_nest_utils_mod,  only: alloc_halo_buffer, load_nest_latlons_from_nc, grid_geometry, output_grid_to_nc, find_nest_alignment
+  use fv_moving_nest_utils_mod,  only: alloc_halo_buffer, load_nest_latlons_from_nc, grid_geometry, output_grid_to_nc
   use fv_moving_nest_utils_mod,  only: fill_nest_from_buffer, fill_nest_from_buffer_cell_center, fill_nest_from_buffer_nearest_neighbor
   use fv_moving_nest_utils_mod,  only: fill_nest_halos_from_parent, fill_grid_from_supergrid, fill_weight_grid
   use fv_moving_nest_utils_mod,  only: alloc_read_data
@@ -200,58 +198,9 @@ contains
     integer, intent(in)                                      :: npz                !< Number of vertical levels
 
     integer :: is, ie, js, je
-    integer :: this_pe
-
-    integer :: i,j,k
-    integer :: bad_values, good_values
     type(fv_moving_nest_prog_type), pointer :: mn_prog
 
-    this_pe = mpp_pe()
-
     mn_prog => Moving_nest(n)%mn_prog
-
-    ! Check if the variables were filled in properly.
-
-    if (debug_log) then
-      good_values = 0
-      bad_values = 0
-
-      if (is_fine_pe) then
-        do i = Atm(n)%bd%isd, Atm(n)%bd%ied
-          do j = Atm(n)%bd%jsd, Atm(n)%bd%jed
-            do k = 1, npz
-              if (mn_prog%delz(i,j,k) .gt. 20000.0) then
-                print '("[WARN] WDR BAD NEST mn_prog%delz value. npe=",I0," mn_prog%delz(",I0,",",I0,",",I0,")=",F12.3)', this_pe, i, j, k, mn_prog%delz(i,j,k)
-                bad_values = bad_values + 1
-              else
-                good_values = good_values + 1
-              endif
-            enddo
-          enddo
-        enddo
-      else
-        do i = Atm(n)%bd%is, Atm(n)%bd%ie
-          do j = Atm(n)%bd%js, Atm(n)%bd%je
-            do k = 1, npz
-              if (mn_prog%delz(i,j,k) .gt. 20000.0) then
-                print '("[WARN] WDR BAD GLOBAL mn_prog%delz value. npe=",I0," mn_prog%delz(",I0,",",I0,",",I0,")=",F12.3)', this_pe, i, j, k, mn_prog%delz(i,j,k)
-                bad_values = bad_values + 1
-              else
-                good_values = good_values + 1
-              endif
-            enddo
-          enddo
-        enddo
-      endif
-
-      i = Atm(n)%bd%is
-      j = Atm(n)%bd%js
-      k = npz
-
-      print '("[WARN] WDR Surface mn_prog%delz value. npe=",I0," mn_prog%delz(",I0,",",I0,",",I0,")=",F18.3)', this_pe, i, j, k, mn_prog%delz(i,j,k)
-
-      print '("INFO] WDR mn_prog%delz values. npe=",I0," good_values=",I0," bad_values=",I0)', this_pe, good_values, bad_values
-    endif
 
     if (is_fine_pe) then
       is = Atm(n)%bd%is
@@ -380,7 +329,7 @@ contains
 
     num_nest = nest_domain%num_nest
 
-    ! WDR TODO Verify whether rerunning this will cause (small) memory leaks.
+    ! TODO Verify whether rerunning this will cause (small) memory leaks.
     if (is_fine_pe) then
       call mpp_shift_nest_domains(nest_domain, domain_fine, delta_i_coarse, delta_j_coarse, extra_halo)
     else
@@ -416,11 +365,6 @@ contains
 
     call mn_var_fill_intern_nest_halos(Atm%ua, domain_fine, is_fine_pe)
     call mn_var_fill_intern_nest_halos(Atm%va, domain_fine, is_fine_pe)
-
-    if (debug_log) then
-      call check_array(Atm%u, this_pe, "Atm%u", -300.0, 300.0)
-      call check_array(Atm%v, this_pe, "Atm%v", -300.0, 300.0)
-    endif
 
     ! The vector form of the subroutine takes care of the staggering of the wind variables internally.
     call mn_var_fill_intern_nest_halos(Atm%u, Atm%v, domain_fine, is_fine_pe)
@@ -599,11 +543,12 @@ contains
 
   !>@brief The subroutine 'mn_latlon_load_parent' loads parent latlon data from netCDF
   !>@details Updates parent_geo, tile_geo*, p_grid*, n_grid*
-  subroutine mn_latlon_load_parent(surface_dir, Atm, n, parent_tile, delta_i_c, delta_j_c, child_grid_num, parent_geo, tile_geo, tile_geo_u, tile_geo_v, fp_super_tile_geo, p_grid, n_grid, p_grid_u, n_grid_u, p_grid_v, n_grid_v)
+  subroutine mn_latlon_load_parent(surface_dir, Atm, n, parent_tile, delta_i_c, delta_j_c, pelist, child_grid_num, parent_geo, tile_geo, tile_geo_u, tile_geo_v, fp_super_tile_geo, p_grid, n_grid, p_grid_u, n_grid_u, p_grid_v, n_grid_v)
     character(len=*), intent(in)                 :: surface_dir                                   !< Directory for static files
     type(fv_atmos_type), allocatable, intent(in) :: Atm(:)                                        !< Atm data array
     integer, intent(in)                          :: n, parent_tile, child_grid_num                !< Grid numbers
     integer, intent(in)                          :: delta_i_c, delta_j_c                          !< Nest motion in delta i,j
+    integer, allocatable, intent(in)             :: pelist(:)                                     !< PE list for fms2_io
     type(grid_geometry), intent(inout)           :: parent_geo, tile_geo, tile_geo_u, tile_geo_v  !< Tile geometries
     type(grid_geometry), intent(in)              :: fp_super_tile_geo                             !< Parent grid at high-resolution geometry
     real(kind=R_GRID), allocatable, intent(inout):: p_grid(:,:,:)                                 !< A-stagger lat/lon grids
@@ -652,7 +597,7 @@ contains
       if (use_timers) call mpp_clock_begin (id_load1)
 
       call mn_static_filename(surface_dir, parent_tile, 'grid', 1, grid_filename)
-      call load_nest_latlons_from_nc(grid_filename, Atm(1)%npx, Atm(1)%npy, 1, &
+      call load_nest_latlons_from_nc(grid_filename, Atm(1)%npx, Atm(1)%npy, 1, pelist, &
           parent_geo, p_istart_fine, p_iend_fine, p_jstart_fine, p_jend_fine)
 
       ! These are saved between timesteps in fv_moving_nest_main.F90 
@@ -676,11 +621,6 @@ contains
 
     parent_geo%nx = Atm(1)%npx - 1
     parent_geo%ny = Atm(1)%npy - 1
-
-    if (debug_log) then
-      call show_tile_geo(parent_geo, this_pe, "parent_geo")
-      call show_atm_grids(Atm, n)
-    endif
 
     !===========================================================
     !  Begin tile_geo per PE.
@@ -719,9 +659,6 @@ contains
 
     if (use_timers) call mpp_clock_end (id_load2)
     if (use_timers) call mpp_clock_begin (id_load3)
-
-
-    if (debug_log) call show_tile_geo(tile_geo, this_pe, "tile_geo")
 
     ! Allocate tile_geo_u just for this PE, copied from Atm(n)%gridstruct%grid
     ! grid is 1 larger than agrid
@@ -819,14 +756,15 @@ contains
 
     inquire(FILE=grid_filename, EXIST=file_exists)
     if (.not. file_exists) then
-      print '("[ERROR] WDR mn_static_filename DOES NOT EXIST npe=",I0," exists="L1," ",A256)', mpp_pe(), file_exists, grid_filename
+      call mpp_error(FATAL, 'mn_static_filename DOES NOT EXIST '//trim(grid_filename))
     endif
 
   end subroutine mn_static_filename
 
   !>@brief The subroutine 'mn_latlon_read_hires_parent' reads in static data from a netCDF file
-  subroutine mn_latlon_read_hires_parent(npx, npy, refine, fp_super_tile_geo, surface_dir, parent_tile)
+  subroutine mn_latlon_read_hires_parent(npx, npy, refine, pelist, fp_super_tile_geo, surface_dir, parent_tile)
     integer, intent(in)                :: npx, npy, refine     !< Number of points in x,y, and refinement
+    integer, allocatable, intent(in)   :: pelist(:)            !< PE list for fms2_io
     type(grid_geometry), intent(inout) :: fp_super_tile_geo    !< Geometry of supergrid for parent tile at high resolution
     character(len=*), intent(in)       :: surface_dir          !< Surface directory to read netCDF file from
     integer, intent(in)                :: parent_tile          !< Parent tile number
@@ -836,15 +774,16 @@ contains
 
     call mn_static_filename(surface_dir, parent_tile, 'grid',  refine, grid_filename)
 
-    call load_nest_latlons_from_nc(trim(grid_filename), npx, npy, refine, fp_super_tile_geo, &
-        fp_super_istart_fine, fp_super_iend_fine, fp_super_jstart_fine, fp_super_jend_fine)
+    call load_nest_latlons_from_nc(trim(grid_filename), npx, npy, refine, pelist, &
+        fp_super_tile_geo, fp_super_istart_fine, fp_super_iend_fine, fp_super_jstart_fine, fp_super_jend_fine)
 
   end subroutine mn_latlon_read_hires_parent
 
   !>@brief The subroutine 'mn_orog_read_hires_parent' loads parent orography data from netCDF
   !>@details Gathers a number of terrain-related variables from the netCDF file
-  subroutine mn_orog_read_hires_parent(npx, npy, refine, surface_dir, filtered_terrain, orog_grid, orog_std_grid, ls_mask_grid, land_frac_grid, parent_tile)
+  subroutine mn_orog_read_hires_parent(npx, npy, refine, pelist, surface_dir, filtered_terrain, orog_grid, orog_std_grid, ls_mask_grid, land_frac_grid, parent_tile)
     integer, intent(in)                :: npx, npy, refine   !< Number of points in x,y, and refinement
+    integer, allocatable, intent(in)   :: pelist(:)          !< PE list for fms2_io
     character(len=*), intent(in)       :: surface_dir        !< Surface directory to read netCDF file from
     logical, intent(in)                :: filtered_terrain   !< Whether to use filtered terrain
     real, allocatable, intent(out)     :: orog_grid(:,:)     !< Output orography grid
@@ -884,30 +823,25 @@ contains
       orog_var_name = 'orog_raw'
     endif
 
-    if (debug_log) print '("[INFO] WDR NCREAD LOFC mn_orog_read_hires_parent npe=",I0,I4,I4,I4,I4," ",A12," ",A128)', this_pe, fp_nx, fp_ny, mid_nx,mid_ny, orog_var_name, nc_filename
+    call alloc_read_data(nc_filename, orog_var_name, fp_nx, fp_ny, orog_grid, pelist)
+    call alloc_read_data(nc_filename, 'slmsk', fp_nx, fp_ny, ls_mask_grid, pelist)
 
-    call alloc_read_data(nc_filename, orog_var_name, fp_nx, fp_ny, orog_grid)
-    !call check_array(orog_grid, this_pe, "parent coarse" // orog_var_name, -1000.0, 5000.0)
-    call alloc_read_data(nc_filename, 'slmsk', fp_nx, fp_ny, ls_mask_grid)
-    !call check_array(ls_mask_grid, this_pe, 'slmsk', 0.0, 3.0)
-
-    call alloc_read_data(nc_filename, 'stddev', fp_nx, fp_ny, orog_std_grid)      ! TODO validate if this is needed
-    call alloc_read_data(nc_filename, 'land_frac', fp_nx, fp_ny, land_frac_grid)  ! TODO validate if this is needed
+    call alloc_read_data(nc_filename, 'stddev', fp_nx, fp_ny, orog_std_grid, pelist)      ! TODO validate if this is needed
+    call alloc_read_data(nc_filename, 'land_frac', fp_nx, fp_ny, land_frac_grid, pelist)  ! TODO validate if this is needed
 
   end subroutine mn_orog_read_hires_parent
 
   !>@brief The subroutine 'mn_static_read_hires_r4' loads high resolution data from netCDF
   !>@details Gathers a single variable from the netCDF file
-  subroutine mn_static_read_hires_r4(npx, npy, refine, surface_dir, file_prefix, var_name, data_grid, parent_tile, time)
+  subroutine mn_static_read_hires_r4(npx, npy, refine, pelist, surface_dir, file_prefix, var_name, data_grid, parent_tile, time)
     integer, intent(in)                :: npx, npy, refine           !< Number of x,y points and nest refinement
+    integer, allocatable, intent(in)   :: pelist(:)                  !< PE list for fms2_io
     character(len=*), intent(in)       :: surface_dir, file_prefix   !< Surface directory and file tag
     character(len=*), intent(in)       :: var_name                   !< Variable name in netCDF file
     real*4, allocatable, intent(out)   :: data_grid(:,:)             !< Output data grid
     integer, intent(in)                :: parent_tile                !< Parent tile number
     integer, intent(in), optional      :: time                       !< Optional month number for time-varying parameters
 
-    character(len=256) :: res_str, parent_str
-    character(len=16)  :: halo
     character(len=512) :: nc_filename
     integer :: nx_cubic, nx, ny, fp_nx, fp_ny
     integer :: fp_istart_fine, fp_iend_fine, fp_jstart_fine, fp_jend_fine
@@ -927,24 +861,23 @@ contains
     call mn_static_filename(surface_dir, parent_tile, file_prefix, refine, nc_filename)
 
     if (present(time)) then
-      call alloc_read_data(nc_filename, var_name, fp_nx, fp_ny, data_grid, time)
+      call alloc_read_data(nc_filename, var_name, fp_nx, fp_ny, data_grid, pelist, time)
     else
-      call alloc_read_data(nc_filename, var_name, fp_nx, fp_ny, data_grid)
+      call alloc_read_data(nc_filename, var_name, fp_nx, fp_ny, data_grid, pelist)
     endif
 
   end subroutine mn_static_read_hires_r4
 
   !>@brief The subroutine 'mn_static_read_hires_r8' loads high resolution data from netCDF
   !>@details Gathers a single variable from the netCDF file
-  subroutine mn_static_read_hires_r8(npx, npy, refine, surface_dir, file_prefix, var_name, data_grid, parent_tile)
+  subroutine mn_static_read_hires_r8(npx, npy, refine, pelist, surface_dir, file_prefix, var_name, data_grid, parent_tile)
     integer, intent(in)                :: npx, npy, refine           !< Number of x,y points and nest refinement
+    integer, allocatable, intent(in)   :: pelist(:)                  !< PE list for fms2_io
     character(len=*), intent(in)       :: surface_dir, file_prefix   !< Surface directory and file tag
     character(len=*), intent(in)       :: var_name                   !< Variable name in netCDF file
     real*8, allocatable, intent(out)   :: data_grid(:,:)             !< Output data grid
     integer, intent(in)                :: parent_tile                !< Parent tile number
 
-    character(len=256) :: res_str, parent_str
-    character(len=16)  :: halo
     character(len=512) :: nc_filename
 
     integer :: nx_cubic, nx, ny, fp_nx, fp_ny
@@ -962,9 +895,11 @@ contains
     fp_nx = fp_iend_fine - fp_istart_fine
     fp_ny = fp_jend_fine - fp_jstart_fine
 
+    ! TODO consider adding optional time argument as in mn_static_read_hires_r4
+
     call mn_static_filename(surface_dir, parent_tile, file_prefix, refine, nc_filename)
 
-    call alloc_read_data(nc_filename, var_name, fp_nx, fp_ny, data_grid)
+    call alloc_read_data(nc_filename, var_name, fp_nx, fp_ny, data_grid, pelist)
 
   end subroutine mn_static_read_hires_r8
 
@@ -1138,7 +1073,7 @@ contains
     type(bbox)      :: south_fine, south_coarse
     type(bbox)      :: east_fine, east_coarse
     type(bbox)      :: west_fine, west_coarse
-    integer         :: nest_level = 1  ! WDR TODO allow to vary
+    integer         :: nest_level = 1  ! TODO allow to vary
 
     !!===========================================================
     !!
@@ -1209,7 +1144,7 @@ contains
     type(bbox)      :: south_fine, south_coarse
     type(bbox)      :: east_fine, east_coarse
     type(bbox)      :: west_fine, west_coarse
-    integer         :: nest_level = 1  ! WDR TODO allow to vary
+    integer         :: nest_level = 1  ! TODO allow to vary
 
     !!===========================================================
     !!
@@ -1278,7 +1213,7 @@ contains
     type(bbox)      :: south_fine, south_coarse
     type(bbox)      :: east_fine, east_coarse
     type(bbox)      :: west_fine, west_coarse
-    integer         :: nest_level = 1  ! WDR TODO allow to vary
+    integer         :: nest_level = 1  ! TODO allow to vary
 
     !!===========================================================
     !!
@@ -1350,7 +1285,7 @@ contains
     type(bbox)      :: south_fine, south_coarse
     type(bbox)      :: east_fine, east_coarse
     type(bbox)      :: west_fine, west_coarse
-    integer         :: nest_level = 1  ! WDR TODO allow to vary
+    integer         :: nest_level = 1  ! TODO allow to vary
 
     !!===========================================================
     !!
@@ -1420,7 +1355,7 @@ contains
     type(bbox)      :: east_fine, east_coarse
     type(bbox)      :: west_fine, west_coarse
     integer         :: n4d
-    integer         :: nest_level = 1  ! WDR TODO allow to vary
+    integer         :: nest_level = 1  ! TODO allow to vary
 
     n4d = ubound(data_var, 4)
 
@@ -1493,7 +1428,7 @@ contains
     type(bbox)      :: east_fine, east_coarse
     type(bbox)      :: west_fine, west_coarse
     integer         :: n4d
-    integer         :: nest_level = 1  ! WDR TODO allow to vary
+    integer         :: nest_level = 1  ! TODO allow to vary
 
     n4d = ubound(data_var, 4)
 
@@ -1570,10 +1505,9 @@ contains
     integer :: ng, pp, nn, parent_tile, refinement, ioffset, joffset
     integer :: this_pe, gid
     integer :: tile_coarse(2)
-    integer :: half_x, half_y
 
     real(kind=R_GRID)   :: pi = 4 * atan(1.0d0)
-    real                :: rad2deg, half_lat, half_lon
+    real                :: rad2deg
 
     ! Coriolis parameter variables
     real                :: alpha = 0.
@@ -1605,11 +1539,6 @@ contains
     parent_tile = Atm(child_grid_num)%neststruct%parent_tile
     ioffset = Atm(child_grid_num)%neststruct%ioffset
     joffset = Atm(child_grid_num)%neststruct%joffset
-
-    ! Log the bounds of this PE's grid after nest motion.  TODO replace step 4 with timestep
-    if (is_fine_pe .and. debug_log) then
-      call show_nest_grid(Atm(n), this_pe, 4)
-    endif
 
     !  Reset the gridstruct values for the nest
     if (is_fine_pe) then
@@ -1665,7 +1594,7 @@ contains
       call fill_weight_grid(Atm(n)%neststruct%wt_h, wt_h)
       call fill_weight_grid(Atm(n)%neststruct%wt_u, wt_u)
       call fill_weight_grid(Atm(n)%neststruct%wt_v, wt_v)
-      ! WDR TODO -- Seems like this is not used anywhere, other than being allocated, filled, deallocated
+      ! TODO -- Seems like this is not used anywhere, other than being allocated, filled, deallocated
       !call fill_weight_grid(Atm(n)%neststruct%wt_b, wt_b)
 
       if (use_timers) call mpp_clock_end (id_reset2)
@@ -1723,8 +1652,6 @@ contains
     if (use_timers) call mpp_clock_begin (id_reset4)
 
     if (Atm(n)%neststruct%nested) then
-      if (debug_log) print '("[INFO] WDR INIT_GRID setup_aligned_nestA fv_moving_nest.F90 npe=",I0," n=",I0)', this_pe, n
-
       ! New code from fv_control.F90
       ! call init_grid(Atm(this_grid), Atm(this_grid)%flagstruct%grid_name, Atm(this_grid)%flagstruct%grid_file, &
       !    Atm(this_grid)%flagstruct%npx, Atm(this_grid)%flagstruct%npy, Atm(this_grid)%flagstruct%npz, Atm(this_grid)%flagstruct%ndims, Atm(this_grid)%flagstruct%ntiles, Atm(this_grid)%ng, tile_coarse)
@@ -1742,7 +1669,6 @@ contains
       call init_grid(Atm(n), Atm(n)%flagstruct%grid_name, Atm(n)%flagstruct%grid_file, &
           Atm(n)%flagstruct%npx, Atm(n)%flagstruct%npy, Atm(n)%flagstruct%npz, &
           Atm(n)%flagstruct%ndims, Atm(n)%flagstruct%ntiles, Atm(n)%ng, tile_coarse)
-      if (debug_log) print '("[INFO] WDR INIT_GRID setup_aligned_nestB fv_moving_nest.F90 npe=",I0)', this_pe
     endif
 
     if (use_timers) call mpp_clock_end (id_reset4)
@@ -1764,30 +1690,9 @@ contains
     !    Parent tile PEs update isu, ieu, jsu, jeu
     !    Global tiles that are not parent have no changes
 
-    ! WDR  This is now accomplished with the earlier call to setup_update_regions()
+    ! Update:  This is now accomplished with the earlier call to setup_update_regions()
     !call reinit_parent_indices(Atm(2))
     !!call reinit_parent_indices(Atm(n))
-    !if (debug_log) print '("[INFO] WDR REINIT CW fv_moving_nest.F90. npe=",I0)', this_pe
-
-
-    ! Output the center lat/lon of the nest
-    !   only the PE that holds the center point will output this information to the logfile
-    !   lat = agrid(:,:,2) and lon = agrid(:,:,1), in radians
-    if (is_fine_pe) then
-      half_x = Atm(child_grid_num)%npx / 2
-      half_y = Atm(child_grid_num)%npy / 2
-
-      if (half_x .ge. Atm(child_grid_num)%bd%is .and. half_x .le. Atm(child_grid_num)%bd%ie .and. half_y .ge. Atm(child_grid_num)%bd%js .and. half_y .le. Atm(child_grid_num)%bd%je) then
-
-        half_lat = Atm(child_grid_num)%gridstruct%agrid(half_x, half_y,2) * rad2deg
-        half_lon = Atm(child_grid_num)%gridstruct%agrid(half_x, half_y,1) * rad2deg
-        if (half_lon .gt. 180.0) half_lon = half_lon - 360.0
-
-        print '("[INFO] fv_moving_nest.F90 NEST MOVED to npe=",I0," x=",I0," y=",I0," lat=",F6.2," lon=",F7.2," a_step=",I8," fcst_hr=",F12.3)', this_pe, \
-        half_x, half_y, half_lat, half_lon, a_step,  a_step * dt_atmos / 3600.0
-      endif
-
-    endif
 
     ! Reallocate the halo buffers in the neststruct, as some are now the wrong size
     !   Optimization would be to only deallocate the edges that have changed.
@@ -1799,7 +1704,6 @@ contains
     if (is_fine_pe) then
       !call reallocate_BC_buffers(Atm(child_grid_num))
       call reallocate_BC_buffers(Atm(1))
-      if (debug_log) print '("[INFO] WDR INIT_GRID DD fv_moving_nest.F90 npe=",I0)', this_pe
 
       ! Reallocate buffers that are declared in fv_nesting.F90
       call dealloc_nested_buffers(Atm(1))
@@ -1869,7 +1773,7 @@ contains
     ngrids = size(Atm)
 
     do n=2,ngrids
-      nn = n - 1  !  WDR TODO revise this to handle multiple nests.  This adjusts to match fv_control.F90 where these
+      nn = n - 1  !  TODO revise this to handle multiple nests.  This adjusts to match fv_control.F90 where these
       !  arrays are passed in to mpp_define_nest_domains with bounds (2:ngrids)
 
       ! Updated code from new fv_control.F90   November 8. 2021 Ramstrom
@@ -2084,8 +1988,8 @@ contains
 
     call mn_var_dump_to_netcdf(Atm%pt   , is_fine_pe, domain_coarse, domain_fine, position, nz, &
         time_val, Atm%global_tile, file_prefix, "tempK")
-    call mn_var_dump_to_netcdf(Atm%pt(:,:,64)   , is_fine_pe, domain_coarse, domain_fine, position, nz, &
-        time_val, Atm%global_tile, file_prefix, "T64")
+    !call mn_var_dump_to_netcdf(Atm%pt(:,:,64)   , is_fine_pe, domain_coarse, domain_fine, position, nz, &
+    !    time_val, Atm%global_tile, file_prefix, "T64")
     !call mn_var_dump_to_netcdf(Atm%delp , is_fine_pe, domain_coarse, domain_fine, position, nz, &
     !     time_val, Atm%global_tile, file_prefix, "DELP")
     call mn_var_dump_to_netcdf(Atm%delz , is_fine_pe, domain_coarse, domain_fine, position, nz, &
@@ -2100,7 +2004,7 @@ contains
     !call mn_var_dump_to_netcdf(Atm%va   , is_fine_pe, domain_coarse, domain_fine, position, nz, &
     !     time_val, Atm%global_tile, file_prefix, "VA")
 
-    call mn_var_dump_to_netcdf(Atm%ps   , is_fine_pe, domain_coarse, domain_fine, position, 1 , &
+    call mn_var_dump_to_netcdf(Atm%ps   , is_fine_pe, domain_coarse, domain_fine, position, &
         time_val, Atm%global_tile, file_prefix, "PS")
 
     !! TODO figure out what to do with ze0;  different bounds - only compute domain
@@ -2112,9 +2016,9 @@ contains
     !!     time_val, Atm%global_tile, "wxvarU", "VWND")
 
     ! Latitude and longitude in radians
-    call mn_var_dump_to_netcdf( Atm%gridstruct%agrid(:,:,2), is_fine_pe, domain_coarse, domain_fine, position, nz, &
+    call mn_var_dump_to_netcdf( Atm%gridstruct%agrid(:,:,2), is_fine_pe, domain_coarse, domain_fine, position, &
         time_val, Atm%global_tile, file_prefix, "latrad")
-    call mn_var_dump_to_netcdf( Atm%gridstruct%agrid(:,:,1), is_fine_pe, domain_coarse, domain_fine, position, nz, &
+    call mn_var_dump_to_netcdf( Atm%gridstruct%agrid(:,:,1), is_fine_pe, domain_coarse, domain_fine, position, &
         time_val, Atm%global_tile, file_prefix, "lonrad")
 
     !do n_moist = lbound(Atm%q, 4), ubound(Atm%q, 4)
@@ -2171,24 +2075,22 @@ contains
   end subroutine mn_var_dump_3d_to_netcdf
 
   !>@brief The subroutine 'mn_var_dump_2d_to_netcdf' dumps a 3D single precision variable to netCDF file.
-  subroutine mn_var_dump_2d_to_netcdf( data_var, is_fine_pe, domain_coarse, domain_fine, position, nz, time_step, this_tile, file_prefix, var_name)
+  subroutine mn_var_dump_2d_to_netcdf( data_var, is_fine_pe, domain_coarse, domain_fine, position, time_step, this_tile, file_prefix, var_name)
     implicit none
     real, intent(in)                            :: data_var(:,:)                         !< Data variable
     logical, intent(in)                         :: is_fine_pe                            !< Is nest PE?
     type(domain2d), intent(in)                  :: domain_coarse, domain_fine            !< Domain structures
-    integer, intent(in)                         :: position, nz, time_step, this_tile    !< Stagger, number vertical levels, timestep, tile number
+    integer, intent(in)                         :: position, time_step, this_tile    !< Stagger, number vertical levels, timestep, tile number
     character(len=*)                            :: file_prefix, var_name                 !< Filename prefix, and netCDF variable name
 
-    integer                      :: isc_coarse, iec_coarse, jsc_coarse, jec_coarse
-    integer                      :: isd_coarse, ied_coarse, jsd_coarse, jed_coarse
+    !integer                      :: isc_coarse, iec_coarse, jsc_coarse, jec_coarse
+    !integer                      :: isc_fine, iec_fine, jsc_fine, jec_fine
+    !integer                      :: ism_coarse, iem_coarse, jsm_coarse, jem_coarse
+    !integer                      :: ism_fine, iem_fine, jsm_fine, jem_fine
+
     integer                      :: isd_fine, ied_fine, jsd_fine, jed_fine
-    integer                      :: isc_fine, iec_fine, jsc_fine, jec_fine
-
-    integer                      :: ism_coarse, iem_coarse, jsm_coarse, jem_coarse
-    integer                      :: ism_fine, iem_fine, jsm_fine, jem_fine
-
+    integer                      :: isd_coarse, ied_coarse, jsd_coarse, jed_coarse
     integer                      :: this_pe
-
     character(len=64)            :: prefix_fine, prefix_coarse
 
     this_pe = mpp_pe()
@@ -2208,7 +2110,7 @@ contains
       call mpp_get_data_domain(domain_fine, isd_fine, ied_fine, jsd_fine, jed_fine, position=position)
       !call mpp_get_memory_domain(domain_fine, ism_fine, iem_fine, jsm_fine, jem_fine, position=position)
 
-      call output_grid_to_nc("GH", isd_fine, ied_fine, jsd_fine, jed_fine, nz, data_var, prefix_fine, var_name, time_step, domain_fine, position)
+      call output_grid_to_nc("GH", isd_fine, ied_fine, jsd_fine, jed_fine, data_var, prefix_fine, var_name, time_step, domain_fine, position)
     else
 
       if (this_tile == 6) then
@@ -2216,7 +2118,7 @@ contains
         call mpp_get_data_domain(domain_coarse, isd_coarse, ied_coarse, jsd_coarse, jed_coarse, position=position)
         !call mpp_get_memory_domain(domain_coarse, ism_coarse, iem_coarse, jsm_coarse, jem_coarse, position=position)
 
-        call output_grid_to_nc("GH", isd_coarse, ied_coarse, jsd_coarse, jed_coarse, nz, data_var, prefix_coarse, var_name, time_step, domain_coarse, position)
+        call output_grid_to_nc("GH", isd_coarse, ied_coarse, jsd_coarse, jed_coarse, data_var, prefix_coarse, var_name, time_step, domain_coarse, position)
 
       endif
     endif
@@ -2310,6 +2212,7 @@ contains
     integer    :: i, j, fp_i, fp_j
     integer    :: this_pe
     logical    :: found
+    character(len=48) :: errstring
 
     ! tile_geo is cell-centered, at nest refinement
     ! fp_super_tile_geo is a supergrid, at nest refinement
@@ -2336,12 +2239,12 @@ contains
         fp_j = (j - nest_y) * 2 + parent_y
 
         if (fp_i < fp_tile_bbox%is .or. fp_i > fp_tile_bbox%ie) then
-          if (debug_log) print '("[ERROR] WDR move_nest_geo invalid fp_i=",I0," is=",I0," ie=",I0)', fp_i, fp_tile_bbox%is, fp_tile_bbox%ie
-          call mpp_error(FATAL, "move_nest_geo invalid bounds tile_geo i")
+          write(errstring, "(A,I0,A,I0,A,I0)") "fp_i=", fp_i," is=",fp_tile_bbox%is," ie=",fp_tile_bbox%ie
+          call mpp_error(FATAL, "move_nest_geo invalid bounds tile_geo i: " // errstring)
         endif
         if (fp_j < fp_tile_bbox%js .or. fp_j > fp_tile_bbox%je) then
-          if (debug_log) print '("[ERROR] WDR move_nest_geo invalid fp_j=",I0," js=",I0," je=",I0)', fp_j, fp_tile_bbox%js, fp_tile_bbox%je
-          call mpp_error(FATAL, "move_nest_geo invalid bounds tile_geo j")
+          write(errstring, "(A,I0,A,I0,A,I0)") "fp_j=", fp_j," js=",fp_tile_bbox%js," je=",fp_tile_bbox%je
+          call mpp_error(FATAL, "move_nest_geo invalid bounds tile_geo j " // errstring)
         endif
 
         tile_geo%lats(i,j) = fp_super_tile_geo%lats(fp_i, fp_j)
@@ -2355,12 +2258,12 @@ contains
         fp_j = (j - nest_y) * 2 + parent_y - 1
 
         if (fp_i < fp_tile_bbox%is .or. fp_i > fp_tile_bbox%ie) then
-          if (debug_log) print '("[ERROR] WDR move_nest_geo invalid fp_i=",I0," is=",I0," ie=",I0)', fp_i, fp_tile_bbox%is, fp_tile_bbox%ie
-          call mpp_error(FATAL, "move_nest_geo invalid bounds tile_geo_u i")
+          write(errstring, "(A,I0,A,I0,A,I0)") "fp_i=", fp_i," is=",fp_tile_bbox%is," ie=",fp_tile_bbox%ie
+          call mpp_error(FATAL, "move_nest_geo invalid bounds tile_geo_u i " // errstring)
         endif
         if (fp_j < fp_tile_bbox%js .or. fp_j > fp_tile_bbox%je) then
-          if (debug_log) print '("[ERROR] WDR move_nest_geo invalid fp_j=",I0," js=",I0," je=",I0)', fp_j, fp_tile_bbox%js, fp_tile_bbox%je
-          call mpp_error(FATAL, "move_nest_geo invalid bounds tile_geo_u j")
+          write(errstring, "(A,I0,A,I0,A,I0)") "fp_j=", fp_j," js=",fp_tile_bbox%js," je=",fp_tile_bbox%je
+          call mpp_error(FATAL, "move_nest_geo invalid bounds tile_geo_u j " // errstring)
         endif
 
         tile_geo_u%lats(i,j) = fp_super_tile_geo%lats(fp_i, fp_j)
@@ -2374,12 +2277,12 @@ contains
         fp_j = (j - nest_y) * 2 + parent_y
 
         if (fp_i < fp_tile_bbox%is .or. fp_i > fp_tile_bbox%ie) then
-          if (debug_log) print '("[ERROR] WDR move_nest_geo invalid fp_i=",I0," is=",I0," ie=",I0)', fp_i, fp_tile_bbox%is, fp_tile_bbox%ie
-          call mpp_error(FATAL, "move_nest_geo invalid bounds tile_geo_v i")
+          write(errstring, "(A,I0,A,I0,A,I0)") "fp_i=", fp_i," is=",fp_tile_bbox%is," ie=",fp_tile_bbox%ie
+          call mpp_error(FATAL, "move_nest_geo invalid bounds tile_geo_v i " // errstring)
         endif
         if (fp_j < fp_tile_bbox%js .or. fp_j > fp_tile_bbox%je) then
-          if (debug_log) print '("[ERROR] WDR move_nest_geo invalid fp_j=",I0," js=",I0," je=",I0)', fp_j, fp_tile_bbox%js, fp_tile_bbox%je
-          call mpp_error(FATAL, "move_nest_geo invalid bounds tile_geo_v j")
+          write(errstring, "(A,I0,A,I0,A,I0)") "fp_j=", fp_j," js=",fp_tile_bbox%js," je=",fp_tile_bbox%je
+          call mpp_error(FATAL, "move_nest_geo invalid bounds tile_geo_v j " // errstring)
         endif
 
         tile_geo_v%lats(i,j) = fp_super_tile_geo%lats(fp_i, fp_j)
@@ -2389,9 +2292,6 @@ contains
 
     ! Validate at the end
     call check_nest_alignment(tile_geo, fp_super_tile_geo, nest_x, nest_y, parent_x, parent_y, found)
-
-    !print '("[INFO] WDR ALIGN-C npe=",I0," delta_i_c=",I0," delta_j_c=",I0," nest_x=",I0," nest_y=",I0," parent_x=",I0," parent_y=",I0)', this_pe, delta_i_c, delta_j_c, nest_x, nest_y, parent_x, parent_y
-
 
   end subroutine move_nest_geo
 

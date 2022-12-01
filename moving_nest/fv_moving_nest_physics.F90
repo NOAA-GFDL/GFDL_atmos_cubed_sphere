@@ -74,19 +74,17 @@ module fv_moving_nest_physics_mod
   use boundary_mod,           only: update_coarse_grid, update_coarse_grid_mpp
   use constants_mod,          only: cp_air, rdgas, grav, rvgas, kappa, pstd_mks, hlv
   use field_manager_mod,      only: MODEL_ATMOS
-  use fms_io_mod,             only: read_data, write_data, get_global_att_value, fms_io_init, fms_io_exit
   use fv_arrays_mod,          only: fv_atmos_type, fv_nest_type, fv_grid_type, R_GRID
   use fv_moving_nest_types_mod,   only: fv_moving_nest_prog_type, fv_moving_nest_physics_type, mn_surface_grids, fv_moving_nest_type
   use fv_arrays_mod,          only: allocate_fv_nest_bc_type, deallocate_fv_nest_bc_type
   use fv_grid_tools_mod,      only: init_grid
   use fv_grid_utils_mod,      only: grid_utils_init, ptop_min, dist2side_latlon
   use fv_mapz_mod,            only: Lagrangian_to_Eulerian, moist_cv, compute_total_energy
-  use fv_moving_nest_utils_mod, only: check_array, check_local_array, show_atm, show_atm_grids, show_nest_grid, show_tile_geo, grid_equal
   use fv_nesting_mod,         only: dealloc_nested_buffers
   use fv_nwp_nudge_mod,       only: do_adiabatic_init
   use init_hydro_mod,         only: p_var
   use tracer_manager_mod,     only: get_tracer_index, get_tracer_names
-  use fv_moving_nest_utils_mod,  only: alloc_halo_buffer, load_nest_latlons_from_nc, grid_geometry, output_grid_to_nc, find_nest_alignment
+  use fv_moving_nest_utils_mod,  only: alloc_halo_buffer, grid_geometry, output_grid_to_nc
   use fv_moving_nest_utils_mod,  only: fill_nest_from_buffer, fill_nest_from_buffer_cell_center, fill_nest_from_buffer_nearest_neighbor
   use fv_moving_nest_utils_mod,  only: fill_nest_halos_from_parent, fill_grid_from_supergrid, fill_weight_grid
   use fv_moving_nest_utils_mod,  only: alloc_read_data
@@ -188,7 +186,7 @@ contains
         !    mn_static%soil_type_grid(i_idx, j_idx) < 0.5) then
         if (mn_static%ls_mask_grid(i_idx, j_idx) .eq. 1 .and. nint(mn_static%land_frac_grid(i_idx, j_idx)) == 0 ) then
           ! Water soil type == lake, etc. -- override the other variables and make this water
-          !!print '("WDR mn_phys_reset_sfc_props LAKE SOIL npe=",I0," x,y=",I0,",",I0," lat=",F10.3," lon=",F10.3)', mpp_pe(), i_idx, j_idx, IPD_data(nb)%Grid%xlat_d(ix), IPD_data(nb)%Grid%xlon_d(ix)-360.0
+          !!print '("mn_phys_reset_sfc_props LAKE SOIL npe=",I0," x,y=",I0,",",I0," lat=",F10.3," lon=",F10.3)', mpp_pe(), i_idx, j_idx, IPD_data(nb)%Grid%xlat_d(ix), IPD_data(nb)%Grid%xlon_d(ix)-360.0
 
           if (move_nsst) IPD_data(nb)%Sfcprop%ifd(ix) = 1         ! Ocean
           IPD_data(nb)%Sfcprop%oceanfrac(ix) = 1   ! Ocean -- TODO permit fractions
@@ -253,7 +251,6 @@ contains
     allocate(area(isc:iec, jsc:jec))
 
     call calc_nest_alignment(Atm, n, nest_x, nest_y, parent_x, parent_y)
-    !print '("[INFO] WDR ALIGN-PHYS-NEW npe=",I0," nest_x=",I0," nest_y=",I0," parent_x=",I0," parent_y=",I0)', this_pe, nest_x, nest_y, parent_x, parent_y
 
     do x = isc, iec
       do y = jsc, jec
@@ -298,236 +295,6 @@ contains
 
   end subroutine mn_reset_phys_latlon
 
-  !>@brief The subroutine 'dump_surface_physics' outputs surface physics data for a given point and its neighbors to stdout
-  !>@details This subroutine is appropriate to be called for debugging when range warnings are detected, in tools/fv_diagnostics.F90.
-  subroutine dump_surface_physics(i_out, j_out, k_out)
-    integer, intent(in)    :: i_out, j_out, k_out     !< i,j,k values of point to output
-
-    integer :: nb, blen, ix, i, j, k, kk
-    integer :: this_pe
-
-    this_pe = mpp_pe()
-
-    if (associated(save_Atm_block)) then
-      print '("WDR dump_surface_physics npe=",I0)', this_pe
-    else
-      print '("WDR dump_surface_physics RANGE RETURN npe=",I0)', this_pe
-      return
-    end if
-
-    k = k_out
-
-    do nb = 1,save_Atm_block%nblks
-      blen = save_Atm_block%blksz(nb)
-      do ix = 1, blen
-        ! Get the indices only once, before iterating through vertical levels or number of variables
-        !  Was there a different efficiency from having the k loop outside?
-        i = save_Atm_block%index(nb)%ii(ix)
-        j = save_Atm_block%index(nb)%jj(ix)
-
-        if (i .ge. i_out-2 .and. i .le. i_out+2 .and. j .ge. j_out-2 .and. j .le. j_out+2) then
-
-          print '("[INFO] WDR RANGE this_pe= ",I0," i,j=(",I0,",",I0,") slmsk=",F8.5, " lakefrac=",F10.5, " lakedepth=",F14.5, " landfrac=",F10.5, " oro=",F10.5, " oro_uf=",F10.5)', this_pe, i, j, save_IPD_Data(nb)%Sfcprop%slmsk(ix), save_IPD_Data(nb)%Sfcprop%lakefrac(ix), save_IPD_Data(nb)%Sfcprop%lakedepth(ix), save_IPD_Data(nb)%Sfcprop%landfrac(ix), save_IPD_Data(nb)%Sfcprop%oro(ix), save_IPD_Data(nb)%Sfcprop%oro_uf(ix)
-          print '("[INFO] WDR RANGE this_pe= ",I0," i,j=(",I0,",",I0,") oro=",F10.5, " oro_uf=",F10.5, " phis/g=",F10.5, " slope=",I0)', this_pe, i, j, save_IPD_Data(nb)%Sfcprop%oro(ix), save_IPD_Data(nb)%Sfcprop%oro_uf(ix), save_Atm_n%phis(i,j)/grav, save_IPD_Data(nb)%Sfcprop%slope(ix)
-          print '("[INFO] WDR RANGE this_pe= ",I0," i,j=(",I0,",",I0,") emis_lnd=",F10.4," emis_ice=",F10.4," emis_wat=",F10.4," hflx=",F10.4)', this_pe, i, j, save_IPD_Data(nb)%Sfcprop%emis_lnd(ix), save_IPD_Data(nb)%Sfcprop%emis_ice(ix), save_IPD_Data(nb)%Sfcprop%emis_wat(ix), save_IPD_Data(nb)%Sfcprop%hflx(ix)
-          print '("[INFO] WDR RANGE this_pe= ",I0," i,j=(",I0,",",I0,") albdirvis_lnd=",F10.4," albdirnir_lnd=",F10.4," albdifvis_lnd=",F10.4," albdifnir_lnd=",F10.4)', this_pe, i, j, save_IPD_Data(nb)%Sfcprop%albdirvis_lnd(ix), save_IPD_Data(nb)%Sfcprop%albdirnir_lnd(ix), save_IPD_Data(nb)%Sfcprop%albdifvis_lnd(ix), save_IPD_Data(nb)%Sfcprop%albdifnir_lnd(ix)
-          !print '("[INFO] WDR RANGE this_pe= ",I0," i,j=(",I0,",",I0,") albdirvis_ice=",F10.4," albdirnir_ice=",F10.4," albdifvis_ice=",F10.4," albdifnir_ice=",F10.4)', this_pe, i, j, save_IPD_Data(nb)%Sfcprop%albdirvis_ice(ix), save_IPD_Data(nb)%Sfcprop%albdirnir_ice(ix), save_IPD_Data(nb)%Sfcprop%albdifvis_ice(ix), save_IPD_Data(nb)%Sfcprop%albdifnir_ice(ix)
-          if (associated(save_IPD_Data(nb)%Sfcprop%qss)) then
-            print '("[INFO] WDR RANGE this_pe= ",I0," i,j=(",I0,",",I0,") qss=",F10.4)', this_pe, i, j, save_IPD_Data(nb)%Sfcprop%qss(ix)
-          endif
-          if (associated(save_IPD_Data(nb)%Sfcprop%evap)) then
-            print '("[INFO] WDR RANGE this_pe= ",I0," i,j=(",I0,",",I0,") evap=",F10.4)', this_pe, i, j, save_IPD_Data(nb)%Sfcprop%evap(ix)
-          endif
-          if (associated(save_IPD_Data(nb)%Sfcprop%sncovr)) then
-            print '("[INFO] WDR RANGE this_pe= ",I0," i,j=(",I0,",",I0,") sncovr",F10.4)', this_pe, i, j, save_IPD_Data(nb)%Sfcprop%sncovr(ix)
-          endif
-          if (associated(save_IPD_Data(nb)%Sfcprop%sncovr_ice)) then
-            print '("[INFO] WDR RANGE this_pe= ",I0," i,j=(",I0,",",I0,") sncovr_ice",F10.4)', this_pe, i, j, save_IPD_Data(nb)%Sfcprop%sncovr_ice(ix)
-          endif
-          if (associated(save_IPD_Data(nb)%Intdiag%total_albedo)) then
-            print '("[INFO] WDR RANGE this_pe= ",I0," i,j=(",I0,",",I0,") Intdiag%total_albedo=",F10.4)', this_pe, i, j, save_IPD_Data(nb)%Intdiag%total_albedo(ix)
-          endif
-          if (associated(save_IPD_Data(nb)%Sfcprop%ifd)) then
-            print '("[INFO] WDR RANGE this_pe= ",I0," i,j=(",I0,",",I0,") ifd=",F10.4)', this_pe, i, j, save_IPD_Data(nb)%Sfcprop%ifd(ix)
-          endif
-          if (associated(save_IPD_Data(nb)%Sfcprop%semisbase)) then
-            print '("[INFO] WDR RANGE this_pe= ",I0," i,j=(",I0,",",I0,") semisbase=",F10.4)', this_pe, i, j, save_IPD_Data(nb)%Sfcprop%semisbase(ix)
-          endif
-          if (associated(save_IPD_Data(nb)%Sfcprop%sfalb_lnd)) then
-            print '("[INFO] WDR RANGE this_pe= ",I0," i,j=(",I0,",",I0,") sfalb_lnd=",F10.4)', this_pe, i, j, save_IPD_Data(nb)%Sfcprop%sfalb_lnd(ix)
-          endif
-          if (associated(save_IPD_Data(nb)%Sfcprop%sfalb_ice)) then
-            print '("[INFO] WDR RANGE this_pe= ",I0," i,j=(",I0,",",I0,") sfalb_ice=",F10.4)', this_pe, i, j, save_IPD_Data(nb)%Sfcprop%sfalb_ice(ix)
-          endif
-          if (associated(save_IPD_Data(nb)%Sfcprop%sfalb_lnd_bck)) then
-            print '("[INFO] WDR RANGE this_pe= ",I0," i,j=(",I0,",",I0,") sfalb_lnd_bck=",F10.4)', this_pe, i, j, save_IPD_Data(nb)%Sfcprop%sfalb_lnd_bck(ix)
-          endif
-          if (associated(save_IPD_Data(nb)%Sfcprop%emis_lnd)) then
-            print '("[INFO] WDR RANGE this_pe= ",I0," i,j=(",I0,",",I0,") emis_lnd=",F10.4)', this_pe, i, j, save_IPD_Data(nb)%Sfcprop%emis_lnd(ix)
-          endif
-          if (associated(save_IPD_Data(nb)%Sfcprop%emis_ice)) then
-            print '("[INFO] WDR RANGE this_pe= ",I0," i,j=(",I0,",",I0,") emis_ice=",F10.4)', this_pe, i, j, save_IPD_Data(nb)%Sfcprop%emis_ice(ix)
-          endif
-          if (associated(save_IPD_Data(nb)%Sfcprop%emis_wat)) then
-            print '("[INFO] WDR RANGE this_pe= ",I0," i,j=(",I0,",",I0,") emis_wat=",F10.4)', this_pe, i, j, save_IPD_Data(nb)%Sfcprop%emis_wat(ix)
-          endif
-          if (associated(save_IPD_Data(nb)%Sfcprop%tvxy)) then
-            print '("[INFO] WDR RANGE this_pe= ",I0," i,j=(",I0,",",I0,") veg temp tvxy=",F10.4)', this_pe, i, j, save_IPD_Data(nb)%Sfcprop%tvxy(ix)
-          endif
-
-          if (associated(save_IPD_Data(nb)%Sfcprop%tgxy)) then
-            print '("[INFO] WDR RANGE this_pe= ",I0," i,j=(",I0,",",I0,") ground temp tgxy=",F10.4)', this_pe, i, j, save_IPD_Data(nb)%Sfcprop%tgxy(ix)
-          endif
-          if (associated(save_IPD_Data(nb)%Sfcprop%tg3)) then
-            print '("[INFO] WDR RANGE this_pe= ",I0," i,j=(",I0,",",I0,") deep soil temp tg3=",F10.4," slmsk=",F8.3)', this_pe, i, j, save_IPD_Data(nb)%Sfcprop%tg3(ix), save_IPD_Data(nb)%Sfcprop%slmsk(ix)
-          endif
-          if (associated(save_IPD_Data(nb)%Sfcprop%alboldxy)) then
-            print '("[INFO] WDR RANGE this_pe= ",I0," i,j=(",I0,",",I0,") alboldxy=",F10.4)', this_pe, i, j, save_IPD_Data(nb)%Sfcprop%alboldxy(ix)
-          endif
-          if (associated(save_IPD_Data(nb)%Sfcprop%shdmin)) then
-            print '("[INFO] WDR RANGE this_pe= ",I0," i,j=(",I0,",",I0,") shdmin=",F10.4)', this_pe, i, j, save_IPD_Data(nb)%Sfcprop%shdmin(ix)
-          endif
-          if (associated(save_IPD_Data(nb)%Sfcprop%shdmax)) then
-            print '("[INFO] WDR RANGE this_pe= ",I0," i,j=(",I0,",",I0,") shdmax=",F10.4)', this_pe, i, j, save_IPD_Data(nb)%Sfcprop%shdmax(ix)
-          endif
-          if (associated(save_IPD_Data(nb)%Sfcprop%stype)) then
-            print '("[INFO] WDR RANGE this_pe= ",I0," i,j=(",I0,",",I0,") stype=",I0)', this_pe, i, j, save_IPD_Data(nb)%Sfcprop%stype(ix)
-          endif
-          if (associated(save_IPD_Data(nb)%Sfcprop%vtype)) then
-            print '("[INFO] WDR RANGE this_pe= ",I0," i,j=(",I0,",",I0,") vtype=",I0)', this_pe, i, j, save_IPD_Data(nb)%Sfcprop%vtype(ix)
-          endif
-          if (associated(save_IPD_Data(nb)%Sfcprop%stype_save)) then
-            print '("[INFO] WDR RANGE this_pe= ",I0," i,j=(",I0,",",I0,") stype_save=",I0)', this_pe, i, j, save_IPD_Data(nb)%Sfcprop%stype_save(ix)
-          endif
-          if (associated(save_IPD_Data(nb)%Sfcprop%vtype_save)) then
-            print '("[INFO] WDR RANGE this_pe= ",I0," i,j=(",I0,",",I0,") vtype_save=",I0)', this_pe, i, j, save_IPD_Data(nb)%Sfcprop%vtype_save(ix)
-          endif
-          do kk = 1, save_IPD_Control%nmtvr
-            print '("[INFO] WDR RANGE this_pe= ",I0," i,j=(",I0,",",I0,") hprime(",I0,")=",F10.4)', this_pe, i, j, kk, save_IPD_Data(nb)%Sfcprop%hprime(ix,kk)
-          enddo
-          if (associated(save_IPD_Data(nb)%Sfcprop%snowd)) then
-            print '("[INFO] WDR RANGE this_pe= ",I0," i,j=(",I0,",",I0,") snowd=",F10.4)', this_pe, i, j, save_IPD_Data(nb)%Sfcprop%snowd(ix)
-          endif
-          if (associated(save_IPD_Data(nb)%Sfcprop%weasd)) then
-            print '("[INFO] WDR RANGE this_pe= ",I0," i,j=(",I0,",",I0,") weasd=",F10.4)', this_pe, i, j, save_IPD_Data(nb)%Sfcprop%weasd(ix)
-          endif
-          if (associated(save_IPD_Data(nb)%Sfcprop%ffmm)) then
-            print '("[INFO] WDR RANGE this_pe= ",I0," i,j=(",I0,",",I0,") ffmm=",F10.4)', this_pe, i, j, save_IPD_Data(nb)%Sfcprop%ffmm(ix)
-          endif
-          if (associated(save_IPD_Data(nb)%Sfcprop%ffhh)) then
-            print '("[INFO] WDR RANGE this_pe= ",I0," i,j=(",I0,",",I0,") ffhh=",F10.4)', this_pe, i, j, save_IPD_Data(nb)%Sfcprop%ffhh(ix)
-          endif
-          if (associated(save_IPD_Data(nb)%Sfcprop%f10m)) then
-            print '("[INFO] WDR RANGE this_pe= ",I0," i,j=(",I0,",",I0,") f10m=",F10.4)', this_pe, i, j, save_IPD_Data(nb)%Sfcprop%f10m(ix)
-          endif
-          if (associated(save_IPD_Data(nb)%Sfcprop%uustar)) then
-            print '("[INFO] WDR RANGE this_pe= ",I0," i,j=(",I0,",",I0,") uustar=",F10.4)', this_pe, i, j, save_IPD_Data(nb)%Sfcprop%uustar(ix)
-          endif
-          if (associated(save_IPD_Data(nb)%Sfcprop%z0base)) then
-            print '("[INFO] WDR RANGE this_pe= ",I0," i,j=(",I0,",",I0,") z0base=",F18.6)', this_pe, i, j, save_IPD_Data(nb)%Sfcprop%z0base(ix)
-          endif
-          if (associated(save_IPD_Data(nb)%Sfcprop%zorl)) then
-            print '("[INFO] WDR RANGE this_pe= ",I0," i,j=(",I0,",",I0,") zorl=",F18.6," ",E15.6)', this_pe, i, j, save_IPD_Data(nb)%Sfcprop%zorl(ix), save_IPD_Data(nb)%Sfcprop%zorl(ix)
-          endif
-          if (associated(save_IPD_Data(nb)%Sfcprop%zorlw)) then
-            print '("[INFO] WDR RANGE this_pe= ",I0," i,j=(",I0,",",I0,") zorlw=",F18.6," ",E15.6)', this_pe, i, j, save_IPD_Data(nb)%Sfcprop%zorlw(ix), save_IPD_Data(nb)%Sfcprop%zorlw(ix)
-          endif
-          if (associated(save_IPD_Data(nb)%Sfcprop%zorll)) then
-            print '("[INFO] WDR RANGE this_pe= ",I0," i,j=(",I0,",",I0,") zorll=",F18.6," ",E15.6)', this_pe, i, j, save_IPD_Data(nb)%Sfcprop%zorll(ix), save_IPD_Data(nb)%Sfcprop%zorll(ix)
-          endif
-          if (associated(save_IPD_Data(nb)%Sfcprop%zorli)) then
-            print '("[INFO] WDR RANGE this_pe= ",I0," i,j=(",I0,",",I0,") zorli=",F15.6," ",E15.6)', this_pe, i, j, save_IPD_Data(nb)%Sfcprop%zorli(ix), save_IPD_Data(nb)%Sfcprop%zorli(ix)
-          endif
-          if (associated(save_IPD_Data(nb)%Sfcprop%zorlwav)) then
-            print '("[INFO] WDR RANGE this_pe= ",I0," i,j=(",I0,",",I0,") zorlwav=",F15.6," ",E15.6)', this_pe, i, j, save_IPD_Data(nb)%Sfcprop%zorlwav(ix), save_IPD_Data(nb)%Sfcprop%zorlwav(ix)
-          endif
-          if (associated(save_IPD_Data(nb)%Coupling%tsfc_radtime)) then
-            print '("[INFO] WDR RANGE this_pe= ",I0," i,j=(",I0,",",I0,") Coupling%tsfc_radtime=",F15.6)', this_pe, i, j, save_IPD_Data(nb)%Coupling%tsfc_radtime(ix)
-          endif
-          if (associated(save_IPD_Data(nb)%Sfcprop%canopy)) then
-            print '("[INFO] WDR RANGE this_pe= ",I0," i,j=(",I0,",",I0,") canopy=",F10.4)', this_pe, i, j, save_IPD_Data(nb)%Sfcprop%canopy(ix)
-          endif
-          if (associated(save_IPD_Data(nb)%Sfcprop%vfrac)) then
-            print '("[INFO] WDR RANGE this_pe= ",I0," i,j=(",I0,",",I0,") vfrac=",F10.4)', this_pe, i, j, save_IPD_Data(nb)%Sfcprop%vfrac(ix)
-          endif
-          if (associated(save_IPD_Data(nb)%Radtend%sfalb)) then
-            print '("[INFO] WDR RANGE this_pe= ",I0," i,j=(",I0,",",I0,") Radtend%sfalb=",F10.4)', this_pe, i, j, save_IPD_Data(nb)%Radtend%sfalb(ix)
-          endif
-          if (associated(save_IPD_Data(nb)%Radtend%semis)) then
-            print '("[INFO] WDR RANGE this_pe= ",I0," i,j=(",I0,",",I0,") Radtend%semis=",F10.4)', this_pe, i, j, save_IPD_Data(nb)%Radtend%semis(ix)
-          endif
-          if (associated(save_IPD_Data(nb)%Radtend%sfcfsw)) then
-            print '("[INFO] WDR RANGE this_pe= ",I0," i,j=(",I0,",",I0,") Radtend%sfcfsw upfxc=",F10.4,"  upfx0=",F10.4," dnfxc=",F10.4," dnfx0=",F10.4)', &
-                this_pe, i, j, save_IPD_Data(nb)%Radtend%sfcfsw(ix)%upfxc, save_IPD_Data(nb)%Radtend%sfcfsw(ix)%upfx0, save_IPD_Data(nb)%Radtend%sfcfsw(ix)%dnfxc, save_IPD_Data(nb)%Radtend%sfcfsw(ix)%dnfx0
-          endif
-          if (associated(save_IPD_Data(nb)%Radtend%sfcflw)) then
-            print '("[INFO] WDR RANGE this_pe= ",I0," i,j=(",I0,",",I0,") Radtend%sfcflw  upfxc=",F10.4," upfx0=",F10.4," dnfxc=",F10.4," dnfx0=",F10.4)', &
-                this_pe, i, j, save_IPD_Data(nb)%Radtend%sfcflw(ix)%upfxc, save_IPD_Data(nb)%Radtend%sfcflw(ix)%upfx0, save_IPD_Data(nb)%Radtend%sfcflw(ix)%dnfxc, save_IPD_Data(nb)%Radtend%sfcflw(ix)%dnfx0
-          endif
-          if (associated(save_IPD_Data(nb)%Radtend%coszen)) then
-            print '("[INFO] WDR RANGE this_pe= ",I0," i,j=(",I0,",",I0,") Radtend%coszen=",F10.4)', this_pe, i, j, save_IPD_Data(nb)%Radtend%coszen(ix)
-          endif
-          if (associated(save_IPD_Data(nb)%Radtend%coszdg)) then
-            print '("[INFO] WDR RANGE this_pe= ",I0," i,j=(",I0,",",I0,") Radtend%coszdg=",F10.4)', this_pe, i, j, save_IPD_Data(nb)%Radtend%coszdg(ix)
-          endif
-
-          !if (associated(save_IPD_Data(nb)%Sfcprop%semisbase)) then
-          !  print '("[INFO] WDR RANGEP AA this_pe= ",I0)', this_pe
-          !  !if (associated (save_IPD_Data(nb)%Sfcprop%sfalb_lnd)) then
-          !  print '("[INFO] WDR RANGEP AB this_pe= ",I0)', this_pe
-          !  !if (associated(save_IPD_Data(nb)%Sfcprop%sfalb_ice)) then
-          !  print '("[INFO] WDR RANGEP AC this_pe= ",I0)', this_pe
-          !  if (associated(save_IPD_Data(nb)%Sfcprop%sfalb_lnd_bck)) then
-          !    !print '("[INFO] WDR RANGE this_pe= ",I0," i,j=(",I0,",",I0,") semisbase=",F10.4," sfalb_lnd=",F10.4," sfalb_ice=",F10.4," sfalb_lnd_bck=",F10.4)', this_pe, i, j, save_IPD_Data(nb)%Sfcprop%semisbase(ix), save_IPD_Data(nb)%Sfcprop%sfalb_lnd(ix), save_IPD_Data(nb)%Sfcprop%sfalb_ice(ix), save_IPD_Data(nb)%Sfcprop%sfalb_lnd_bck(ix)
-          !    print '("[INFO] WDR RANGE this_pe= ",I0," i,j=(",I0,",",I0,") semisbase=",F10.4," sfalb_lnd_bck=",F10.4)', this_pe, i, j, save_IPD_Data(nb)%Sfcprop%semisbase(ix), save_IPD_Data(nb)%Sfcprop%sfalb_lnd_bck(ix)
-          !  endif
-          !  !endif
-          !  !endif
-          !endif
-
-          if (associated(save_IPD_Data(nb)%Sfcprop%alvsf)) then
-            !print '("[INFO] WDR RANGEP BA this_pe= ",I0)', this_pe
-            if (associated(save_IPD_Data(nb)%Sfcprop%alnsf)) then
-              !print '("[INFO] WDR RANGEP BB this_pe= ",I0)', this_pe
-              if (associated(save_IPD_Data(nb)%Sfcprop%alvwf)) then
-                !print '("[INFO] WDR RANGEP BC this_pe= ",I0)', this_pe
-                if (associated(save_IPD_Data(nb)%Sfcprop%alnwf)) then
-                  print '("[INFO] WDR RANGE this_pe= ",I0," i,j=(",I0,",",I0,") alvsf=",F10.4," alnsf=",F10.4," alvwf=",F10.4," alnwf=",F10.4)', this_pe, i, j, save_IPD_Data(nb)%Sfcprop%alvsf(ix), save_IPD_Data(nb)%Sfcprop%alnsf(ix), save_IPD_Data(nb)%Sfcprop%alvwf(ix), save_IPD_Data(nb)%Sfcprop%alnwf(ix)
-                endif
-              endif
-            endif
-          endif
-
-          print '("[INFO] WDR RANGE this_pe= ",I0," i,j=(",I0,",",I0,") sncovr=",F10.4," snoalb=",F10.4," facsf=",F10.4," facwf=",F10.4)', this_pe, i, j, save_IPD_Data(nb)%Sfcprop%sncovr(ix), save_IPD_Data(nb)%Sfcprop%snoalb(ix), save_IPD_Data(nb)%Sfcprop%facsf(ix), save_IPD_Data(nb)%Sfcprop%facwf(ix)
-
-          if (associated(save_IPD_Data(nb)%Sfcprop%t2m)) then
-            if (associated(save_IPD_Data(nb)%Sfcprop%th2m)) then
-              print '("[INFO] WDR RANGE this_pe= ",I0," i,j=(",I0,",",I0,") t2m=",F10.4," th2m=",F10.4)', this_pe, i, j, save_IPD_Data(nb)%Sfcprop%t2m(ix), save_IPD_Data(nb)%Sfcprop%th2m(ix)
-            else
-              print '("[INFO] WDR RANGEP CB this_pe= ",I0)', this_pe
-            endif
-          else
-            print '("[INFO] WDR RANGEP CA this_pe= ",I0)', this_pe
-          endif
-
-          print '("[INFO] WDR RANGE this_pe= ",I0," i,j=(",I0,",",I0,") tsfc=",F10.4," tsfco=",F10.4," tsfcl=",F10.4," tisfc=",F10.4," stc1=",F10.4)', this_pe, i, j, save_IPD_Data(nb)%Sfcprop%tsfc(ix), save_IPD_Data(nb)%Sfcprop%tsfco(ix), save_IPD_Data(nb)%Sfcprop%tsfcl(ix), save_IPD_Data(nb)%Sfcprop%tisfc(ix), save_IPD_Data(nb)%Sfcprop%stc(ix,1)
-          print '("[INFO] WDR RANGE this_pe= ",I0," i,j=(",I0,",",I0,") psurf=",F10.4," t2m=",F10.4," th2m=",F10.4)', this_pe, i, j, save_IPD_Data(nb)%IntDiag%psurf(ix), save_IPD_Data(nb)%Sfcprop%t2m(ix), save_IPD_Data(nb)%Sfcprop%th2m(ix)
-
-          if (associated(save_IPD_Data(nb)%Sfcprop%slc)) then
-            print '("[INFO] WDR RANGE this_pe= ",I0," i,j=(",I0,",",I0,") soil moist slc1=",F10.4)', this_pe, i, j, save_IPD_Data(nb)%Sfcprop%slc(ix,1)
-          endif
-          if (associated(save_IPD_Data(nb)%Sfcprop%smc)) then
-            print '("[INFO] WDR RANGE this_pe= ",I0," i,j=(",I0,",",I0,") tot soil moist smc1=",F10.4)', this_pe, i, j, save_IPD_Data(nb)%Sfcprop%smc(ix,1)
-          endif
-          if (associated(save_IPD_Data(nb)%Sfcprop%stc)) then
-            print '("[INFO] WDR RANGE this_pe= ",I0," i,j=(",I0,",",I0,") soil temp stc1=",F10.4)', this_pe, i, j, save_IPD_Data(nb)%Sfcprop%stc(ix,1)
-          endif
-
-        endif
-      enddo
-    enddo
-  end subroutine dump_surface_physics
-
   !>@brief The subroutine 'mn_phys_fill_temp_variables' extracts 1D physics data into a 2D array for nest motion
   !>@details This subroutine fills in the mn_phys structure on the Atm object with 2D arrays of physics/surface variables.
   !!  Note that ice variables are not yet handled.
@@ -554,8 +321,6 @@ contains
     save_IPD_Control => IPD_Control
     save_IPD_Data => IPD_Data
 
-    if (debug_log) print '("[INFO] WDR start mn_phys_fill_temp_variables. npe=",I0," n=",I0)', this_pe, n
-
     isd = Atm(n)%bd%isd
     ied = Atm(n)%bd%ied
     jsd = Atm(n)%bd%jsd
@@ -563,14 +328,10 @@ contains
 
     !if (is_fine_pe) call dump_surface_physics(isd+8, jsd+8, npz-1)
 
-    if (debug_log) print '("[INFO] WDR mn_phys_fill_temp_variables. npe=",I0," isd=",I0," ied=",I0," jsd=",I0," jed=",I0)', this_pe, isd, ied, jsd, jed
-
     is = Atm(n)%bd%is
     ie = Atm(n)%bd%ie
     js = Atm(n)%bd%js
     je = Atm(n)%bd%je
-
-    if (debug_log) print '("[INFO] WDR mn_phys_fill_temp_variables. npe=",I0," is=",I0," ie=",I0," js=",I0," je=",I0)', this_pe, is, ie, js, je
 
     mn_phys => Moving_nest(n)%mn_phys
 
@@ -672,8 +433,6 @@ contains
       enddo
     enddo
 
-    if (debug_log) print '("[INFO] WDR end mn_phys_fill_temp_variables. npe=",I0," n=",I0)', this_pe, n
-
   end subroutine mn_phys_fill_temp_variables
 
   !>@brief The subroutine 'mn_phys_apply_temp_variables' copies moved 2D data back into 1D physics arryas for nest motion
@@ -691,51 +450,10 @@ contains
     integer :: is, ie, js, je
     integer :: this_pe
     integer :: nb, blen, i, j ,k, ix, nv
-    integer :: bad_values, good_values
     type(fv_moving_nest_physics_type), pointer       :: mn_phys
 
     this_pe = mpp_pe()
     mn_phys => Moving_nest(n)%mn_phys
-
-    if (debug_log) print '("[INFO] WDR start mn_phys_apply_temp_variables. npe=",I0," n=",I0)', this_pe, n
-
-    ! Check if the variables were filled in properly.
-
-    if (debug_log) then
-      good_values = 0
-      bad_values = 0
-
-      if (is_fine_pe) then
-        do i = Atm(n)%bd%isd, Atm(n)%bd%ied
-          do j = Atm(n)%bd%jsd, Atm(n)%bd%jed
-            if (mn_phys%ts(i,j) .gt. 20000.0) then
-              print '("[WARN] WDR BAD NEST ts value. npe=",I0," ts(",I0,",",I0,")=",F12.3)', this_pe, i, j, mn_phys%ts(i,j)
-              bad_values = bad_values + 1
-            else
-              good_values = good_values + 1
-            endif
-          enddo
-        enddo
-      else
-        do i = Atm(n)%bd%is, Atm(n)%bd%ie
-          do j = Atm(n)%bd%js, Atm(n)%bd%je
-            if (mn_phys%ts(i,j) .gt. 20000.0) then
-              print '("[WARN] WDR BAD GLOBAL ts value. npe=",I0," ts(",I0,",",I0")=",F12.3)', this_pe, i, j, mn_phys%ts(i,j)
-              bad_values = bad_values + 1
-            else
-              good_values = good_values + 1
-            endif
-          enddo
-        enddo
-      endif
-
-      i = Atm(n)%bd%is
-      j = Atm(n)%bd%js
-
-      print '("[WARN] WDR Surface ts value. npe=",I0," ts(",I0,",",I0,")=",F18.3)', this_pe, i, j, mn_phys%ts(i,j)
-
-      print '("INFO] WDR ts values. npe=",I0," good_values=",I0," bad_values=",I0)', this_pe, good_values, bad_values
-    endif
 
     !  Needed to fill the local grids for parent and nest PEs in order to transmit/interpolate data from parent to nest
     !  But only the nest PE's have changed the values with nest motion, so they are the only ones that need to update the original arrays
@@ -744,8 +462,6 @@ contains
       ie = Atm(n)%bd%ie
       js = Atm(n)%bd%js
       je = Atm(n)%bd%je
-
-      if (debug_log) print '("[INFO] WDR mn_phys_apply_temp_variables. npe=",I0," is=",I0," ie=",I0," js=",I0," je=",I0)', this_pe, is, ie, js, je
 
       ! SST directly in Atm structure
       Atm(n)%ts(is:ie, js:je) =  mn_phys%ts(is:ie, js:je)
@@ -764,7 +480,7 @@ contains
               IPD_Data(nb)%Sfcprop%slc(ix,k) = mn_phys%slc(i,j,k)
             enddo
 
-            ! WDR EMIS PATCH - Force to positive at all locations.
+            ! EMIS PATCH - Force to positive at all locations.
             if (mn_phys%emis_lnd(i,j) .ge. 0.0) then
               IPD_Data(nb)%Sfcprop%emis_lnd(ix) = mn_phys%emis_lnd(i,j)
             else
@@ -899,12 +615,10 @@ contains
           if ( (int(IPD_data(nb)%Sfcprop%slmsk(ix)) .eq. 1) )  then
 
             if (IPD_data(nb)%Sfcprop%vtype(ix) .lt. 0.5) then
-              print '("[INFO] WDR FIXPHYS resetting vtype from 0. npe=",I0," i,j=",I0,",",I0," lat=",F10.3," lon=",F10.3)', this_pe, i,j, IPD_data(nb)%Grid%xlat_d(ix), IPD_data(nb)%Grid%xlon_d(ix)-360.0
               IPD_data(nb)%Sfcprop%vtype(ix) = 7    ! Force to grassland
             endif
 
             if (IPD_data(nb)%Sfcprop%stype(ix) .lt. 0.5) then
-              print '("[INFO] WDR FIXPHYS resetting stype from 0. npe=",I0," i,j=",I0,",",I0," lat=",F10.3," lon=",F10.3)', this_pe, i,j, IPD_data(nb)%Grid%xlat_d(ix), IPD_data(nb)%Grid%xlon_d(ix)-360.0
               IPD_data(nb)%Sfcprop%stype(ix) = 3    ! Force to sandy loam
             endif
 
@@ -919,8 +633,6 @@ contains
         enddo
       enddo
     endif
-
-    if (debug_log) print '("[INFO] WDR end mn_phys_apply_temp_variables. npe=",I0," n=",I0)', this_pe, n
 
   end subroutine mn_phys_apply_temp_variables
 
@@ -1503,25 +1215,23 @@ contains
     this_pe = mpp_pe()
 
     !  Skin temp/SST
-    call mn_var_dump_to_netcdf(Atm%ts, is_fine_pe, domain_coarse, domain_fine, position, 1, time_val, Atm%global_tile, file_prefix, "SSTK")
+    call mn_var_dump_to_netcdf(Atm%ts, is_fine_pe, domain_coarse, domain_fine, position, time_val, Atm%global_tile, file_prefix, "SSTK")
     !  Terrain height == phis / grav
-    call mn_var_dump_to_netcdf(Atm%phis / grav, is_fine_pe, domain_coarse, domain_fine, position, 1, time_val, Atm%global_tile, file_prefix, "orog")
+    call mn_var_dump_to_netcdf(Atm%phis / grav, is_fine_pe, domain_coarse, domain_fine, position, time_val, Atm%global_tile, file_prefix, "orog")
 
     ! sgh and oro were only fully allocated if fv_land is True
     !      if false, oro is (1,1), and sgh is not allocated
     if ( Atm%flagstruct%fv_land ) then
       ! land frac --  called oro in fv_array.F90
-      call mn_var_dump_to_netcdf(Atm%oro, is_fine_pe, domain_coarse, domain_fine, position, 1, time_val, Atm%global_tile, file_prefix, "LFRAC")
+      call mn_var_dump_to_netcdf(Atm%oro, is_fine_pe, domain_coarse, domain_fine, position, time_val, Atm%global_tile, file_prefix, "LFRAC")
       ! terrain standard deviation --  called sgh in fv_array.F90
-      call mn_var_dump_to_netcdf(Atm%sgh, is_fine_pe, domain_coarse, domain_fine, position, 1, time_val, Atm%global_tile, file_prefix, "STDDEV")
+      call mn_var_dump_to_netcdf(Atm%sgh, is_fine_pe, domain_coarse, domain_fine, position, time_val, Atm%global_tile, file_prefix, "STDDEV")
     endif
 
     is = Atm%bd%is
     ie = Atm%bd%ie
     js = Atm%bd%js
     je = Atm%bd%je
-
-    if (debug_log) print '("[INFO] WDR mn_phys_dump_to_netcdf. npe=",I0," is=",I0," ie=",I0," js=",I0," je=",I0)', this_pe, is, ie, js, je
 
     ! Just allocate compute domain size here for outputs;  the nest moving code also has halos added, but we don't need them here.
     if (move_physics) then
@@ -1657,54 +1367,54 @@ contains
     enddo
 
     if (move_physics) then
-      call mn_var_dump_to_netcdf(stc_pr_local, is_fine_pe, domain_coarse, domain_fine, position, IPD_Control%lsoil, time_val, Atm%global_tile, file_prefix, "SOILT")
-      call mn_var_dump_to_netcdf(smc_pr_local, is_fine_pe, domain_coarse, domain_fine, position, IPD_Control%lsoil, time_val, Atm%global_tile, file_prefix, "SOILM")
-      call mn_var_dump_to_netcdf(slc_pr_local, is_fine_pe, domain_coarse, domain_fine, position, IPD_Control%lsoil, time_val, Atm%global_tile, file_prefix, "SOILL")
-      call mn_var_dump_to_netcdf(sealand_pr_local, is_fine_pe, domain_coarse, domain_fine, position, 1, time_val, Atm%global_tile, file_prefix, "LMASK")
-      call mn_var_dump_to_netcdf(lakefrac_pr_local, is_fine_pe, domain_coarse, domain_fine, position, 1, time_val, Atm%global_tile, file_prefix, "LAKEFRAC")
-      call mn_var_dump_to_netcdf(landfrac_pr_local, is_fine_pe, domain_coarse, domain_fine, position, 1, time_val, Atm%global_tile, file_prefix, "LANDFRAC")
-      call mn_var_dump_to_netcdf(emis_lnd_pr_local, is_fine_pe, domain_coarse, domain_fine, position, 1, time_val, Atm%global_tile, file_prefix, "EMISLAND")
-      call mn_var_dump_to_netcdf(deep_soil_t_pr_local, is_fine_pe, domain_coarse, domain_fine, position, 1, time_val, Atm%global_tile, file_prefix, "DEEPSOIL")
-      call mn_var_dump_to_netcdf(soil_type_pr_local, is_fine_pe, domain_coarse, domain_fine, position, 1, time_val, Atm%global_tile, file_prefix, "SOILTP")
-      !call mn_var_dump_to_netcdf(veg_frac_pr_local, is_fine_pe, domain_coarse, domain_fine, position, 1, time_val, Atm%global_tile, file_prefix, "VEGFRAC")
-      call mn_var_dump_to_netcdf(veg_type_pr_local, is_fine_pe, domain_coarse, domain_fine, position, 1, time_val, Atm%global_tile, file_prefix, "VEGTYPE")
-      call mn_var_dump_to_netcdf(slope_type_pr_local, is_fine_pe, domain_coarse, domain_fine, position, 1, time_val, Atm%global_tile, file_prefix, "SLOPE")
-      call mn_var_dump_to_netcdf(max_snow_alb_pr_local, is_fine_pe, domain_coarse, domain_fine, position, 1, time_val, Atm%global_tile, file_prefix, "SNOWALB")
-      call mn_var_dump_to_netcdf(tsfco_pr_local, is_fine_pe, domain_coarse, domain_fine, position, 1, time_val, Atm%global_tile, file_prefix, "TSFCO")
-      call mn_var_dump_to_netcdf(tsfcl_pr_local, is_fine_pe, domain_coarse, domain_fine, position, 1, time_val, Atm%global_tile, file_prefix, "TSFCL")
-      call mn_var_dump_to_netcdf(tsfc_pr_local, is_fine_pe, domain_coarse, domain_fine, position, 1, time_val, Atm%global_tile, file_prefix, "TSFC")
-      call mn_var_dump_to_netcdf(vegfrac_pr_local, is_fine_pe, domain_coarse, domain_fine, position, 1, time_val, Atm%global_tile, file_prefix, "VEGFRAC")
-      call mn_var_dump_to_netcdf(alvsf_pr_local, is_fine_pe, domain_coarse, domain_fine, position, 1, time_val, Atm%global_tile, file_prefix, "ALVSF")
-      call mn_var_dump_to_netcdf(alvwf_pr_local, is_fine_pe, domain_coarse, domain_fine, position, 1, time_val, Atm%global_tile, file_prefix, "ALVWF")
-      call mn_var_dump_to_netcdf(alnsf_pr_local, is_fine_pe, domain_coarse, domain_fine, position, 1, time_val, Atm%global_tile, file_prefix, "ALNSF")
-      call mn_var_dump_to_netcdf(alnwf_pr_local, is_fine_pe, domain_coarse, domain_fine, position, 1, time_val, Atm%global_tile, file_prefix, "ALNWF")
-      call mn_var_dump_to_netcdf(facsf_pr_local, is_fine_pe, domain_coarse, domain_fine, position, 1, time_val, Atm%global_tile, file_prefix, "FACSF")
-      call mn_var_dump_to_netcdf(facwf_pr_local, is_fine_pe, domain_coarse, domain_fine, position, 1, time_val, Atm%global_tile, file_prefix, "FACWF")
-      call mn_var_dump_to_netcdf(zorl_pr_local, is_fine_pe, domain_coarse, domain_fine, position, 1, time_val, Atm%global_tile, file_prefix, "ZORL")
-      call mn_var_dump_to_netcdf(zorlw_pr_local, is_fine_pe, domain_coarse, domain_fine, position, 1, time_val, Atm%global_tile, file_prefix, "ZORLW")
-      call mn_var_dump_to_netcdf(zorll_pr_local, is_fine_pe, domain_coarse, domain_fine, position, 1, time_val, Atm%global_tile, file_prefix, "ZORLL")
-      call mn_var_dump_to_netcdf(zorli_pr_local, is_fine_pe, domain_coarse, domain_fine, position, 1, time_val, Atm%global_tile, file_prefix, "ZORLI")
+      !call mn_var_dump_to_netcdf(stc_pr_local, is_fine_pe, domain_coarse, domain_fine, position, IPD_Control%lsoil, time_val, Atm%global_tile, file_prefix, "SOILT")
+      !call mn_var_dump_to_netcdf(smc_pr_local, is_fine_pe, domain_coarse, domain_fine, position, IPD_Control%lsoil, time_val, Atm%global_tile, file_prefix, "SOILM")
+      !call mn_var_dump_to_netcdf(slc_pr_local, is_fine_pe, domain_coarse, domain_fine, position, IPD_Control%lsoil, time_val, Atm%global_tile, file_prefix, "SOILL")
+      call mn_var_dump_to_netcdf(sealand_pr_local, is_fine_pe, domain_coarse, domain_fine, position, time_val, Atm%global_tile, file_prefix, "LMASK")
+      call mn_var_dump_to_netcdf(lakefrac_pr_local, is_fine_pe, domain_coarse, domain_fine, position, time_val, Atm%global_tile, file_prefix, "LAKEFRAC")
+      call mn_var_dump_to_netcdf(landfrac_pr_local, is_fine_pe, domain_coarse, domain_fine, position, time_val, Atm%global_tile, file_prefix, "LANDFRAC")
+      call mn_var_dump_to_netcdf(emis_lnd_pr_local, is_fine_pe, domain_coarse, domain_fine, position, time_val, Atm%global_tile, file_prefix, "EMISLAND")
+      call mn_var_dump_to_netcdf(deep_soil_t_pr_local, is_fine_pe, domain_coarse, domain_fine, position, time_val, Atm%global_tile, file_prefix, "DEEPSOIL")
+      call mn_var_dump_to_netcdf(soil_type_pr_local, is_fine_pe, domain_coarse, domain_fine, position, time_val, Atm%global_tile, file_prefix, "SOILTP")
+      !call mn_var_dump_to_netcdf(veg_frac_pr_local, is_fine_pe, domain_coarse, domain_fine, position, time_val, Atm%global_tile, file_prefix, "VEGFRAC")
+      call mn_var_dump_to_netcdf(veg_type_pr_local, is_fine_pe, domain_coarse, domain_fine, position, time_val, Atm%global_tile, file_prefix, "VEGTYPE")
+      call mn_var_dump_to_netcdf(slope_type_pr_local, is_fine_pe, domain_coarse, domain_fine, position, time_val, Atm%global_tile, file_prefix, "SLOPE")
+      call mn_var_dump_to_netcdf(max_snow_alb_pr_local, is_fine_pe, domain_coarse, domain_fine, position, time_val, Atm%global_tile, file_prefix, "SNOWALB")
+      call mn_var_dump_to_netcdf(tsfco_pr_local, is_fine_pe, domain_coarse, domain_fine, position, time_val, Atm%global_tile, file_prefix, "TSFCO")
+      call mn_var_dump_to_netcdf(tsfcl_pr_local, is_fine_pe, domain_coarse, domain_fine, position, time_val, Atm%global_tile, file_prefix, "TSFCL")
+      call mn_var_dump_to_netcdf(tsfc_pr_local, is_fine_pe, domain_coarse, domain_fine, position, time_val, Atm%global_tile, file_prefix, "TSFC")
+      call mn_var_dump_to_netcdf(vegfrac_pr_local, is_fine_pe, domain_coarse, domain_fine, position, time_val, Atm%global_tile, file_prefix, "VEGFRAC")
+      call mn_var_dump_to_netcdf(alvsf_pr_local, is_fine_pe, domain_coarse, domain_fine, position, time_val, Atm%global_tile, file_prefix, "ALVSF")
+      call mn_var_dump_to_netcdf(alvwf_pr_local, is_fine_pe, domain_coarse, domain_fine, position, time_val, Atm%global_tile, file_prefix, "ALVWF")
+      call mn_var_dump_to_netcdf(alnsf_pr_local, is_fine_pe, domain_coarse, domain_fine, position, time_val, Atm%global_tile, file_prefix, "ALNSF")
+      call mn_var_dump_to_netcdf(alnwf_pr_local, is_fine_pe, domain_coarse, domain_fine, position, time_val, Atm%global_tile, file_prefix, "ALNWF")
+      call mn_var_dump_to_netcdf(facsf_pr_local, is_fine_pe, domain_coarse, domain_fine, position, time_val, Atm%global_tile, file_prefix, "FACSF")
+      call mn_var_dump_to_netcdf(facwf_pr_local, is_fine_pe, domain_coarse, domain_fine, position, time_val, Atm%global_tile, file_prefix, "FACWF")
+      call mn_var_dump_to_netcdf(zorl_pr_local, is_fine_pe, domain_coarse, domain_fine, position, time_val, Atm%global_tile, file_prefix, "ZORL")
+      call mn_var_dump_to_netcdf(zorlw_pr_local, is_fine_pe, domain_coarse, domain_fine, position, time_val, Atm%global_tile, file_prefix, "ZORLW")
+      call mn_var_dump_to_netcdf(zorll_pr_local, is_fine_pe, domain_coarse, domain_fine, position, time_val, Atm%global_tile, file_prefix, "ZORLL")
+      call mn_var_dump_to_netcdf(zorli_pr_local, is_fine_pe, domain_coarse, domain_fine, position, time_val, Atm%global_tile, file_prefix, "ZORLI")
 
       do nv = 1, IPD_Control%ntot2d
         write (phys_var_name, "(A4,I0.3)")  'PH2D', nv
-        call mn_var_dump_to_netcdf(phy_f2d_pr_local(:,:,nv), is_fine_pe, domain_coarse, domain_fine, position, 1, &
-            time_val, Atm%global_tile, file_prefix, phys_var_name)
+        !call mn_var_dump_to_netcdf(phy_f2d_pr_local(:,:,nv), is_fine_pe, domain_coarse, domain_fine, position, 1, &
+        !    time_val, Atm%global_tile, file_prefix, phys_var_name)
       enddo
 
       do nv = 1, IPD_Control%ntot3d
         write (phys_var_name, "(A4,I0.3)")  'PH3D', nv
-        call mn_var_dump_to_netcdf(phy_f3d_pr_local(:,:,:,nv), is_fine_pe, domain_coarse, domain_fine, position, IPD_Control%levs, &
-            time_val, Atm%global_tile, file_prefix, phys_var_name)
+        !call mn_var_dump_to_netcdf(phy_f3d_pr_local(:,:,:,nv), is_fine_pe, domain_coarse, domain_fine, position, IPD_Control%levs, &
+        !    time_val, Atm%global_tile, file_prefix, phys_var_name)
       enddo
     endif
 
     if (move_nsst) then
-      call mn_var_dump_to_netcdf(tref_pr_local, is_fine_pe, domain_coarse, domain_fine, position, 1, time_val, Atm%global_tile, file_prefix, "TREF")
-      call mn_var_dump_to_netcdf(c_0_pr_local, is_fine_pe, domain_coarse, domain_fine, position, 1, time_val, Atm%global_tile, file_prefix, "C_0")
-      call mn_var_dump_to_netcdf(xt_pr_local, is_fine_pe, domain_coarse, domain_fine, position, 1, time_val, Atm%global_tile, file_prefix, "XT")
-      call mn_var_dump_to_netcdf(xu_pr_local, is_fine_pe, domain_coarse, domain_fine, position, 1, time_val, Atm%global_tile, file_prefix, "XU")
-      call mn_var_dump_to_netcdf(xv_pr_local, is_fine_pe, domain_coarse, domain_fine, position, 1, time_val, Atm%global_tile, file_prefix, "XV")
-      call mn_var_dump_to_netcdf(ifd_pr_local, is_fine_pe, domain_coarse, domain_fine, position, 1, time_val, Atm%global_tile, file_prefix, "IFD")
+      call mn_var_dump_to_netcdf(tref_pr_local, is_fine_pe, domain_coarse, domain_fine, position, time_val, Atm%global_tile, file_prefix, "TREF")
+      call mn_var_dump_to_netcdf(c_0_pr_local, is_fine_pe, domain_coarse, domain_fine, position, time_val, Atm%global_tile, file_prefix, "C_0")
+      call mn_var_dump_to_netcdf(xt_pr_local, is_fine_pe, domain_coarse, domain_fine, position, time_val, Atm%global_tile, file_prefix, "XT")
+      call mn_var_dump_to_netcdf(xu_pr_local, is_fine_pe, domain_coarse, domain_fine, position, time_val, Atm%global_tile, file_prefix, "XU")
+      call mn_var_dump_to_netcdf(xv_pr_local, is_fine_pe, domain_coarse, domain_fine, position, time_val, Atm%global_tile, file_prefix, "XV")
+      call mn_var_dump_to_netcdf(ifd_pr_local, is_fine_pe, domain_coarse, domain_fine, position, time_val, Atm%global_tile, file_prefix, "IFD")
     endif
 
     if (move_physics) then
@@ -1724,8 +1434,6 @@ contains
     endif
 
     if (move_nsst) deallocate(tref_pr_local, c_0_pr_local, xt_pr_local,  xu_pr_local,  xv_pr_local, ifd_pr_local)
-
-    if (debug_log) print '("[INFO] WDR end mn_phys_dump_tp_netcdf npe=",I0)', this_pe
 
   end subroutine mn_phys_dump_to_netcdf
 

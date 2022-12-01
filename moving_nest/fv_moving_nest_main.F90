@@ -84,7 +84,6 @@ module fv_moving_nest_main_mod
   !-----------------------------------------
   !  External routines
   !-----------------------------------------
-  use fms_io_mod,         only: fms_io_exit
   use mpp_domains_mod,    only: NORTH, NORTH_EAST, EAST, SOUTH_EAST, CORNER, CENTER
   use mpp_domains_mod,    only: nest_domain_type
   use mpp_mod,            only: mpp_sync, mpp_exit
@@ -123,7 +122,7 @@ module fv_moving_nest_main_mod
   !      Load static datasets
   use fv_moving_nest_mod,         only: mn_latlon_read_hires_parent, mn_latlon_load_parent
   use fv_moving_nest_mod,         only: mn_orog_read_hires_parent, mn_static_read_hires
-  use fv_moving_nest_utils_mod,   only: load_nest_latlons_from_nc, compare_terrain, set_smooth_nest_terrain, set_blended_terrain
+  use fv_moving_nest_utils_mod,   only: set_smooth_nest_terrain, set_blended_terrain
 
   use fv_moving_nest_physics_mod, only: mn_reset_phys_latlon, mn_surface_grids
 
@@ -136,11 +135,6 @@ module fv_moving_nest_main_mod
 
   !      Recalculation routines
   use fv_moving_nest_mod,         only: reallocate_BC_buffers, recalc_aux_pressures
-
-  !      Logging and debugging information
-  use fv_moving_nest_mod,         only: check_array
-  use fv_moving_nest_utils_mod,   only: show_atm, show_atm_grids, show_tile_geo, show_nest_grid, show_gridstruct, grid_equal
-  use fv_moving_nest_utils_mod,   only: validate_hires_parent
 
   use fv_tracker_mod,             only: Tracker, allocate_tracker, fv_tracker_init, deallocate_tracker
 
@@ -275,10 +269,8 @@ contains
     is_fine_pe = Atm(n)%neststruct%nested .and. ANY(Atm(n)%pelist(:) == this_pe)
     nz = Atm(n)%npz
 
-    if (debug_log) print '("[INFO] WDR ptbounds 3 atmosphere.F90  npe=",I0," pt(",I0,"-",I0,",",I0,"-",I0,",",I0,"-",I0,")")', this_pe, lbound(Atm(n)%pt,1), ubound(Atm(n)%pt,1), lbound(Atm(n)%pt,2), ubound(Atm(n)%pt,2), lbound(Atm(n)%pt,3), ubound(Atm(n)%pt,3)
-
-    ! Enable this to dump debug netCDF files.  Make sure to enable fms_io_exit() in fv_control.F90 so that files are written and closed.
-    !if (mod(a_step, 20) .eq. 0 ) then
+    ! Enable this to dump debug netCDF files.  Files are automatically closed when dumped.
+    !if (mod(a_step, 80) .eq. 0 ) then
     !  if (tsvar_out) call mn_prog_dump_to_netcdf(Atm(n), a_step, "tsavar", is_fine_pe, domain_coarse, domain_fine, nz)
     !  if (tsvar_out) call mn_phys_dump_to_netcdf(Atm(n), Atm_block, IPD_control, IPD_data, a_step, "tsavar", is_fine_pe, domain_coarse, domain_fine, nz)
     !endif
@@ -625,7 +617,7 @@ contains
 
       ! This will only allocate the mn_prog and mn_phys for the active Atm(n), not all of them
       !  The others can safely remain unallocated.
-      if (debug_log) print '("[INFO] WDR call allocate_fv_moving_nest_prog npe=",I0," n=",I0)', this_pe, n
+
       call allocate_fv_moving_nest_prog_type(isd, ied, jsd, jed, npz, Moving_nest(n)%mn_prog)
       call allocate_fv_moving_nest_physics_type(isd, ied, jsd, jed, npz, move_physics, move_nsst, &
           IPD_Control%lsoil, IPD_Control%nmtvr, IPD_Control%levs, IPD_Control%ntot2d, IPD_Control%ntot3d, &
@@ -644,42 +636,20 @@ contains
     !! Step 1 -- Initialization
     !!================================================================
 
-    if (debug_log) print '("WDR_NEST_HALO_RECV,",I0,"===STEP 1====")', this_pe
-    if (debug_log) print '("[INFO] WDR MV_NST1 run step 1 fv_moving_nest_main.F90 npe=",I0)', this_pe
-
     domain_fine => Atm(child_grid_num)%domain
     parent_tile = Atm(child_grid_num)%neststruct%parent_tile
     domain_coarse => Atm(parent_grid_num)%domain
     is_moving_nest = Moving_nest(child_grid_num)%mn_flag%is_moving_nest
     nz = Atm(n)%npz
 
-    if (debug_log) then
-      if (is_fine_pe) then
-        print '("[INFO] WDR move_nest FINE. npe=",I0, " ", I2.2," do_move=",L1," delta_i_c=",I0," delta_j_c=",I0)', this_pe, n, do_move, delta_i_c, delta_j_c
-      else
-        print '("[INFO] WDR move_nest COARSE. npe=",I0, " ", I2.2)', this_pe, n
-      endif
-
-      do nn = 1, size(Atm)
-        call show_atm("1", Atm(nn), nn, this_pe)
-      enddo
-      print '("[INFO] WDR diag Atm DONE npe=",I0," Atm(",I0,")")', this_pe, n
-    endif
-
     if (is_moving_nest .and. do_move) then
       call mpp_clock_begin (id_movnestTot)
       if (use_timers) call mpp_clock_begin (id_movnest1)
 
       !!================================================================
-      !! Step 1.1 -- Show the nest grids
+      !! Step 1.1 -- Show the nest grids - (now removed)
       !!================================================================
 
-      if (debug_log .and. this_pe .eq. 0) then
-        !call show_nest_grid(Atm(n), this_pe, 0)
-        print '("[INFO] WDR BD init fv_moving_nest_main.F90 npe=",I0," is=",I0," ie=",I0," js=",I0," je=",I0)', this_pe, Atm(n)%bd%is,  Atm(n)%bd%ie,  Atm(n)%bd%js,  Atm(n)%bd%je
-        print '("[INFO] WDR BD init fv_moving_nest_main.F90 npe=",I0," isd=",I0," ied=",I0," jsd=",I0," jed=",I0)', this_pe, Atm(n)%bd%isd,  Atm(n)%bd%ied,  Atm(n)%bd%jsd,  Atm(n)%bd%jed
-        print '("[INFO] WDR BD init fv_moving_nest_main.F90 npe=",I0," isc=",I0," iec=",I0," jsc=",I0," jec=",I0)', this_pe, Atm(n)%bd%isc,  Atm(n)%bd%iec,  Atm(n)%bd%jsc, Atm(n)%bd%jec
-      endif
 
       !!================================================================
       !! Step 1.2 -- Configure local variables
@@ -689,8 +659,6 @@ contains
       y_refine = x_refine
       ioffset => Atm(child_grid_num)%neststruct%ioffset
       joffset => Atm(child_grid_num)%neststruct%joffset
-
-      if (debug_log) print '("[INFO] WDR MV_NST0 fv_moving_nest_main.F90 processing Atm(n) npe=",I0," n=",I0," ioffset=",I0," joffset=",I0)', this_pe, n, ioffset, joffset
 
       istart_fine = global_nest_domain%istart_fine(nest_num)
       iend_fine = global_nest_domain%iend_fine(nest_num)
@@ -739,19 +707,11 @@ contains
       !! Step 1.3 -- Dump the prognostic variables before we do the nest motion.
       !!============================================================================
 
-      if (debug_log) print '("[INFO] WDR MV_NST0 run step 0 fv_moving_nest_main.F90 npe=",I0)', this_pe
       output_step = output_step + 1
 
       !!============================================================================
       !! Step 1.4 -- Read in the full panel grid definition
       !!============================================================================
-
-      if (debug_log) then
-        print '("[INFO] WDR check grid_global fv_moving_nest_main.F90 npe=",I0," n=",I0)', this_pe, 1
-        call check_array(Atm(1)%grid_global, this_pe, "grid_global", -2.0*3.1415926536, 2.0*3.1415926536)
-        print '("[INFO] WDR check grid_global fv_moving_nest_main.F90 npe=",I0," n=",I0)', this_pe, 2
-        call check_array(Atm(2)%grid_global, this_pe, "grid_global", -2.0*3.1415926536, 2.0*3.1415926536)
-      endif
 
       if (is_fine_pe) then
 
@@ -764,35 +724,34 @@ contains
         grid => Atm(n)%gridstruct%grid
         agrid => Atm(n)%gridstruct%agrid
 
-        if (debug_log) print '("[INFO] WDR MV_NST0 fv_moving_nest_main.F90 processing Atm(n) npe=",I0," nx_cubic=",I0," ny_cubic=",I0," nx=",I0," ny=",I0)', this_pe, nx_cubic, ny_cubic, nx ,ny
-
         ! Read in static lat/lon data for parent at nest resolution; returns fp_ full panel variables
         ! Also read in other static variables from the orography and surface files
 
         if (first_nest_move) then
-          if (debug_log) print '("[INFO] WDR mn_latlon_read_hires_parent READING static fine file on npe=",I0)', this_pe
 
-          call mn_latlon_read_hires_parent(Atm(1)%npx, Atm(1)%npy, x_refine, fp_super_tile_geo, &
+          ! TODO set pelist for the correct nest instead of hard-coded Atm(2)%pelist to allow multiple moving nests
+
+          call mn_latlon_read_hires_parent(Atm(1)%npx, Atm(1)%npy, x_refine, Atm(2)%pelist, fp_super_tile_geo, &
               Moving_nest(child_grid_num)%mn_flag%surface_dir,  parent_tile)
 
-          call mn_orog_read_hires_parent(Atm(1)%npx, Atm(1)%npy, x_refine, &
+          call mn_orog_read_hires_parent(Atm(1)%npx, Atm(1)%npy, x_refine, Atm(2)%pelist, &
               Moving_nest(child_grid_num)%mn_flag%surface_dir, filtered_terrain, &
               mn_static%orog_grid, mn_static%orog_std_grid, mn_static%ls_mask_grid, mn_static%land_frac_grid,  parent_tile)
 
           ! If terrain_smoother method 1 is chosen, we need the parent coarse terrain
           if (Moving_nest(n)%mn_flag%terrain_smoother .eq. 1) then
             if (filtered_terrain) then
-              call mn_static_read_hires(Atm(1)%npx, Atm(1)%npy, 1, Moving_nest(child_grid_num)%mn_flag%surface_dir, "oro_data", "orog_filt", mn_static%parent_orog_grid,  parent_tile)
+              call mn_static_read_hires(Atm(1)%npx, Atm(1)%npy, 1, Atm(2)%pelist, Moving_nest(child_grid_num)%mn_flag%surface_dir, "oro_data", "orog_filt", mn_static%parent_orog_grid,  parent_tile)
             else
-              call mn_static_read_hires(Atm(1)%npx, Atm(1)%npy, 1, Moving_nest(child_grid_num)%mn_flag%surface_dir, "oro_data", "orog_raw", mn_static%parent_orog_grid,  parent_tile)
+              call mn_static_read_hires(Atm(1)%npx, Atm(1)%npy, 1, Atm(2)%pelist, Moving_nest(child_grid_num)%mn_flag%surface_dir, "oro_data", "orog_raw", mn_static%parent_orog_grid,  parent_tile)
             endif
           endif
 
-          call mn_static_read_hires(Atm(1)%npx, Atm(1)%npy, x_refine, trim(Moving_nest(child_grid_num)%mn_flag%surface_dir), "substrate_temperature", "substrate_temperature", mn_static%deep_soil_temp_grid,  parent_tile)
+          call mn_static_read_hires(Atm(1)%npx, Atm(1)%npy, x_refine, Atm(2)%pelist, trim(Moving_nest(child_grid_num)%mn_flag%surface_dir), "substrate_temperature", "substrate_temperature", mn_static%deep_soil_temp_grid,  parent_tile)
           ! set any -999s to +4C
           call mn_replace_low_values(mn_static%deep_soil_temp_grid, -100.0, 277.0)
 
-          call mn_static_read_hires(Atm(1)%npx, Atm(1)%npy, x_refine, trim(Moving_nest(child_grid_num)%mn_flag%surface_dir), "soil_type", "soil_type", mn_static%soil_type_grid,  parent_tile)
+          call mn_static_read_hires(Atm(1)%npx, Atm(1)%npy, x_refine, Atm(2)%pelist, trim(Moving_nest(child_grid_num)%mn_flag%surface_dir), "soil_type", "soil_type", mn_static%soil_type_grid,  parent_tile)
           ! To match initialization behavior, set any -999s to 0 in soil_type
           call mn_replace_low_values(mn_static%soil_type_grid, -100.0, 0.0)
 
@@ -800,22 +759,22 @@ contains
           !! TODO investigate reading high-resolution veg_frac and veg_greenness
           !call mn_static_read_hires(Atm(1)%npx, Atm(1)%npy, x_refine, trim(Moving_nest(child_grid_num)%mn_flag%surface_dir), "", mn_static%veg_frac_grid)
 
-          call mn_static_read_hires(Atm(1)%npx, Atm(1)%npy, x_refine, trim(Moving_nest(child_grid_num)%mn_flag%surface_dir), "vegetation_type", "vegetation_type", mn_static%veg_type_grid,  parent_tile)
+          call mn_static_read_hires(Atm(1)%npx, Atm(1)%npy, x_refine, Atm(2)%pelist, trim(Moving_nest(child_grid_num)%mn_flag%surface_dir), "vegetation_type", "vegetation_type", mn_static%veg_type_grid,  parent_tile)
           ! To match initialization behavior, set any -999s to 0 in veg_type
           call mn_replace_low_values(mn_static%veg_type_grid, -100.0, 0.0)
 
 
-          call mn_static_read_hires(Atm(1)%npx, Atm(1)%npy, x_refine, trim(Moving_nest(child_grid_num)%mn_flag%surface_dir), "slope_type", "slope_type", mn_static%slope_type_grid,  parent_tile)
+          call mn_static_read_hires(Atm(1)%npx, Atm(1)%npy, x_refine, Atm(2)%pelist, trim(Moving_nest(child_grid_num)%mn_flag%surface_dir), "slope_type", "slope_type", mn_static%slope_type_grid,  parent_tile)
           ! To match initialization behavior, set any -999s to 0 in slope_type
           call mn_replace_low_values(mn_static%slope_type_grid, -100.0, 0.0)
 
 
-          call mn_static_read_hires(Atm(1)%npx, Atm(1)%npy, x_refine, trim(Moving_nest(child_grid_num)%mn_flag%surface_dir), "maximum_snow_albedo", "maximum_snow_albedo", mn_static%max_snow_alb_grid,  parent_tile)
+          call mn_static_read_hires(Atm(1)%npx, Atm(1)%npy, x_refine, Atm(2)%pelist, trim(Moving_nest(child_grid_num)%mn_flag%surface_dir), "maximum_snow_albedo", "maximum_snow_albedo", mn_static%max_snow_alb_grid,  parent_tile)
           ! Set any -999s to 0.5
           call mn_replace_low_values(mn_static%max_snow_alb_grid, -100.0, 0.5)
 
           ! Albedo fraction -- read and calculate
-          call mn_static_read_hires(Atm(1)%npx, Atm(1)%npy, x_refine, trim(Moving_nest(child_grid_num)%mn_flag%surface_dir), "facsf", "facsf", mn_static%facsf_grid,  parent_tile)
+          call mn_static_read_hires(Atm(1)%npx, Atm(1)%npy, x_refine, Atm(2)%pelist, trim(Moving_nest(child_grid_num)%mn_flag%surface_dir), "facsf", "facsf", mn_static%facsf_grid,  parent_tile)
 
           allocate(mn_static%facwf_grid(lbound(mn_static%facsf_grid,1):ubound(mn_static%facsf_grid,1),lbound(mn_static%facsf_grid,2):ubound(mn_static%facsf_grid,2)))
 
@@ -841,11 +800,11 @@ contains
           ! alnsf = near IR strong cosz = near_IR_black_sky_albedo
           ! alnwf = near IR weak cosz = near_IR_white_sky_albedo
 
-          call mn_static_read_hires(Atm(1)%npx, Atm(1)%npy, x_refine, trim(Moving_nest(child_grid_num)%mn_flag%surface_dir), "snowfree_albedo", "visible_black_sky_albedo", mn_static%alvsf_grid,  parent_tile, time=month)
-          call mn_static_read_hires(Atm(1)%npx, Atm(1)%npy, x_refine, trim(Moving_nest(child_grid_num)%mn_flag%surface_dir), "snowfree_albedo", "visible_white_sky_albedo", mn_static%alvwf_grid,  parent_tile, time=month)
+          call mn_static_read_hires(Atm(1)%npx, Atm(1)%npy, x_refine, Atm(2)%pelist, trim(Moving_nest(child_grid_num)%mn_flag%surface_dir), "snowfree_albedo", "visible_black_sky_albedo", mn_static%alvsf_grid,  parent_tile, time=month)
+          call mn_static_read_hires(Atm(1)%npx, Atm(1)%npy, x_refine, Atm(2)%pelist, trim(Moving_nest(child_grid_num)%mn_flag%surface_dir), "snowfree_albedo", "visible_white_sky_albedo", mn_static%alvwf_grid,  parent_tile, time=month)
 
-          call mn_static_read_hires(Atm(1)%npx, Atm(1)%npy, x_refine, trim(Moving_nest(child_grid_num)%mn_flag%surface_dir), "snowfree_albedo", "near_IR_black_sky_albedo", mn_static%alnsf_grid,  parent_tile, time=month)
-          call mn_static_read_hires(Atm(1)%npx, Atm(1)%npy, x_refine, trim(Moving_nest(child_grid_num)%mn_flag%surface_dir), "snowfree_albedo", "near_IR_white_sky_albedo", mn_static%alnwf_grid,  parent_tile, time=month)
+          call mn_static_read_hires(Atm(1)%npx, Atm(1)%npy, x_refine, Atm(2)%pelist, trim(Moving_nest(child_grid_num)%mn_flag%surface_dir), "snowfree_albedo", "near_IR_black_sky_albedo", mn_static%alnsf_grid,  parent_tile, time=month)
+          call mn_static_read_hires(Atm(1)%npx, Atm(1)%npy, x_refine, Atm(2)%pelist, trim(Moving_nest(child_grid_num)%mn_flag%surface_dir), "snowfree_albedo", "near_IR_white_sky_albedo", mn_static%alnwf_grid,  parent_tile, time=month)
 
           ! Set the -999s to small value of 0.06, matching initialization code in chgres
 
@@ -856,12 +815,6 @@ contains
 
         endif
 
-        !  Validation/logging calls that can be disabled
-        if (debug_log) then
-          call show_tile_geo(fp_super_tile_geo, this_pe, "fp_super_tile_geo")
-          call show_gridstruct(Atm(n)%gridstruct, this_pe)
-          !call validate_hires_parent(fp_super_tile_geo, Atm(n)%gridstruct%grid, Atm(n)%gridstruct%agrid, x_refine, y_refine, ioffset, joffset)
-        endif
       endif
 
       if (first_nest_move) first_nest_move = .false.
@@ -882,8 +835,6 @@ contains
       !!============================================================================
       !! Step 2 -- Fill in the halos from the coarse grids
       !!============================================================================
-      if (debug_log) print '("WDR_NEST_HALO_RECV,",I0,"===STEP 2====")', this_pe
-      if (debug_log) print '("[INFO] WDR MV_NST2 run step 2 fv_moving_nest_main.F90 npe=",I0)', this_pe
 
       !  The halos seem to be empty at least on the first model timestep.
       !  These calls need to be executed by the parent and nest PEs in order to do the communication
@@ -901,11 +852,6 @@ contains
       !!   be executed on the nest PEs. Operates only on indices.
       !!  --  Similar to med_nest_configure() from HWRF
       !!============================================================================
-
-      if (debug_log) print '("WDR_NEST_HALO_RECV,",I0,"===STEP 3====")', this_pe
-      if (debug_log) print '("[INFO] WDR MV_NST3 run step 3 fv_moving_nest_main.F90 npe=",I0)', this_pe
-
-      if (debug_log) print '("[INFO] WDR MV_NST3 run step 3 fv_moving_nest_main.F90 processing Atm(n) npe=",I0," n=",I0," ioffset=",I0," joffset=",I0)', this_pe, n, ioffset, joffset
 
       call mn_meta_move_nest(delta_i_c, delta_j_c, pelist, is_fine_pe, extra_halo, &
           global_nest_domain, domain_fine, domain_coarse, &
@@ -928,15 +874,10 @@ contains
       !!    --  similar to med_nest_initial
       !!============================================================================
 
-      if (debug_log) print '("WDR_NEST_HALO_RECV,",I0,"===STEP 4====")', this_pe
-      if (debug_log) print '("[INFO] WDR MV_NST4 run step 4 fv_moving_nest_main.F90 npe=",I0)', this_pe
-
       ! TODO should/can this run before the mn_meta_move_nest?
       if (is_fine_pe) then
         call mn_prog_fill_intern_nest_halos(Atm(n), domain_fine, is_fine_pe)
         call mn_phys_fill_intern_nest_halos(Moving_nest(n), IPD_control, IPD_data, domain_fine, is_fine_pe)
-      else
-        if (debug_log) print '("[INFO] WDR MV_NST4 skip step 4 fv_moving_nest_main.F90 npe=",I0)', this_pe
       endif
 
       if (debug_sync) call mpp_sync(full_pelist)   ! Used to make debugging easier.  Can be removed.
@@ -949,21 +890,16 @@ contains
       !!   -- Similiar to med_nest_weights
       !!============================================================================
 
-      if (debug_log) print '("WDR_NEST_HALO_RECV,",I0,"===STEP 5====")', this_pe
-      if (debug_log) print '("[INFO] WDR MV_NST5 run step 5 fv_moving_nest_main.F90 npe=",I0)', this_pe
-
       if (is_fine_pe) then
         !!============================================================================
         !! Step 5.1 -- Fill the p_grid* and n_grid* variables
         !!============================================================================
-        if (debug_log) print '("[INFO] WDR MV_NST5 run step 5 fv_moving_nest_main.F90 npe=",I0, " tile_geo%lats allocated:",L1)', this_pe, allocated(tile_geo%lats)
-        if (debug_log) print '("[INFO] WDR MV_NST5 run step 5 fv_moving_nest_main.F90 npe=",I0, " parent_geo%lats allocated:",L1)', this_pe, allocated(parent_geo%lats)
         if (use_timers) call mpp_clock_begin (id_movnest5_1)
 
         ! parent_geo, p_grid, p_grid_u, and p_grid_v are only loaded first time; afterwards they are reused.
         ! Because they are the coarse resolution grids (supergrid, a-grid, u stagger, v stagger) for the parent
         call mn_latlon_load_parent(Moving_nest(child_grid_num)%mn_flag%surface_dir, Atm, n, parent_tile, &
-            delta_i_c, delta_j_c, child_grid_num, &
+            delta_i_c, delta_j_c, Atm(2)%pelist, child_grid_num, &
             parent_geo, tile_geo, tile_geo_u, tile_geo_v, fp_super_tile_geo, &
             p_grid, n_grid, p_grid_u, n_grid_u, p_grid_v, n_grid_v)
 
@@ -1015,9 +951,6 @@ contains
       !!            -- similar to med_nest_move in HWRF
       !!============================================================================
 
-      if (debug_log) print '("WDR_NEST_HALO_RECV,",I0,"===STEP 6====")', this_pe
-      if (debug_log) print '("[INFO] WDR MV_NST6 run step 6 fv_moving_nest_main.F90 npe=",I0," n=",I0)', this_pe, n
-
       call mn_prog_shift_data(Atm, n, child_grid_num, wt_h, wt_u, wt_v, &
           delta_i_c, delta_j_c, x_refine, y_refine, &
           is_fine_pe, global_nest_domain, nz)
@@ -1025,8 +958,6 @@ contains
       call mn_phys_shift_data(Atm, IPD_control, IPD_data, n, child_grid_num, wt_h, wt_u, wt_v, &
           delta_i_c, delta_j_c, x_refine, y_refine, &
           is_fine_pe, global_nest_domain, nz)
-
-      if (debug_log) print '("[INFO] WDR MV_NST6 complete step 6 fv_moving_nest_main.F90 npe=",I0)', this_pe
 
       if (debug_sync) call mpp_sync(full_pelist)   ! Used to make debugging easier.  Can be removed.
 
@@ -1037,9 +968,6 @@ contains
       !! Step 7 --  Reset the grid definition data and buffer sizes and weights after the nest motion
       !!             Mostly needed when dynamics is executed
       !!=====================================================================================
-
-      if (debug_log) print '("WDR_NEST_HALO_RECV,",I0,"===STEP 7====")', this_pe
-      if (debug_log) print '("[INFO] WDR MV_NST7 run step 7 fv_moving_nest_main.F90 npe=",I0," n=",I0)', this_pe, n
 
       call mn_meta_reset_gridstruct(Atm, n, child_grid_num, global_nest_domain, fp_super_tile_geo, x_refine, y_refine, is_fine_pe, wt_h, wt_u, wt_v, a_step, dt_atmos)
 
@@ -1055,28 +983,22 @@ contains
         ! phis is allocated in fv_arrays.F90 as:  allocate ( Atm%phis(isd:ied  ,jsd:jed  ) )
         ! 0 -- all high-resolution data, 1 - static nest smoothing algorithm, 5 - 5 point smoother, 9 - 9 point smoother
         ! Defaults to 1 - static nest smoothing algorithm; this seems to produce the most stable solutions
-        !print '("[INFO] WDR Moving Nest terrain_smoother=",I0," High-resolution terrain. npe=",I0)', Atm(n)%neststruct%terrain_smoother, this_pe
 
         select case(Moving_nest(n)%mn_flag%terrain_smoother)
         case (0)
           ! High-resolution terrain for entire nest
-          if (debug_log) print '("[INFO] WDR Moving Nest terrain_smoother=0 High-resolution terrain. npe=",I0)', this_pe
           Atm(n)%phis(isd:ied, jsd:jed) = mn_static%orog_grid((ioffset-1)*x_refine+isd:(ioffset-1)*x_refine+ied, (joffset-1)*y_refine+jsd:(joffset-1)*y_refine+jed) * grav
         case (1)
           ! Static nest smoothing algorithm - interpolation of coarse terrain in halo zone and 5 point blending zone of coarse and fine data
-          if (debug_log) print '("[INFO] WDR Moving Nest terrain_smoother=1 Blending5 algorithm. npe=",I0)', this_pe
           call set_blended_terrain(Atm(n), mn_static%parent_orog_grid, mn_static%orog_grid, x_refine, Atm(n)%bd%ng, 5, a_step)
         case (2)
           ! Static nest smoothing algorithm - interpolation of coarse terrain in halo zone and 5 point blending zone of coarse and fine data
-          if (debug_log) print '("[INFO] WDR Moving Nest terrain_smoother=1 Blending10 algorithm. npe=",I0)', this_pe
           call set_blended_terrain(Atm(n), mn_static%parent_orog_grid, mn_static%orog_grid, x_refine, Atm(n)%bd%ng, 10, a_step)
         case (5)
           ! 5 pt smoother.  blend zone of 5 to match static nest
-          if (debug_log) print '("[INFO] WDR Moving Nest terrain_smoother=5  5-point smoother. npe=",I0)', this_pe
           call set_smooth_nest_terrain(Atm(n), mn_static%orog_grid, x_refine, 5, Atm(n)%bd%ng, 5)
         case (9)
           ! 9 pt smoother.  blend zone of 5 to match static nest
-          if (debug_log) print '("[INFO] WDR Moving Nest terrain_smoother=9  9-point smoother. npe=",I0)', this_pe
           call set_smooth_nest_terrain(Atm(n), mn_static%orog_grid, x_refine, 9, Atm(n)%bd%ng, 5)
         case default
           write (errstring, "(I0)") Moving_nest(n)%mn_flag%terrain_smoother
@@ -1089,17 +1011,14 @@ contains
         ! sgh and oro were only fully allocated if fv_land is True
         !      if false, oro is (1,1), and sgh is not allocated
         if ( Atm(n)%flagstruct%fv_land ) then
-          if (debug_log) print '("[INFO] WDR shift orography data fv_land TRUE npe=",I0)', this_pe
           ! oro and sgh are allocated only for the compute domain -- they do not have halos
 
           !fv_arrays.F90 oro() !< land fraction (1: all land; 0: all water)
           !real, _ALLOCATABLE :: oro(:,:)      _NULL  !< land fraction (1: all land; 0: all water)
-          Atm(n)%oro(isc:iec, jsc:jec) = mn_static%land_frac_grid((ioffset-1)*x_refine+isc:(ioffset-1)*x_refine+iec, (joffset-1)*y_refine+jsc:(joffset-1)*y_refine+jec)
-
           !real, _ALLOCATABLE :: sgh(:,:)      _NULL  !< Terrain standard deviation
+
+          Atm(n)%oro(isc:iec, jsc:jec) = mn_static%land_frac_grid((ioffset-1)*x_refine+isc:(ioffset-1)*x_refine+iec, (joffset-1)*y_refine+jsc:(joffset-1)*y_refine+jec)
           Atm(n)%sgh(isc:iec, jsc:jec) = mn_static%orog_std_grid((ioffset-1)*x_refine+isc:(ioffset-1)*x_refine+iec, (joffset-1)*y_refine+jsc:(joffset-1)*y_refine+jec)
-        else
-          if (debug_log) print '("[INFO] WDR shift orography data fv_land FALSE npe=",I0)', this_pe
         endif
 
         call mn_phys_reset_sfc_props(Atm, n, mn_static, Atm_block, IPD_data, ioffset, joffset, x_refine)
@@ -1143,13 +1062,11 @@ contains
       !!  Step 8 -- Dump to netCDF
       !!============================================================================
 
-      if (debug_log) print '("WDR_NEST_HALO_RECV,",I0,"===STEP 8====")', this_pe
-      if (debug_log) print '("[INFO] WDR MV_NST8 run step 8 fv_moving_nest_main.F90 npe=",I0)', this_pe
 
       if (is_fine_pe) then
         do i=isc,iec
           do j=jsc,jec
-            ! WDR EMIS PATCH - Force to positive at all locations matching the landmask
+            ! EMIS PATCH - Force to positive at all locations matching the landmask
             !if (Moving_nest(n)%mn_phys%slmsk(i,j) .eq. 1 .and. Moving_nest(n)%mn_phys%emis_lnd(i,j) .lt. 0.0) Moving_nest(n)%mn_phys%emis_lnd(i,j) = 0.5
             !if (Moving_nest(n)%mn_phys%slmsk(i,j) .eq. 2 .and. Moving_nest(n)%mn_phys%emis_ice(i,j) .lt. 0.0) Moving_nest(n)%mn_phys%emis_ice(i,j) = 0.5
             !if (Moving_nest(n)%mn_phys%slmsk(i,j) .eq. 0 .and. Moving_nest(n)%mn_phys%emis_wat(i,j) .lt. 0.0) Moving_nest(n)%mn_phys%emis_wat(i,j) = 0.5
@@ -1158,7 +1075,7 @@ contains
             !if (Moving_nest(n)%mn_phys%slmsk(i,j) .eq. 1 .and. Moving_nest(n)%mn_phys%albdifvis_lnd(i,j) .lt. 0.0) Moving_nest(n)%mn_phys%albdifvis_lnd(i,j) = 0.5
             !if (Moving_nest(n)%mn_phys%slmsk(i,j) .eq. 1 .and. Moving_nest(n)%mn_phys%albdifnir_lnd(i,j) .lt. 0.0) Moving_nest(n)%mn_phys%albdifnir_lnd(i,j) = 0.5
 
-            ! WDR EMIS PATCH - Force to positive at all locations.
+            ! EMIS PATCH - Force to positive at all locations.
             if (Moving_nest(n)%mn_phys%emis_lnd(i,j) .lt. 0.0) Moving_nest(n)%mn_phys%emis_lnd(i,j) = 0.5
             if (Moving_nest(n)%mn_phys%emis_ice(i,j) .lt. 0.0) Moving_nest(n)%mn_phys%emis_ice(i,j) = 0.5
             if (Moving_nest(n)%mn_phys%emis_wat(i,j) .lt. 0.0) Moving_nest(n)%mn_phys%emis_wat(i,j) = 0.5
@@ -1167,25 +1084,6 @@ contains
             if (Moving_nest(n)%mn_phys%albdifvis_lnd(i,j) .lt. 0.0) Moving_nest(n)%mn_phys%albdifvis_lnd(i,j) = 0.5
             if (Moving_nest(n)%mn_phys%albdifnir_lnd(i,j) .lt. 0.0) Moving_nest(n)%mn_phys%albdifnir_lnd(i,j) = 0.5
 
-            !if (Moving_nest(n)%mn_phys%semis(i,j) .lt. 0.0) then
-            !   print '("[INFO] WDR SEMIS fv_moving_nest_main.F90 npe=",I0," semis(",I0,",",I0,")=",F15.5)', this_pe, i, j, Moving_nest(n)%mn_phys%semis(i,j)
-            !endif
-            !if (Moving_nest(n)%mn_phys%semisbase(i,j) .lt. 0.0) then
-            !   print '("[INFO] WDR SEMISBASE fv_moving_nest_main.F90 npe=",I0," semisbase(",I0,",",I0,")=",F15.5)', this_pe, i, j, Moving_nest(n)%mn_phys%semisbase(i,j)
-            !endif
-
-            if ( Moving_nest(n)%mn_phys%slmsk(i,j) .eq. 1 .and.  Moving_nest(n)%mn_phys%emis_lnd(i,j) .lt. 0.0) then
-              print '("[INFO] WDR SEMISLND fv_moving_nest_main.F90 npe=",I0," emis_lnd(",I0,",",I0,")=",F15.5)', this_pe, i, j, Moving_nest(n)%mn_phys%emis_lnd(i,j)
-            endif
-            if ( Moving_nest(n)%mn_phys%slmsk(i,j) .eq. 2 .and. Moving_nest(n)%mn_phys%emis_ice(i,j) .lt. 0.0) then
-              print '("[INFO] WDR SEMISLND fv_moving_nest_main.F90 npe=",I0," emis_ice(",I0,",",I0,")=",F15.5)', this_pe, i, j, Moving_nest(n)%mn_phys%emis_ice(i,j)
-            endif
-            if ( Moving_nest(n)%mn_phys%slmsk(i,j) .eq. 0 .and. Moving_nest(n)%mn_phys%emis_wat(i,j) .lt. 0.0) then
-              print '("[INFO] WDR SEMISLND fv_moving_nest_main.F90 npe=",I0," emis_wat(",I0,",",I0,")=",F15.5)', this_pe, i, j, Moving_nest(n)%mn_phys%emis_wat(i,j)
-            endif
-            if ( Moving_nest(n)%mn_phys%slmsk(i,j) .eq. 1 .and. Moving_nest(n)%mn_phys%albdirvis_lnd(i,j) .lt. 0.0) then
-              print '("[INFO] WDR ALBLND fv_moving_nest_main.F90 npe=",I0," albdirvis_lnd(",I0,",",I0,")=",F15.5)', this_pe, i, j, Moving_nest(n)%mn_phys%albdirvis_lnd(i,j)
-            endif
           enddo
         enddo
       endif
@@ -1205,12 +1103,9 @@ contains
       !!=========================================================================================
 
       if (is_fine_pe) then
-        if (debug_log) print '("[INFO] WDR MV_NST L2E before recalc auxiliary pressures fv_moving_nest_main.F90 npe=",I0)', this_pe
         call recalc_aux_pressures(Atm(n))
-        if (debug_log) print '("[INFO] WDR MV_NST L2E after recalc auxiliary pressures fv_moving_nest_main.F90 npe=",I0)', this_pe
       endif
 
-      if (debug_log) print '("[INFO] WDR PTVAL fv_dynamics.F90 npe=",I0," AfterNestMove ================================================")', this_pe
       output_step = output_step + 1
     endif
 
@@ -1218,16 +1113,6 @@ contains
     call mpp_clock_end (id_movnestTot)
 
     if (debug_sync) call mpp_sync(full_pelist)   ! Used to make debugging easier.  Can be removed.
-
-    !! Uncomment to exit and force file IO after single nest move, without dynamics
-    !    call fms_io_exit()   !! Force the output of the buffered NC files
-    !    if (debug_log) print '("[INFO] WDR calling mpp_exit after moving nest fv_moving_nest_main.F90 npe=",I0)', this_pe
-    !    call mpp_exit()
-    !    if (debug_log) print '("[INFO] WDR calling STOP after moving nest fv_moving_nest_main.F90 npe=",I0)', this_pe
-    !    stop
-    !!  else
-    !!    if (debug_log) print '("[INFO] WDR move_nest not nested PE  npe=",I0)', this_pe
-    !!  endif
 
     !call compare_terrain("phis", Atm(n)%phis, 1, Atm(n)%neststruct%ind_h, x_refine, y_refine, is_fine_pe, global_nest_domain)
 
@@ -1238,8 +1123,6 @@ contains
     !deallocate(p_grid, n_grid)
     !deallocate(p_grid_u, n_grid_u)
     !deallocate(p_grid_v, n_grid_v)
-
-    if (debug_log) call show_nest_grid(Atm(n), this_pe, 99)
 
   end subroutine fv_moving_nest_exec
 
