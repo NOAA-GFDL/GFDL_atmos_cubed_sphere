@@ -161,10 +161,6 @@ module fv_control_mod
    use molecular_diffusion_mod,     only: molecular_diffusion_init, &
                                           read_namelist_molecular_diffusion_nml
 
-#ifdef MOVING_NEST
-   use fv_moving_nest_types_mod, only: fv_moving_nest_init
-#endif
-
    implicit none
    private
 
@@ -540,13 +536,6 @@ module fv_control_mod
            Atm(n)%neststruct%refinement             = -1
         endif
      enddo
-
-#ifdef MOVING_NEST
-     ! This has to be called on the input.nml namelist for all PEs
-     !   input_nest02.nml does not have any of the moving nest parameters
-     !   Later call to read_input_nml changes which namelist is used
-     call fv_moving_nest_init(Atm)
-#endif
 
      if (pecounter /= npes) then
         if (mpp_pe() == 0) then
