@@ -40,7 +40,7 @@ module fv_moving_nest_types_mod
   use fms_mod,         only: check_nml_error
   use fv_arrays_mod,   only: fv_atmos_type
   use fv_mp_mod,       only: MAX_NNEST
-  use mpp_mod,         only: input_nml_file, mpp_pe
+  use mpp_mod,         only: input_nml_file, mpp_pe, read_input_nml
 
   implicit none
 
@@ -247,8 +247,9 @@ module fv_moving_nest_types_mod
 
 contains
 
-  subroutine fv_moving_nest_init(Atm)
+  subroutine fv_moving_nest_init(Atm, this_grid)
     type(fv_atmos_type), allocatable, intent(in) :: Atm(:)
+    integer, intent(in)                          :: this_grid
 
     integer :: n, ngrids
 
@@ -258,6 +259,8 @@ contains
     ! Configure namelist variables
 
     ngrids = size(Atm)
+
+    call read_input_nml(Atm(1)%nml_filename) !re-reads top level file into internal namelist
 
     ! Read in namelist
 
@@ -286,6 +289,11 @@ contains
         Moving_nest(n)%mn_flag%outatcf_lun            = 600
       endif
     enddo
+
+
+    call read_input_nml(Atm(this_grid)%nml_filename) !re-reads into internal namelist
+
+
   end subroutine fv_moving_nest_init
 
   subroutine read_namelist_moving_nest_nml
