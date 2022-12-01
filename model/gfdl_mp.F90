@@ -188,6 +188,8 @@ module gfdl_mp_mod
 
     integer :: ntimes = 1 ! cloud microphysics sub cycles
 
+    integer :: nconds = 1 ! condensation sub cycles
+
     integer :: cfflag = 1 ! cloud fraction scheme
     ! 1: GFDL cloud scheme
     ! 2: Xu and Randall (1996)
@@ -301,6 +303,7 @@ module gfdl_mp_mod
 
     logical :: fix_negative = .true. ! fix negative water species
 
+    logical :: do_evap_timescale = .true. ! whether to apply a timescale to evaporation
     logical :: do_cond_timescale = .false. ! whether to apply a timescale to condensation
 
     logical :: do_hail = .false. ! use hail parameters instead of graupel
@@ -321,6 +324,8 @@ module gfdl_mp_mod
     logical :: do_new_acc_ice = .false. ! perform the new accretion for cloud ice
 
     logical :: cp_heating = .false. ! update temperature based on constant pressure
+
+    logical :: delay_cond_evap = .false. ! do condensation evaporation only at the last time step
 
     real :: mp_time = 150.0 ! maximum microphysics time step (s)
 
@@ -424,7 +429,8 @@ module gfdl_mp_mod
     real :: ss_fac = 0.2 ! snow sublimation temperature factor
     real :: gs_fac = 0.2 ! graupel sublimation temperature factor
 
-    real :: rh_fac = 10.0 ! cloud water condensation / evaporation relative humidity factor
+    real :: rh_fac_evap = 10.0 ! cloud water evaporation relative humidity factor
+    real :: rh_fac_cond = 10.0 ! cloud water condensation relative humidity factor
 
     real :: sed_fac = 1.0 ! coefficient for sedimentation fall, scale from 1.0 (implicit) to 0.0 (lagrangian)
 
@@ -528,9 +534,9 @@ module gfdl_mp_mod
         n0w_sig, n0i_sig, n0r_sig, n0s_sig, n0g_sig, n0h_sig, n0w_exp, n0i_exp, &
         n0r_exp, n0s_exp, n0g_exp, n0h_exp, muw, mui, mur, mus, mug, muh, &
         alinw, alini, alinr, alins, aling, alinh, blinw, blini, blinr, blins, bling, blinh, &
-        do_new_acc_water, do_new_acc_ice, is_fac, ss_fac, gs_fac, rh_fac, &
+        do_new_acc_water, do_new_acc_ice, is_fac, ss_fac, gs_fac, rh_fac_evap, rh_fac_cond, &
         snow_grauple_combine, do_psd_water_num, do_psd_ice_num, vdiffflag, rewfac, reifac, &
-        cp_heating
+        cp_heating, nconds, do_evap_timescale, delay_cond_evap
 
 contains
 
@@ -1170,7 +1176,7 @@ subroutine mpdrv (hydrostatic, ua, va, wa, delp, pt, qv, ql, qr, qi, qs, qg, &
     ! local variables
     ! -----------------------------------------------------------------------
 
-    integer :: i, k, n
+    integer :: i, k
 
     real :: rh_adj, rh_rain, ccn0, cin0, cond, q1, q2
     real :: convt, dts, q_cond, t_lnd, t_ocn, h_var, tmp, nl, ni
@@ -1399,7 +1405,7 @@ subroutine mpdrv (hydrostatic, ua, va, wa, delp, pt, qv, ql, qr, qi, qs, qg, &
 
             call mp_fast (ks, ke, tz, qvz, qlz, qrz, qiz, qsz, qgz, dtm, dp, den, &
                 ccn, cin, condensation (i), deposition (i), evaporation (i), &
-                sublimation (i), convt)
+                sublimation (i), convt, last_step)
 
         endif
 
@@ -1413,7 +1419,8 @@ subroutine mpdrv (hydrostatic, ua, va, wa, delp, pt, qv, ql, qr, qi, qs, qg, &
                 u, v, w, den, denfac, ccn, cin, dts, rh_adj, rh_rain, h_var, dte (i), &
                 water (i), rain (i), ice (i), snow (i), graupel (i), prefluxw (i, :), &
                 prefluxr (i, :), prefluxi (i, :), prefluxs (i, :), prefluxg (i, :), &
-                condensation (i), deposition (i), evaporation (i), sublimation (i), convt)
+                condensation (i), deposition (i), evaporation (i), sublimation (i), &
+                convt, last_step)
 
         endif
 
@@ -1848,13 +1855,15 @@ end subroutine neg_adj
 subroutine mp_full (ks, ke, ntimes, tz, qv, ql, qr, qi, qs, qg, dp, dz, u, v, w, &
         den, denfac, ccn, cin, dts, rh_adj, rh_rain, h_var, dte, water, rain, ice, &
         snow, graupel, prefluxw, prefluxr, prefluxi, prefluxs, prefluxg, &
-        condensation, deposition, evaporation, sublimation, convt)
+        condensation, deposition, evaporation, sublimation, convt, last_step)
 
     implicit none
 
     ! -----------------------------------------------------------------------
     ! input / output arguments
     ! -----------------------------------------------------------------------
+
+    logical, intent (in) :: last_step
 
     integer, intent (in) :: ks, ke, ntimes
 
@@ -1926,7 +1935,7 @@ subroutine mp_full (ks, ke, ntimes, tz, qv, ql, qr, qi, qs, qg, dp, dz, u, v, w,
         ! -----------------------------------------------------------------------
 
         call subgrid_z_proc (ks, ke, den, denfac, dts, rh_adj, tz, qv, ql, &
-            qr, qi, qs, qg, dp, ccn, cin, cond, dep, reevap, sub)
+            qr, qi, qs, qg, dp, ccn, cin, cond, dep, reevap, sub, last_step)
 
         condensation = condensation + cond * convt
         deposition = deposition + dep * convt
@@ -1942,13 +1951,16 @@ end subroutine mp_full
 ! =======================================================================
 
 subroutine mp_fast (ks, ke, tz, qv, ql, qr, qi, qs, qg, dtm, dp, den, &
-        ccn, cin, condensation, deposition, evaporation, sublimation, convt)
+        ccn, cin, condensation, deposition, evaporation, sublimation, &
+        convt, last_step)
 
     implicit none
 
     ! -----------------------------------------------------------------------
     ! input / output arguments
     ! -----------------------------------------------------------------------
+
+    logical, intent (in) :: last_step
 
     integer, intent (in) :: ks, ke
 
@@ -1966,6 +1978,10 @@ subroutine mp_fast (ks, ke, tz, qv, ql, qr, qi, qs, qg, dtm, dp, den, &
     ! -----------------------------------------------------------------------
     ! local variables
     ! -----------------------------------------------------------------------
+
+    logical :: cond_evap
+
+    integer :: n
 
     real :: cond, dep, reevap, sub
 
@@ -2011,8 +2027,18 @@ subroutine mp_fast (ks, ke, tz, qv, ql, qr, qi, qs, qg, dtm, dp, den, &
     ! cloud water condensation and evaporation
     ! -----------------------------------------------------------------------
 
-    call pcond_pevap (ks, ke, dtm, qv, ql, qr, qi, qs, qg, tz, dp, cvm, te8, den, &
-        lcpk, icpk, tcpk, tcp3, cond, reevap)
+    if (delay_cond_evap) then
+        cond_evap = last_step
+    else
+        cond_evap = .true.
+    endif
+
+    if (cond_evap) then
+        do n = 1, nconds
+            call pcond_pevap (ks, ke, dtm, qv, ql, qr, qi, qs, qg, tz, dp, cvm, te8, den, &
+                lcpk, icpk, tcpk, tcp3, cond, reevap)
+        enddo
+    endif
 
     condensation = condensation + cond * convt
     evaporation = evaporation + reevap * convt
@@ -3867,13 +3893,15 @@ end subroutine pgacw_pgacr
 ! =======================================================================
 
 subroutine subgrid_z_proc (ks, ke, den, denfac, dts, rh_adj, tz, qv, ql, qr, &
-        qi, qs, qg, dp, ccn, cin, cond, dep, reevap, sub)
+        qi, qs, qg, dp, ccn, cin, cond, dep, reevap, sub, last_step)
 
     implicit none
 
     ! -----------------------------------------------------------------------
     ! input / output arguments
     ! -----------------------------------------------------------------------
+
+    logical, intent (in) :: last_step
 
     integer, intent (in) :: ks, ke
 
@@ -3890,6 +3918,10 @@ subroutine subgrid_z_proc (ks, ke, den, denfac, dts, rh_adj, tz, qv, ql, qr, &
     ! -----------------------------------------------------------------------
     ! local variables
     ! -----------------------------------------------------------------------
+
+    logical :: cond_evap
+
+    integer :: n
 
     real, dimension (ks:ke) :: q_liq, q_sol, q_cond, lcpk, icpk, tcpk, tcp3
 
@@ -3926,8 +3958,18 @@ subroutine subgrid_z_proc (ks, ke, den, denfac, dts, rh_adj, tz, qv, ql, qr, &
     ! cloud water condensation and evaporation
     ! -----------------------------------------------------------------------
 
-    call pcond_pevap (ks, ke, dts, qv, ql, qr, qi, qs, qg, tz, dp, cvm, te8, den, &
-        lcpk, icpk, tcpk, tcp3, cond, reevap)
+    if (delay_cond_evap) then
+        cond_evap = last_step
+    else
+        cond_evap = .true.
+    endif
+
+    if (cond_evap) then
+        do n = 1, nconds
+            call pcond_pevap (ks, ke, dts, qv, ql, qr, qi, qs, qg, tz, dp, cvm, te8, den, &
+                lcpk, icpk, tcpk, tcp3, cond, reevap)
+        enddo
+    endif
 
     if (.not. do_warm_rain_mp) then
 
@@ -4106,18 +4148,23 @@ subroutine pcond_pevap (ks, ke, dts, qv, ql, qr, qi, qs, qg, tz, dp, cvm, te8, d
         rh_tem = qpz / qsw
         dq = qsw - qv (k)
         if (dq .gt. 0.) then
-            factor = min (1., fac_l2v * (rh_fac * dq / qsw))
+            if (do_evap_timescale) then
+                factor = min (1., fac_l2v * (rh_fac_evap * dq / qsw))
+            else
+                factor = 1.
+            endif
             sink = min (ql (k), factor * dq / (1. + tcp3 (k) * dqdt))
             if (use_rhc_cevap .and. rh_tem .ge. rhc_cevap) then
                 sink = 0.
             endif
             reevap = reevap + sink * dp (k)
-        elseif (do_cond_timescale) then
-            factor = min (1., fac_v2l * (rh_fac * (- dq) / qsw))
-            sink = - min (qv (k), factor * (- dq) / (1. + tcp3 (k) * dqdt))
-            cond = cond - sink * dp (k)
         else
-            sink = - min (qv (k), - dq / (1. + tcp3 (k) * dqdt))
+            if (do_cond_timescale) then
+                factor = min (1., fac_v2l * (rh_fac_cond * (- dq) / qsw))
+            else
+                factor = 1.
+            endif
+            sink = - min (qv (k), factor * (- dq) / (1. + tcp3 (k) * dqdt))
             cond = cond - sink * dp (k)
         endif
 
