@@ -95,7 +95,7 @@ module fv_mapz_mod
   use fv_arrays_mod,     only: fv_grid_type, fv_grid_bounds_type, R_GRID, inline_mp_type
   use fv_timing_mod,     only: timing_on, timing_off
   use fv_mp_mod,         only: is_master, mp_reduce_min, mp_reduce_max
-#ifndef JEDI
+#ifndef NO_PHYS
   ! CCPP fast physics
   use ccpp_static_api,   only: ccpp_physics_run
   use CCPP_data,         only: ccpp_suite
@@ -225,7 +225,7 @@ contains
   real, dimension(is:ie+1,km+1):: pe0, pe3
   real, dimension(is:ie):: gsize, gz, cvm, qv
 
-#ifdef JEDI
+#ifdef NO_PHYS
   logical :: fast_mp_consv
 #endif
   real rcp, rg, rrg, bkh, dtmp, k1k
@@ -234,7 +234,7 @@ contains
   integer:: nt, liq_wat, ice_wat, rainwat, snowwat, cld_amt, graupel, hailwat, ccn_cm3, iq, n, kp, k_next
   integer :: ierr
 
-#ifndef JEDI
+#ifndef NO_PHYS
       ccpp_associate: associate( fast_mp_consv => GFDL_interstitial%fast_mp_consv )
 #endif
 
@@ -679,7 +679,7 @@ contains
 !$OMP                               ng,gridstruct,E_Flux,pdt,dtmp,reproduce_sum,q,             &
 !$OMP                               mdt,cld_amt,cappa,dtdt,out_dt,rrg,akap,do_sat_adj,         &
 !$OMP                               kord_tm,pe4, npx,npy,ccn_cm3,u_dt,v_dt, c2l_ord,bd,dp0,ps  &
-#ifdef JEDI
+#ifdef NO_PHYS
 !$OMP                               )                                                          &
 #else
 !$OMP                               ,cdata,GFDL_interstitial)                                  &
@@ -699,7 +699,7 @@ contains
 !$OMP                               mdt,cld_amt,cappa,dtdt,out_dt,rrg,akap,do_sat_adj,         &
 !$OMP                               fast_mp_consv,kord_tm, pe4,npx,npy, ccn_cm3,               &
 !$OMP                               u_dt,v_dt,c2l_ord,bd,dp0,ps                                &
-#ifdef JEDI
+#ifdef NO_PHYS
 !$OMP                               )                                                          &
 #else
 !$OMP                               ,cdata,GFDL_interstitial)                                  &
@@ -852,7 +852,7 @@ endif        ! end last_step check
 ! if ( (.not.do_adiabatic_init) .and. do_sat_adj ) then
 
   if ( do_sat_adj ) then
-#ifndef JEDI
+#ifndef NO_PHYS
                                            call timing_on('sat_adj2')
     ! Call to CCPP fast_physics group
     if (cdata%initialized()) then
@@ -866,7 +866,7 @@ endif        ! end last_step check
     endif
                                            call timing_off('sat_adj2')
 #else
-    call mpp_error (FATAL, 'Lagrangian_to_Eulerian: calling saturation adjustment for no-physics JEDI configuration makes no sense')
+    call mpp_error (FATAL, 'Lagrangian_to_Eulerian: calling saturation adjustment for no-physics configuration makes no sense')
 #endif
   endif   ! do_sat_adj
 
@@ -943,7 +943,7 @@ endif        ! end last_step check
   endif
 !$OMP end parallel
 
-#ifndef JEDI
+#ifndef NO_PHYS
   end associate ccpp_associate
 #endif
 

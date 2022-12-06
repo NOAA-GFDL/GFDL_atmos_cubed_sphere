@@ -5652,7 +5652,7 @@ end subroutine terminator_tracers
 
 
  subroutine SuperCell_Sounding(km, ps, pk1, tp, qp)
-#ifndef GFS_PHYS
+#if ! defined(GFS_PHYS) && ! defined(NO_PHYS)
  use gfdl_cloud_microphys_mod, only: wqsat_moist, qsmith_init, qs_blend
 #endif
 ! Morris Weisman & J. Klemp 2002 sounding
@@ -5676,7 +5676,7 @@ end subroutine terminator_tracers
  real:: dz0, zvir, fac_z, pk0, temp1, p2
  integer:: k, n, kk
 
-#ifdef GFS_PHYS
+#if defined(GFS_PHYS) || defined(NO_PHYS)
 
  call mpp_error(FATAL, 'SuperCell sounding cannot perform with GFS Physics.')
 

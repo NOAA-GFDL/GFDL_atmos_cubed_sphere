@@ -58,7 +58,7 @@ module fv_sg_mod
   use constants_mod,      only: rdgas, rvgas, cp_air, cp_vapor, hlv, hlf, kappa, grav
   use tracer_manager_mod, only: get_tracer_index
   use field_manager_mod,  only: MODEL_ATMOS
-#ifndef GFS_PHYS
+#if ! defined(GFS_PHYS) && ! defined(NO_PHYS)
   use gfdl_cloud_microphys_mod, only: wqs1, wqs2, wqsat2_moist
 #endif
   use fv_mp_mod,          only: mp_reduce_min, is_master
@@ -104,7 +104,7 @@ public  fv_subgrid_z, qsmith, neg_adj3, neg_adj2, neg_adj4
 contains
 
 
-#ifdef GFS_PHYS
+#if defined(GFS_PHYS) || defined(NO_PHYS)
 !>@brief The subroutine 'fv_subgrid_z' performs dry convective adjustment mixing.
 !>@details Two different versions of this subroutine are implemented:
 !!-one for the GFS physics
@@ -685,7 +685,7 @@ contains
          u_dt(i,j,k) = rdt*(u0(i,k) - ua(i,j,k))
          v_dt(i,j,k) = rdt*(v0(i,k) - va(i,j,k))
            ta(i,j,k) = t0(i,k)   ! *** temperature updated ***
-#ifdef GFS_PHYS
+#if defined(GFS_PHYS) || defined (NO_PHYS)
            ua(i,j,k) = u0(i,k)
            va(i,j,k) = v0(i,k)
 #endif
@@ -1266,7 +1266,7 @@ contains
 !----------------------
 ! Saturation adjustment
 !----------------------
-#ifndef GFS_PHYS
+#if ! defined(GFS_PHYS) && ! defined(NO_PHYS)
   if ( nwat == 6 ) then
     do k=1, kbot
       if ( hydrostatic ) then
@@ -1341,7 +1341,7 @@ contains
          u_dt(i,j,k) = rdt*(u0(i,k) - ua(i,j,k))
          v_dt(i,j,k) = rdt*(v0(i,k) - va(i,j,k))
            ta(i,j,k) = t0(i,k)   ! *** temperature updated ***
-#ifdef GFS_PHYS
+#if defined(GFS_PHYS) || defined(NO_PHYS)
            ua(i,j,k) = u0(i,k)
            va(i,j,k) = v0(i,k)
 #endif
@@ -1765,7 +1765,7 @@ contains
 !******************************************
 ! Fast moist physics: Saturation adjustment
 !******************************************
-#ifndef GFS_PHYS
+#if ! defined(GFS_PHYS) && ! defined(NO_PHYS)
  if ( sat_adj ) then
 
    do j=js, je
@@ -2141,7 +2141,7 @@ real, dimension(is:ie,js:je):: pt2, qv2, ql2, qi2, qs2, qr2, qg2, qh2, dp2, p2, 
 !******************************************
 ! Fast moist physics: Saturation adjustment
 !******************************************
-#ifndef GFS_PHYS
+#if ! defined(GFS_PHYS) && ! defined(NO_PHYS)
  if ( sat_adj ) then
 
    do j=js, je
@@ -2473,7 +2473,7 @@ real, dimension(is:ie,js:je):: pt2, qv2, ql2, qi2, qs2, qr2, qg2, qh2, dp2, p2, 
 !******************************************
 ! Fast moist physics: Saturation adjustment
 !******************************************
-#ifndef GFS_PHYS
+#if ! defined(GFS_PHYS) && ! defined(NO_PHYS)
    if ( sat_adj ) then
 
      do j=js, je

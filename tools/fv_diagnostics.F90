@@ -137,7 +137,7 @@ module fv_diagnostics_mod
 
  use fv_arrays_mod, only: max_step
 
-#ifndef GFS_PHYS
+#if ! defined(GFS_PHYS) && ! defined(NO_PHYS)
  use gfdl_mp_mod, only: wqs1, qsmith_init, c_liq
 #endif
 
@@ -1506,7 +1506,7 @@ contains
 
     module_is_initialized=.true.
     istep = 0
-#ifndef GFS_PHYS
+#if ! defined(GFS_PHYS) && ! defined(NO_PHYS)
     if(id_theta_e >0 ) call qsmith_init
 #endif
 
@@ -3245,7 +3245,7 @@ contains
        endif
 
 
-#ifdef GFS_PHYS
+#if defined(GFS_PHYS) || defined(NO_PHYS)
        if(id_delp > 0 .or. id_cape > 0 .or. id_cin > 0 .or. ((.not. Atm(n)%flagstruct%hydrostatic) .and. id_pfnh > 0)) then
           do k=1,npz
             do j=jsc,jec
