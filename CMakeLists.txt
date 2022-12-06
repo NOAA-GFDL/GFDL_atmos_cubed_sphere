@@ -161,6 +161,9 @@ if(MOVING_NEST)
 endif()
 
 if(MULTI_GASES)
+  if(JEDI)
+    message(FATAL_ERROR "Turning on MULTI_GASES and JEDI at the same time doesn't make sense")
+  endif()
   list(APPEND fv3_defs MULTI_GASES)
 endif()
 

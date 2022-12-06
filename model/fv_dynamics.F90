@@ -190,11 +190,13 @@ contains
                         parent_grid, domain, diss_est, inline_mp)
 
     use mpp_mod,           only: FATAL, mpp_error
+#ifndef JEDI
     use ccpp_static_api,   only: ccpp_physics_timestep_init,    &
                                  ccpp_physics_timestep_finalize
     use CCPP_data,         only: ccpp_suite
     use CCPP_data,         only: cdata => cdata_tile
     use CCPP_data,         only: GFDL_interstitial
+#endif
 
     use molecular_diffusion_mod, only: md_time, md_wait_sec, md_tadj_layers,          &
                                        thermosphere_adjustment
@@ -271,11 +273,17 @@ contains
 
 ! Local Arrays
       real:: ws(bd%is:bd%ie,bd%js:bd%je)
+#ifdef JEDI
+      real:: te_2d(bd%is:bd%ie,bd%js:bd%je)
+#endif
       real::   teq(bd%is:bd%ie,bd%js:bd%je)
       real:: ps2(bd%isd:bd%ied,bd%jsd:bd%jed)
       real:: m_fac(bd%is:bd%ie,bd%js:bd%je)
       real:: pfull(npz)
       real, dimension(bd%is:bd%ie):: cvm
+#ifdef JEDI
+      real, allocatable :: dp1(:,:,:), dtdt_m(:,:,:), cappa(:,:,:)
+#endif
 #ifdef MULTI_GASES
       real, allocatable :: kapad(:,:,:)
 #endif
@@ -290,6 +298,9 @@ contains
       integer :: rainwat = -999, snowwat = -999, graupel = -999, hailwat = -999, cld_amt = -999
       integer :: theta_d = -999
       logical used, do_omega
+#ifdef JEDI
+      logical :: last_step
+#endif
       integer, parameter :: max_packs=13
       type(group_halo_update_type), save :: i_pack(max_packs)
       integer :: is,  ie,  js,  je
@@ -299,11 +310,13 @@ contains
       real :: time_total
       integer :: seconds, days
 
+#ifndef JEDI
       ccpp_associate: associate( cappa     => GFDL_interstitial%cappa,     &
                                  dp1       => GFDL_interstitial%te0,       &
                                  dtdt_m    => GFDL_interstitial%dtdt,      &
                                  last_step => GFDL_interstitial%last_step, &
                                  te_2d     => GFDL_interstitial%te0_2d     )
+#endif
 
       is  = bd%is
       ie  = bd%ie
@@ -324,7 +337,17 @@ contains
       nq = nq_tot - flagstruct%dnats
       nr = nq_tot - flagstruct%dnrts
       rdg = -rdgas * agrav
+#ifdef JEDI
+      allocate ( dp1(isd:ied, jsd:jed, 1:npz) )
 
+#ifdef MOIST_CAPPA
+      allocate ( cappa(isd:ied,jsd:jed,npz) )
+      call init_ijk_mem(isd,ied, jsd,jed, npz, cappa, 0.)
+#else
+      allocate ( cappa(isd:isd,jsd:jsd,1) )
+      cappa = 0.
+#endif
+#else
       ! Call CCPP timestep init
       call ccpp_physics_timestep_init(cdata, suite_name=trim(ccpp_suite), group_name="fast_physics", ierr=ierr)
       ! Reset all interstitial variables for CCPP version
@@ -333,6 +356,7 @@ contains
       if (flagstruct%do_sat_adj) then
          GFDL_interstitial%out_dt = (idiag%id_mdt > 0)
       end if
+#endif
 
 #ifdef MULTI_GASES
       allocate ( kapad(isd:ied, jsd:jed, npz) )
@@ -424,12 +448,17 @@ contains
       enddo
 
     if ( hydrostatic ) then
+#ifdef JEDI
+!$OMP parallel do default(none) shared(is,ie,js,je,isd,ied,jsd,jed,npz,dp1,zvir,nwat,q,q_con,sphum,liq_wat, &
+!$OMP      rainwat,ice_wat,snowwat,graupel,hailwat) private(cvm,i,j,k)
+#else
 #ifdef __GFORTRAN__
 !$OMP parallel do default(none) shared(is,ie,js,je,isd,ied,jsd,jed,npz,zvir,nwat,q,q_con,sphum,liq_wat, &
 #else
 !$OMP parallel do default(none) shared(is,ie,js,je,isd,ied,jsd,jed,npz,dp1,zvir,nwat,q,q_con,sphum,liq_wat, &
 #endif
 !$OMP      rainwat,ice_wat,snowwat,graupel,hailwat) private(cvm,i,j,k)
+#endif
       do k=1,npz
          do j=js,je
 #ifdef USE_COND
@@ -442,6 +471,12 @@ contains
          enddo
       enddo
     else
+#ifdef JEDI
+!$OMP parallel do default(none) shared(is,ie,js,je,isd,ied,jsd,jed,npz,dp1,zvir,q,q_con,sphum,liq_wat, &
+!$OMP                                  rainwat,ice_wat,snowwat,graupel,hailwat,pkz,flagstruct, &
+!$OMP                                  cappa,kappa,rdg,delp,pt,delz,nwat)              &
+!$OMP                          private(cvm)
+#else
 #ifdef __GFORTRAN__
 !$OMP parallel do default(none) shared(is,ie,js,je,isd,ied,jsd,jed,npz,zvir,q,q_con,sphum,liq_wat, &
 #else
@@ -457,6 +492,7 @@ contains
 !$OMP                                  cappa,kappa,rdg,delp,pt,delz,nwat)              &
 #endif
 !$OMP                          private(cvm,i,j,k)
+#endif
        do k=1,npz
          if ( flagstruct%moist_phys ) then
            do j=js,je
@@ -583,7 +619,7 @@ contains
        pt_initialized = .true.
      endif
   else
-#ifdef __GFORTRAN__
+#if defined(__GFORTRAN__) && ! defined(JEDI)
 !$OMP parallel do default(none) shared(is,ie,js,je,npz,pt,pkz,q_con)
 #else
 !$OMP parallel do default(none) shared(is,ie,js,je,npz,pt,dp1,pkz,q_con)
@@ -611,10 +647,15 @@ contains
   mdt = bdt / real(k_split)
 
   if ( idiag%id_mdt > 0 .and. (.not. do_adiabatic_init) ) then
+#ifdef JEDI
+       allocate ( dtdt_m(is:ie,js:je,npz) )
+!$OMP parallel do default(none) shared(is,ie,js,je,npz,dtdt_m)
+#else
 #ifdef __GFORTRAN__
 !$OMP parallel do default(none) shared(is,ie,js,je,npz)
 #else
 !$OMP parallel do default(none) shared(is,ie,js,je,npz,dtdt_m)
+#endif
 #endif
        do k=1,npz
           do j=js,je
@@ -645,7 +686,7 @@ contains
       call start_group_halo_update(i_pack(8), u, v, domain, gridtype=DGRID_NE)
 #endif
                                            call timing_off('COMM_TOTAL')
-#ifdef __GFORTRAN__
+#if defined(__GFORTRAN__) && ! defined(JEDI)
 !$OMP parallel do default(none) shared(isd,ied,jsd,jed,npz,delp)
 #else
 !$OMP parallel do default(none) shared(isd,ied,jsd,jed,npz,dp1,delp)
@@ -845,11 +886,15 @@ contains
   endif
 
   if ( idiag%id_mdt > 0 .and. (.not.do_adiabatic_init) ) then
+#ifdef JEDI
+!$OMP parallel do default(none) shared(is,ie,js,je,npz,dtdt_m,bdt)
+#else
 ! Output temperature tendency due to inline moist physics:
 #ifdef __GFORTRAN__
 !$OMP parallel do default(none) shared(is,ie,js,je,npz,bdt)
 #else
 !$OMP parallel do default(none) shared(is,ie,js,je,npz,dtdt_m,bdt)
+#endif
 #endif
        do k=1,npz
           do j=js,je
@@ -860,6 +905,9 @@ contains
        enddo
 !      call prt_mxm('Fast DTDT (deg/Day)', dtdt_m, is, ie, js, je, 0, npz, 1., gridstruct%area_64, domain)
        used = send_data(idiag%id_mdt, dtdt_m, fv_time)
+#ifdef JEDI
+       deallocate ( dtdt_m )
+#endif
   endif
 
   if( nwat==7 ) then
@@ -980,7 +1028,7 @@ contains
   endif
 
   if( (flagstruct%consv_am.or.idiag%id_amdt>0) .and. (.not.do_adiabatic_init)  ) then
-#ifdef __GFORTRAN__
+#if defined(__GFORTRAN__) && ! defined(JEDI)
 !$OMP parallel do default(none) shared(is,ie,js,je,teq,dt2,ps2,ps,idiag)
 #else
 !$OMP parallel do default(none) shared(is,ie,js,je,te_2d,teq,dt2,ps2,ps,idiag)
@@ -1028,6 +1076,10 @@ contains
 911  call cubed_to_latlon(u, v, ua, va, gridstruct, &
           npx, npy, npz, 1, gridstruct%grid_type, domain, gridstruct%bounded_domain, flagstruct%c2l_ord, bd)
 
+#ifndef JEDI
+  deallocate(dp1)
+  deallocate(cappa)
+#endif
 #ifdef MULTI_GASES
   deallocate(kapad)
 #endif
@@ -1062,10 +1114,12 @@ contains
      endif
   endif
 
+#ifndef JEDI
   ! Call CCPP timestep finalize
   call ccpp_physics_timestep_finalize(cdata, suite_name=trim(ccpp_suite), group_name="fast_physics", ierr=ierr)
 
   end associate ccpp_associate
+#endif
 
   end subroutine fv_dynamics
 

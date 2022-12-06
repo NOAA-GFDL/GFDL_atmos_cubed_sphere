@@ -37,7 +37,12 @@ module fv_fill_mod
 ! </table>
 
    use mpp_domains_mod,     only: mpp_update_domains, domain2D
+#ifdef GFS_TYPES
    use GFS_typedefs,        only: kind_phys
+#else
+   use platform_mod,        only: kind_phys => r8_kind
+#endif
+!
 
    implicit none
    public fillz

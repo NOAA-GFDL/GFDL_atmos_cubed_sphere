@@ -95,11 +95,13 @@ module fv_mapz_mod
   use fv_arrays_mod,     only: fv_grid_type, fv_grid_bounds_type, R_GRID, inline_mp_type
   use fv_timing_mod,     only: timing_on, timing_off
   use fv_mp_mod,         only: is_master, mp_reduce_min, mp_reduce_max
+#ifndef JEDI
   ! CCPP fast physics
   use ccpp_static_api,   only: ccpp_physics_run
   use CCPP_data,         only: ccpp_suite
   use CCPP_data,         only: cdata => cdata_tile
   use CCPP_data,         only: GFDL_interstitial
+#endif
 #ifdef MULTI_GASES
   use multi_gases_mod,  only:  virq, virqd, vicpqd, vicvqd, num_gas
 #endif
@@ -223,14 +225,18 @@ contains
   real, dimension(is:ie+1,km+1):: pe0, pe3
   real, dimension(is:ie):: gsize, gz, cvm, qv
 
+#ifdef JEDI
+  logical :: fast_mp_consv
+#endif
   real rcp, rg, rrg, bkh, dtmp, k1k
   integer:: i,j,k
   integer:: kdelz
-  integer:: nt, liq_wat, ice_wat, rainwat, snowwat, cld_amt, graupel, hailwat, ccn_cm3, iq, n, kmp, kp, k_next
+  integer:: nt, liq_wat, ice_wat, rainwat, snowwat, cld_amt, graupel, hailwat, ccn_cm3, iq, n, kp, k_next
   integer :: ierr
 
-      ccpp_associate: associate( fast_mp_consv => GFDL_interstitial%fast_mp_consv, &
-                                 kmp           => GFDL_interstitial%kmp            )
+#ifndef JEDI
+      ccpp_associate: associate( fast_mp_consv => GFDL_interstitial%fast_mp_consv )
+#endif
 
        k1k = rdgas/cv_air   ! akap / (1.-akap) = rg/Cv=0.4
         rg = rdgas
@@ -665,31 +671,40 @@ contains
 1000  continue
 
 #ifdef __GFORTRAN__
-!$OMP parallel default(none) shared(is,ie,js,je,km,ptop,u,v,pe,ua,va,isd,ied,jsd,jed,kord_mt,     &
+!$OMP parallel default(none) shared(is,ie,js,je,km,ptop,u,v,pe,ua,va,isd,ied,jsd,jed,kord_mt,  &
 !$OMP                               te_2d,te,delp,hydrostatic,hs,rg,pt,peln, adiabatic,        &
 !$OMP                               cp,delz,nwat,rainwat,liq_wat,ice_wat,snowwat,              &
-!$OMP                               graupel,hailwat,q_con,r_vir,sphum,w,pk,pkz,last_step,consv,        &
+!$OMP                               graupel,hailwat,q_con,r_vir,sphum,w,pk,pkz,last_step,consv,&
 !$OMP                               do_adiabatic_init,zsum1,zsum0,te0_2d,domain,               &
 !$OMP                               ng,gridstruct,E_Flux,pdt,dtmp,reproduce_sum,q,             &
 !$OMP                               mdt,cld_amt,cappa,dtdt,out_dt,rrg,akap,do_sat_adj,         &
-!$OMP                               kord_tm,pe4, npx,npy,ccn_cm3,u_dt,v_dt, c2l_ord,bd,dp0,ps, &
-!$OMP                                cdata,GFDL_interstitial)                           &
+!$OMP                               kord_tm,pe4, npx,npy,ccn_cm3,u_dt,v_dt, c2l_ord,bd,dp0,ps  &
+#ifdef JEDI
+!$OMP                               )                                                          &
+#else
+!$OMP                               ,cdata,GFDL_interstitial)                                  &
 !$OMP                        shared(ccpp_suite)                                                &
+#endif
 #ifdef MULTI_GASES
 !$OMP                        shared(num_gas)                                                   &
 #endif
 !$OMP                       private(q2,pe0,pe1,pe2,pe3,qv,cvm,gz,gsize,phis,kdelz,dp2,t0, ierr)
 #else
-!$OMP parallel default(none) shared(is,ie,js,je,km,kmp,ptop,u,v,pe,ua,va,isd,ied,jsd,jed,kord_mt, &
+!$OMP parallel default(none) shared(is,ie,js,je,km,ptop,u,v,pe,ua,va,isd,ied,jsd,jed,kord_mt,  &
 !$OMP                               te_2d,te,delp,hydrostatic,hs,rg,pt,peln, adiabatic,        &
 !$OMP                               cp,delz,nwat,rainwat,liq_wat,ice_wat,snowwat,              &
-!$OMP                               graupel,hailwat,q_con,r_vir,sphum,w,pk,pkz,last_step,consv,        &
+!$OMP                               graupel,hailwat,q_con,r_vir,sphum,w,pk,pkz,last_step,consv,&
 !$OMP                               do_adiabatic_init,zsum1,zsum0,te0_2d,domain,               &
 !$OMP                               ng,gridstruct,E_Flux,pdt,dtmp,reproduce_sum,q,             &
 !$OMP                               mdt,cld_amt,cappa,dtdt,out_dt,rrg,akap,do_sat_adj,         &
 !$OMP                               fast_mp_consv,kord_tm, pe4,npx,npy, ccn_cm3,               &
-!$OMP                               u_dt,v_dt,c2l_ord,bd,dp0,ps,cdata,GFDL_interstitial)        &
+!$OMP                               u_dt,v_dt,c2l_ord,bd,dp0,ps
+#ifdef JEDI
+!$OMP                               )                                                          &
+#else
+!$OMP                               ,cdata,GFDL_interstitial)                                  &
 !$OMP                        shared(ccpp_suite)                                                &
+#endif
 #ifdef MULTI_GASES
 !$OMP                        shared(num_gas)                                                   &
 #endif
@@ -837,6 +852,7 @@ endif        ! end last_step check
 ! if ( (.not.do_adiabatic_init) .and. do_sat_adj ) then
 
   if ( do_sat_adj ) then
+#ifndef JEDI
                                            call timing_on('sat_adj2')
     ! Call to CCPP fast_physics group
     if (cdata%initialized()) then
@@ -849,6 +865,9 @@ endif        ! end last_step check
       call mpp_error (FATAL, 'Lagrangian_to_Eulerian: can not call CCPP fast physics because CCPP not initialized')
     endif
                                            call timing_off('sat_adj2')
+#else
+    call mpp_error (FATAL, 'Lagrangian_to_Eulerian: calling saturation adjustment for no-physics JEDI configuration makes no sense')
+#endif
   endif   ! do_sat_adj
 
   if ( last_step ) then
@@ -924,7 +943,9 @@ endif        ! end last_step check
   endif
 !$OMP end parallel
 
+#ifndef JEDI
   end associate ccpp_associate
+#endif
 
  end subroutine Lagrangian_to_Eulerian
 

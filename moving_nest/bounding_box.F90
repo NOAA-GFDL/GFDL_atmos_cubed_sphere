@@ -36,7 +36,7 @@ module bounding_box_mod
 #ifdef GFS_TYPES
   use GFS_typedefs,      only : kind_phys
 #else
-  use IPD_typedefs,      only : kind_phys => IPD_kind_phys
+  use platform_mod,      only : kind_phys => r8_kind
 #endif
 
   ! Simple aggregation of the start and end indices of a 2D grid
