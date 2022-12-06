@@ -1076,7 +1076,7 @@ contains
 911  call cubed_to_latlon(u, v, ua, va, gridstruct, &
           npx, npy, npz, 1, gridstruct%grid_type, domain, gridstruct%bounded_domain, flagstruct%c2l_ord, bd)
 
-#ifndef JEDI
+#ifdef JEDI
   deallocate(dp1)
   deallocate(cappa)
 #endif
