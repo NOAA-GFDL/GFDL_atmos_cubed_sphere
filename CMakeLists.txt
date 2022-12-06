@@ -29,6 +29,7 @@ option(DEBUG       "Enable compiler definition -DDEBUG"                    OFF)
 option(MOVING_NEST "Enable compiler definition -DMOVING_NEST"              OFF)
 option(MULTI_GASES "Enable compiler definition -DMULTI_GASES"              OFF)
 option(USE_GFSL63  "Enable compiler definition -DUSE_GFSL63"               OFF)
+option(JEDI        "Enable compiler definition -DJEDI"                     OFF)
 option(GFS_PHYS    "Enable compiler definition -DGFS_PHYS"                 OFF)
 option(GFS_TYPES   "Enable compiler definition -DGFS_TYPES"                OFF)
 option(use_WRTCOMP "Enable compiler definition -Duse_WRTCOMP"              OFF)
@@ -135,6 +136,10 @@ endif()
 
 if(USE_GFSL63)
   list(APPEND fv3_defs USE_GFSL63)
+endif()
+
+if(JEDI)
+  list(APPEND fv3_defs JEDI)
 endif()
 
 if(GFS_PHYS)
