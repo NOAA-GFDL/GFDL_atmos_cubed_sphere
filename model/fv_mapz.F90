@@ -698,7 +698,7 @@ contains
 !$OMP                               ng,gridstruct,E_Flux,pdt,dtmp,reproduce_sum,q,             &
 !$OMP                               mdt,cld_amt,cappa,dtdt,out_dt,rrg,akap,do_sat_adj,         &
 !$OMP                               fast_mp_consv,kord_tm, pe4,npx,npy, ccn_cm3,               &
-!$OMP                               u_dt,v_dt,c2l_ord,bd,dp0,ps
+!$OMP                               u_dt,v_dt,c2l_ord,bd,dp0,ps                                &
 #ifdef JEDI
 !$OMP                               )                                                          &
 #else
