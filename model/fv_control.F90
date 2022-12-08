@@ -10,7 +10,7 @@
 !* (at your option) any later version.
 !*
 !* The FV3 dynamical core is distributed in the hope that it will be
-!* useful, but WITHOUT ANYWARRANTY; without even the implied warranty
+!* useful, but WITHOUT ANY WARRANTY; without even the implied warranty
 !* of MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.
 !* See the GNU General Public License for more details.
 !*
@@ -18,7 +18,7 @@
 !* License along with the FV3 dynamical core.
 !* If not, see <http://www.gnu.org/licenses/>.
 !***********************************************************************
-! $Id$
+
 !
 !----------------
 ! FV contro panel
@@ -26,7 +26,8 @@
 
 module fv_control_mod
 
-   use constants_mod,       only: pi=>pi_8, kappa, radius, grav, rdgas
+   use constants_mod,       only: pi=>pi_8, kappa, grav, rdgas
+   use fv_arrays_mod,       only: radius ! scaled for small earth
    use field_manager_mod,   only: MODEL_ATMOS
    use fms_mod,             only: write_version_number, check_nml_error
    use fms2_io_mod,         only: file_exists
@@ -170,12 +171,14 @@ module fv_control_mod
      logical , pointer :: convert_ke
      logical , pointer :: do_vort_damp
      logical , pointer :: use_old_omega
+     logical , pointer :: remap_te
      ! PG off centering:
      real    , pointer :: beta
      integer , pointer :: n_sponge
      real    , pointer :: d_ext
      integer , pointer :: nwat
      logical , pointer :: warm_start
+
      logical , pointer :: inline_q
      real , pointer :: shift_fac
      logical , pointer :: do_schmidt, do_cube_transform
@@ -184,6 +187,7 @@ module fv_control_mod
      real(kind=R_GRID) , pointer :: target_lon
 
      logical , pointer :: reset_eta
+     logical , pointer :: ignore_rst_cksum
      real    , pointer :: p_fac
      real    , pointer :: a_imp
      integer , pointer :: n_split
@@ -239,8 +243,6 @@ module fv_control_mod
      logical , pointer :: adiabatic
      logical , pointer :: moist_phys
      logical , pointer :: do_Held_Suarez
-     logical , pointer :: do_reed_physics
-     logical , pointer :: reed_cond_only
      logical , pointer :: reproduce_sum
      logical , pointer :: adjust_dry_mass
      logical , pointer :: fv_debug
@@ -248,14 +250,16 @@ module fv_control_mod
      logical , pointer :: mountain
      logical , pointer :: remap_t
      logical , pointer :: z_tracer
+     logical , pointer :: w_limiter
 
      logical , pointer :: old_divg_damp
      logical , pointer :: fv_land
+     logical , pointer :: do_am4_remap
      logical , pointer :: nudge
      logical , pointer :: nudge_ic
      logical , pointer :: ncep_ic
      logical , pointer :: nggps_ic
-   logical , pointer :: hrrrv3_ic
+     logical , pointer :: hrrrv3_ic
      logical , pointer :: ecmwf_ic
      logical , pointer :: gfs_phil
      logical , pointer :: agrid_vel_rst
@@ -288,8 +292,8 @@ module fv_control_mod
      real(kind=R_GRID), pointer :: deglat
 
      logical, pointer :: nested, twowaynest
-     logical, pointer :: regional
-     integer, pointer :: bc_update_interval
+     logical, pointer :: regional, write_restart_with_bcs, regional_bcs_from_gsi
+     integer, pointer :: bc_update_interval, nrows_blend
      integer, pointer :: parent_tile, refinement, nestbctype, nestupdate, nsponge, ioffset, joffset
      real, pointer :: s_weight, update_blend
 
@@ -300,6 +304,7 @@ module fv_control_mod
      logical, pointer :: write_only_coarse_intermediate_restarts
      logical, pointer :: write_coarse_agrid_vel_rst
      logical, pointer :: write_coarse_dgrid_vel_rst
+     logical, pointer :: pass_full_omega_to_physics_in_non_hydrostatic_mode
      !!!!!!!!!! END POINTERS !!!!!!!!!!!!!!!!!!!!!!!!!!!!
 
      this_grid = -1 ! default
@@ -383,7 +388,7 @@ module fv_control_mod
            Atm(n)%nml_filename = 'input.nml'
         endif
         if (.not. file_exists(Atm(n)%nml_filename)) then
-           call mpp_error(FATAL, "Could not find nested grid namelist "//Atm(n)%nml_filename)
+           call mpp_error(FATAL, "Could not find namelist "//Atm(n)%nml_filename)
         endif
      enddo
 
@@ -439,21 +444,10 @@ module fv_control_mod
 
      call set_namelist_pointers(Atm(this_grid))
      call fv_diag_init_gn(Atm(this_grid))
-#ifdef INTERNAL_FILE_NML
-     if (this_grid .gt. 1) then
-        write(Atm(this_grid)%nml_filename,'(A4, I2.2)') 'nest', this_grid
-        if (.not. file_exists('input_'//trim(Atm(this_grid)%nml_filename)//'.nml')) then
-           call mpp_error(FATAL, "Could not find nested grid namelist "//'input_'//trim(Atm(this_grid)%nml_filename)//'.nml')
-        endif
-     else
-        Atm(this_grid)%nml_filename = ''
-     endif
-     call read_input_nml(Atm(this_grid)%nml_filename) !re-reads into internal namelist
-#endif
+     call read_input_nml(alt_input_nml_path=Atm(this_grid)%nml_filename) !re-reads into internal namelist
      call read_namelist_fv_grid_nml
      call read_namelist_fv_core_nml(Atm(this_grid)) ! do options processing here too?
-     call read_namelist_test_case_nml(Atm(this_grid)%nml_filename)
-     !TODO test_case_nml moved to test_cases
+     call read_namelist_test_case_nml
      call mpp_get_current_pelist(Atm(this_grid)%pelist, commID=commID) ! for commID
      call mp_start(commID,halo_update_type)
 
@@ -472,6 +466,13 @@ module fv_control_mod
         endif
 
      endif
+
+
+      if (Atm(this_grid)%flagstruct%regional) then
+         if ( consv_te > 0.) then
+            call mpp_error(FATAL, 'The global energy fixer cannot be used on a regional grid. consv_te must be set to 0.')
+         end if
+      end if
 
      !Now only one call to mpp_define_nest_domains for ALL nests
      ! set up nest_level, tile_fine, tile_coarse
@@ -537,7 +538,8 @@ module fv_control_mod
           Atm(this_grid)%flagstruct%grid_type,Atm(this_grid)%neststruct%nested, &
           Atm(this_grid)%layout,Atm(this_grid)%io_layout,Atm(this_grid)%bd,Atm(this_grid)%tile_of_mosaic, &
           Atm(this_grid)%gridstruct%square_domain,Atm(this_grid)%npes_per_tile,Atm(this_grid)%domain, &
-          Atm(this_grid)%domain_for_coupler,Atm(this_grid)%num_contact,Atm(this_grid)%pelist)
+          Atm(this_grid)%domain_for_coupler,Atm(this_grid)%domain_for_read,Atm(this_grid)%num_contact, &
+          Atm(this_grid)%pelist)
      call broadcast_domains(Atm,Atm(this_grid)%pelist,size(Atm(this_grid)%pelist))
      do n=1,ngrids
         tile_id = mpp_get_tile_id(Atm(n)%domain)
@@ -647,7 +649,6 @@ module fv_control_mod
      !Initialize restart
      call fv_restart_init()
 
-
    contains
 
      subroutine set_namelist_pointers(Atm)
@@ -665,6 +666,7 @@ module fv_control_mod
        hord_tm                       => Atm%flagstruct%hord_tm
        hord_dp                       => Atm%flagstruct%hord_dp
        kord_tm                       => Atm%flagstruct%kord_tm
+       remap_te                      => Atm%flagstruct%remap_te
        hord_tr                       => Atm%flagstruct%hord_tr
        kord_tr                       => Atm%flagstruct%kord_tr
        scale_z                       => Atm%flagstruct%scale_z
@@ -711,7 +713,11 @@ module fv_control_mod
        target_lon                    => Atm%flagstruct%target_lon
        regional                      => Atm%flagstruct%regional
        bc_update_interval            => Atm%flagstruct%bc_update_interval
+       nrows_blend                   => Atm%flagstruct%nrows_blend
+       write_restart_with_bcs        => Atm%flagstruct%write_restart_with_bcs
+       regional_bcs_from_gsi         => Atm%flagstruct%regional_bcs_from_gsi
        reset_eta                     => Atm%flagstruct%reset_eta
+       ignore_rst_cksum              => Atm%flagstruct%ignore_rst_cksum
        p_fac                         => Atm%flagstruct%p_fac
        a_imp                         => Atm%flagstruct%a_imp
        n_split                       => Atm%flagstruct%n_split
@@ -761,17 +767,17 @@ module fv_control_mod
        adiabatic                     => Atm%flagstruct%adiabatic
        moist_phys                    => Atm%flagstruct%moist_phys
        do_Held_Suarez                => Atm%flagstruct%do_Held_Suarez
-       do_reed_physics               => Atm%flagstruct%do_reed_physics
-       reed_cond_only                => Atm%flagstruct%reed_cond_only
        reproduce_sum                 => Atm%flagstruct%reproduce_sum
        adjust_dry_mass               => Atm%flagstruct%adjust_dry_mass
        fv_debug                      => Atm%flagstruct%fv_debug
+       w_limiter                     => Atm%flagstruct%w_limiter
        srf_init                      => Atm%flagstruct%srf_init
        mountain                      => Atm%flagstruct%mountain
        remap_t                       => Atm%flagstruct%remap_t
        z_tracer                      => Atm%flagstruct%z_tracer
        old_divg_damp                 => Atm%flagstruct%old_divg_damp
        fv_land                       => Atm%flagstruct%fv_land
+       do_am4_remap                  => Atm%flagstruct%do_am4_remap
        nudge                         => Atm%flagstruct%nudge
        nudge_ic                      => Atm%flagstruct%nudge_ic
        ncep_ic                       => Atm%flagstruct%ncep_ic
@@ -830,6 +836,7 @@ module fv_control_mod
        write_only_coarse_intermediate_restarts => Atm%coarse_graining%write_only_coarse_intermediate_restarts
        write_coarse_agrid_vel_rst    => Atm%coarse_graining%write_coarse_agrid_vel_rst
        write_coarse_dgrid_vel_rst    => Atm%coarse_graining%write_coarse_dgrid_vel_rst
+       pass_full_omega_to_physics_in_non_hydrostatic_mode => Atm%flagstruct%pass_full_omega_to_physics_in_non_hydrostatic_mode
      end subroutine set_namelist_pointers
 
 
@@ -900,12 +907,13 @@ module fv_control_mod
             use_logp, p_fac, a_imp, k_split, n_split, m_split, q_split, print_freq, write_3d_diags, &
             do_schmidt, do_cube_transform, &
             hord_mt, hord_vt, hord_tm, hord_dp, hord_tr, shift_fac, stretch_fac, target_lat, target_lon, &
-            kord_mt, kord_wz, kord_tm, kord_tr, fv_debug, fv_land, nudge, do_sat_adj, do_inline_mp, do_f3d, &
+            kord_mt, kord_wz, kord_tm, kord_tr, remap_te, fv_debug, fv_land, &
+            do_am4_remap, nudge, do_sat_adj, do_inline_mp, do_f3d, &
             external_ic, read_increment, ncep_ic, nggps_ic, hrrrv3_ic, ecmwf_ic, use_new_ncep, use_ncep_phy, fv_diag_ic, &
             external_eta, res_latlon_dynamics, res_latlon_tracers, scale_z, w_max, z_min, lim_fac, &
             dddmp, d2_bg, d4_bg, vtdm4, trdm2, d_ext, delt_max, beta, non_ortho, n_sponge, &
             warm_start, adjust_dry_mass, mountain, d_con, ke_bg, nord, nord_tr, convert_ke, use_old_omega, &
-            dry_mass, grid_type, do_Held_Suarez, do_reed_physics, reed_cond_only, &
+            dry_mass, grid_type, do_Held_Suarez, &
             consv_te, fill, filter_phys, fill_dp, fill_wz, fill_gfs, consv_am, RF_fast, &
             range_warn, dwind_2d, inline_q, z_tracer, reproduce_sum, adiabatic, do_vort_damp, no_dycore,   &
             tau, tau_h2o, rf_cutoff, nf_omega, hydrostatic, fv_sg_adj, sg_cutoff, breed_vortex_inline,  &
@@ -916,12 +924,13 @@ module fv_control_mod
             phys_hydrostatic, use_hydro_pressure, make_hybrid_z, old_divg_damp, add_noise, &
             nested, twowaynest, nudge_qv, &
             nestbctype, nestupdate, nsponge, s_weight, &
-            check_negative, nudge_ic, halo_update_type, gfs_phil, agrid_vel_rst,     &
+            check_negative, nudge_ic, halo_update_type, gfs_phil, agrid_vel_rst, &
             do_uni_zfull, adj_mass_vmr, update_blend, regional,&
-            bc_update_interval, write_coarse_restart_files,&
-            write_coarse_diagnostics,&
+            bc_update_interval,  nrows_blend, write_restart_with_bcs, regional_bcs_from_gsi, &
+            w_limiter, write_coarse_restart_files, write_coarse_diagnostics,&
             write_only_coarse_intermediate_restarts, &
-            write_coarse_agrid_vel_rst, write_coarse_dgrid_vel_rst
+            write_coarse_agrid_vel_rst, write_coarse_dgrid_vel_rst, &
+            pass_full_omega_to_physics_in_non_hydrostatic_mode, ignore_rst_cksum
 
 
        ! Read FVCORE namelist
@@ -1028,7 +1037,6 @@ module fv_control_mod
 198    format(A,i2.2,A,i4.4,'x',i4.4,'x',i1.1,'-',f9.3)
 199    format(A,i3.3)
 
-       !if (.not. (nested .or. regional)) alpha = alpha*pi  !TODO for test_case_nml
 
        !allocate(Atm%neststruct%child_grids(size(Atm))) !TODO want to remove
        !Atm(N)%neststruct%child_grids = .false.

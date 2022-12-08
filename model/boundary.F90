@@ -10,7 +10,7 @@
 !* (at your option) any later version.
 !*
 !* The FV3 dynamical core is distributed in the hope that it will be
-!* useful, but WITHOUT ANYWARRANTY; without even the implied warranty
+!* useful, but WITHOUT ANY WARRANTY; without even the implied warranty
 !* of MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.
 !* See the GNU General Public License for more details.
 !*
@@ -18,6 +18,7 @@
 !* License along with the FV3 dynamical core.
 !* If not, see <http://www.gnu.org/licenses/>.
 !***********************************************************************
+
 module boundary_mod
 
   use fv_mp_mod,         only: is_master
@@ -29,7 +30,6 @@ module boundary_mod
   use mpp_domains_mod,    only: AGRID, BGRID_NE, CGRID_NE, DGRID_NE
   use mpp_mod,            only: mpp_error, FATAL, mpp_sum, mpp_sync, mpp_npes, mpp_broadcast, WARNING, mpp_pe
 
-  use fv_mp_mod,          only: mp_bcst
   use fv_arrays_mod,      only: fv_atmos_type, fv_nest_BC_type_3D, fv_grid_bounds_type
   use mpp_mod,            only: mpp_send, mpp_recv
   use fv_timing_mod,      only: timing_on, timing_off

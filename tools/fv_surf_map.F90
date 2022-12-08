@@ -10,7 +10,7 @@
 !* (at your option) any later version.
 !*
 !* The FV3 dynamical core is distributed in the hope that it will be
-!* useful, but WITHOUT ANYWARRANTY; without even the implied warranty
+!* useful, but WITHOUT ANY WARRANTY; without even the implied warranty
 !* of MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.
 !* See the GNU General Public License for more details.
 !*
@@ -18,6 +18,7 @@
 !* License along with the FV3 dynamical core.
 !* If not, see <http://www.gnu.org/licenses/>.
 !***********************************************************************
+
  module fv_surf_map_mod
 
       use fms_mod,           only: check_nml_error, stdlog, &
@@ -25,7 +26,7 @@
       use fms2_io_mod,       only: file_exists
       use mpp_mod,           only: get_unit, input_nml_file, mpp_error
       use mpp_domains_mod,   only: mpp_update_domains, domain2d
-      use constants_mod,     only: grav, radius, pi=>pi_8
+      use constants_mod,     only: grav, pi=>pi_8
 
       use fv_grid_utils_mod, only: great_circle_dist, latlon2xyz, v_prod, normalize_vect
       use fv_grid_utils_mod, only: g_sum, global_mx, vect_cross

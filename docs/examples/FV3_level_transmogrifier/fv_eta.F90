@@ -19,265 +19,41 @@
 !* If not, see <http://www.gnu.org/licenses/>.
 !***********************************************************************
 
+!Compiling at GFDL (your modules, shell, and compilers may vary)
+! source $MODULESHOME/init/bash
+! module load gcc
+! f2py3 -c -m fv_eta fv_eta.F90 -I.  2>&1 1> out #the -I. is for the include file
+
 module fv_eta_mod
- use constants_mod,  only: kappa, grav, cp_air, rdgas
- use fv_mp_mod,      only: is_master
- use fms_mod,        only: FATAL, error_mesg
- use fms2_io_mod,    only: ascii_read
  implicit none
- private
- public set_eta, set_external_eta, get_eta_level, compute_dz_var,  &
-        compute_dz_L32, compute_dz_L101, set_hybrid_z, compute_dz, &
-        gw_1d, sm1_edge, hybrid_z_dz
+ public
+
+ !using GFS constants
+ real, public, parameter :: PI     = 3.1415926535897931    !< Ratio of circle circumference to diameter [N/A]
+ real, public, parameter :: GRAV   = 9.80665     !< Acceleration due to gravity [m/s^2]
+ real, public, parameter :: RDGAS  = 287.05      !< Gas constant for dry air [J/kg/deg]
+ real, public, parameter :: RVGAS  = 461.50      !< Gas constant for water vapor [J/kg/deg]
+ real, public, parameter :: CP_AIR = 1004.6      !< Specific heat capacity of dry air at constant pressure [J/kg/deg]
+ real, public, parameter :: KAPPA  = RDGAS/CP_AIR        !< RDGAS / CP_AIR [dimensionless]
+ real, public, parameter :: TFREEZE = 273.15     !< Freezing temperature of fresh water [K]
+ real, public, parameter :: CP_VAPOR = 4.0*RVGAS !< Specific heat capacity of water vapor at constant pressure [J/kg/deg]
 
  contains
 
-!!!NOTE: USE_VAR_ETA not used in fvGFS
-!!! This routine will be kept here
-!!! for the time being to not disrupt idealized tests
-#ifdef USE_VAR_ETA
- subroutine set_eta(km, ks, ptop, ak, bk, npz_type)
-! This is the easy to use version of the set_eta
-      integer,  intent(in)::  km           ! vertical dimension
-      integer,  intent(out):: ks           ! number of pure p layers
-      real:: a60(61),b60(61)
-! The following L63 setting is the same as NCEP GFS's L64 except the top
-! 3 layers
-      data a60/300.0000,     430.00000,     558.00000,    &
-              700.00000,     863.05803,    1051.07995,    &
-             1265.75194,    1510.71101,    1790.05098,    &
-             2108.36604,    2470.78817,    2883.03811,    &
-             3351.46002,    3883.05187,    4485.49315,    &
-             5167.14603,    5937.04991,    6804.87379,    &
-             7780.84698,    8875.64338,   10100.20534,    &
-            11264.35673,   12190.64366,   12905.42546,    &
-            13430.87867,   13785.88765,   13986.77987,    &
-            14047.96335,   13982.46770,   13802.40331,    &
-            13519.33841,   13144.59486,   12689.45608,    &
-            12165.28766,   11583.57006,   10955.84778,    &
-            10293.60402,    9608.08306,    8910.07678,    &
-             8209.70131,    7516.18560,    6837.69250,    &
-             6181.19473,    5552.39653,    4955.72632,    &
-             4394.37629,    3870.38682,    3384.76586,    &
-             2937.63489,    2528.37666,    2155.78385,    &
-             1818.20722,    1513.68173,    1240.03585,    &
-              994.99144,     776.23591,     581.48797,    &
-              408.53400,     255.26520,     119.70243, 0. /
-
-      data b60/0.00000,       0.00000,       0.00000,    &
-               0.00000,       0.00000,       0.00000,    &
-               0.00000,       0.00000,       0.00000,    &
-               0.00000,       0.00000,       0.00000,    &
-               0.00000,       0.00000,       0.00000,    &
-               0.00000,       0.00000,       0.00000,    &
-               0.00000,       0.00000,       0.00000,    &
-               0.00201,       0.00792,       0.01755,    &
-               0.03079,       0.04751,       0.06761,    &
-               0.09097,       0.11746,       0.14690,    &
-               0.17911,       0.21382,       0.25076,    &
-               0.28960,       0.32994,       0.37140,    &
-               0.41353,       0.45589,       0.49806,    &
-               0.53961,       0.58015,       0.61935,    &
-               0.65692,       0.69261,       0.72625,    &
-               0.75773,       0.78698,       0.81398,    &
-               0.83876,       0.86138,       0.88192,    &
-               0.90050,       0.91722,       0.93223,    &
-               0.94565,       0.95762,       0.96827,    &
-               0.97771,       0.98608,       0.99347,  1./
-      real, intent(out):: ak(km+1)
-      real, intent(out):: bk(km+1)
-      real, intent(out):: ptop         ! model top (Pa)
-      character(24), intent(IN) :: npz_type
-      real pint, stretch_fac
-      integer  k
-      real :: s_rate = -1.0 ! dummy value to not use var_les
-
-      pint = 100.E2
-
-!- Notes ---------------------------------
-!  low-top:  ptop = 100.   ! ~45 km
-!  mid-top:  ptop = 10.    ! ~60 km
-!  hi -top:  ptop = 1.     ! ~80 km
-!-----------------------------------------
-      select case (km)
-
-! Optimal number = 8 * N -1 (for  8 openMP threads)
-!                 16 * M -1 (for 16 openMP threads)
-
-#ifdef HIWPP
-#ifdef SUPER_K
-        case (20)
-        ptop = 56.e2
-        pint = ptop
-        stretch_fac = 1.03
-        case (24)
-        ptop = 56.e2
-        pint = ptop
-        stretch_fac = 1.03
-        case (30)
-        ptop = 56.e2
-        pint = ptop
-        stretch_fac = 1.03
-        case (40)
-        ptop = 56.e2
-        pint = ptop
-        stretch_fac = 1.03
-        case (50)
-        ptop = 56.e2
-        pint = ptop
-        stretch_fac = 1.03
-        case (60)
-        ptop = 56.e2
-        pint = ptop
-        stretch_fac = 1.03
-        case (80)
-        ptop = 56.e2
-        pint = ptop
-        stretch_fac = 1.03
-#else
-        case (30)          ! For Baroclinic Instability Test
-             ptop = 2.26e2
-             pint = 250.E2
-             stretch_fac = 1.03
-        case (40)
-             ptop = 50.e2   ! For super cell test
-             pint = 300.E2
-             stretch_fac = 1.03
-        case (50)          ! Mountain waves?
-             ptop = 30.e2
-             stretch_fac = 1.025
-        case (60)          ! For Baroclinic Instability Test
-#ifdef GFSL60
-          ks = 20
-          ptop = a60(1)
-          pint = a60(ks+1)
-          do k=1,km+1
-            ak(k) = a60(k)
-            bk(k) = b60(k)
-          enddo
-#else
-!!!!!!!!!!! MERGING STOPPED HERE 13 oct 17 !!!!!!!!!!!!!!!!!
-             ptop = 3.e2
-!            pint = 250.E2
-             pint = 300.E2    ! revised for Moist test
-             stretch_fac = 1.03
-#endif
-#endif
-        case (64)
-!!!          ptop = 3.e2
-             ptop = 2.0e2
-             pint = 300.E2
-             stretch_fac = 1.03
-#else
-! *Very-low top: for idealized super-cell simulation:
-        case (50)
-             ptop = 50.e2
-             pint = 250.E2
-             stretch_fac = 1.03
-        case (60)
-             ptop = 40.e2
-             pint = 250.E2
-             stretch_fac = 1.03
-        case (90)          ! super-duper cell
-             ptop = 40.e2
-             stretch_fac = 1.025
-#endif
-! Low-top:
-        case (31)               ! N = 4, M=2
-             ptop = 100.
-             stretch_fac = 1.035
-        case (32)               ! N = 4, M=2
-             ptop = 100.
-             stretch_fac = 1.035
-        case (39)               ! N = 5
-             ptop = 100.
-             stretch_fac = 1.035
-        case (41)
-             ptop = 100.
-             stretch_fac = 1.035
-        case (47)               ! N = 6, M=3
-             ptop = 100.
-             stretch_fac = 1.035
-        case (51)
-             ptop = 100.
-             stretch_fac = 1.03
-        case (52)  ! very low top
-             ptop = 30.e2    ! for special DPM RCE experiments
-             stretch_fac = 1.03
-! Mid-top:
-        case (55)               ! N = 7
-             ptop = 10.
-             stretch_fac = 1.035
-! Hi-top:
-        case (63)               ! N = 8, M=4
-             ptop = 1.
-                                ! c360 or c384
-             stretch_fac = 1.035
-        case (71)               ! N = 9
-             ptop = 1.
-             stretch_fac = 1.03
-        case (79)               ! N = 10, M=5
-             ptop = 1.
-             stretch_fac = 1.03
-        case (127)               ! N = 10, M=5
-             ptop = 1.
-             stretch_fac = 1.03
-        case (151)
-           ptop = 75.e2
-           pint = 500.E2
-           s_rate = 1.01
-        case default
-             ptop = 1.
-             stretch_fac = 1.03
-      end select
-
-#ifdef MOUNTAIN_WAVES
-      call mount_waves(km, ak, bk, ptop, ks, pint)
-#else
-      if (s_rate > 0.) then
-           call var_les(km, ak, bk, ptop, ks, pint, s_rate)
-      else
-         if ( km > 79 ) then
-            call var_hi2(km, ak, bk, ptop, ks, pint, stretch_fac)
-         elseif (km==5 .or. km==10 ) then
-! Equivalent Shallow Water: for NGGPS, variable-resolution testing
-            ptop = 500.e2
-            ks = 0
-            do k=1,km+1
-               bk(k) = real(k-1) / real (km)
-               ak(k) = ptop*(1.-bk(k))
-            enddo
-         else
-#ifndef GFSL60
-            call var_hi(km, ak, bk, ptop, ks, pint, stretch_fac)
-#endif
-         endif
-#endif
-      endif
-
-      ptop = ak(1)
-      pint = ak(ks+1)
-
-      call check_eta_levels (ak, bk)
-
- end subroutine set_eta
-
-
-#else
  !This is the version of set_eta used in SHiELD and AM4
- subroutine set_eta(km, ks, ptop, ak, bk, npz_type,fv_eta_file)
+ subroutine set_eta(km, ak, bk, npz_type)
 
 !Level definitions are now in this header file
 #include <fv_eta.h>
 
    integer,  intent(in)::  km           ! vertical dimension
-   integer,  intent(out):: ks           ! number of pure p layers
    real, intent(out):: ak(km+1)
    real, intent(out):: bk(km+1)
-   real, intent(out):: ptop         ! model top (Pa)
    character(24), intent(IN) :: npz_type
-   character(120), intent(IN) :: fv_eta_file
    character(len=:), dimension(:), allocatable :: eta_level_unit
+
+   real :: ptop
+   integer :: ks
 
    real:: p0=1000.E2
    real:: pc=200.E2
@@ -336,25 +112,8 @@ module fv_eta_mod
 
    else if (trim(npz_type) == 'input') then
 ! Jili Dong add ak/bk input
-       call ascii_read (trim(fv_eta_file), eta_level_unit)
-       !--- fv_eta_file being read in must have the following format:
-       !       include a single line description
-       !       ak/bk pairs, with each pair occupying a single line
-       !       the pairs must be ordered from surface to TOA
-       !       the pairs define the levels of the grid to create levels-1 layers
-       if (size(eta_level_unit(:)) /= km+2) then
-          print *,' size is ', size(eta_level_unit(:))
-          call error_mesg ('FV3 set_eta',trim(fv_eta_file)//" has too few or too many entries or has extra &
-                          &spaces at the end of the file", FATAL)
-       endif
-       l = 1
-       read(eta_level_unit(l),*)
-       do k=km+1,1,-1
-          l = l + 1
-          read(eta_level_unit(l),*) ak(k),bk(k)
-       end do
-       deallocate (eta_level_unit)
-       call set_external_eta(ak, bk, ptop, ks)
+      print*, 'input type not supported'
+
    else
 
       select case (km)
@@ -804,8 +563,6 @@ module fv_eta_mod
 
 
  end subroutine set_eta
-#endif
-
 
  subroutine set_external_eta(ak, bk, ptop, ks)
    implicit none
@@ -1908,8 +1665,7 @@ module fv_eta_mod
           write(*,'(I4, F13.5, F13.5, F11.2)') k, ak(k), bk(k), ak(k) + bk(k)*1000.E2
        enddo
     endif
-    call error_mesg ('FV3 check_eta_levels',"ak/bk pairs do not provide a monotonic vertical coordinate", &
-                    & FATAL)
+    print*, 'FV3 check_eta_levels',"ak/bk pairs do not provide a monotonic vertical coordinate"
   endif
 
  end subroutine check_eta_levels
@@ -2554,5 +2310,9 @@ module fv_eta_mod
     end do
 
   end subroutine zflip
+
+  logical function is_master()
+    is_master = .false.
+  end function is_master
 
 end module fv_eta_mod

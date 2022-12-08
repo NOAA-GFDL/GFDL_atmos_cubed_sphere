@@ -1,10 +1,13 @@
 # FV3 Examples
 
-This directory contains Python (Jupyter) notebooks demonstrating basic FV3 capabilities, including characteristics of the solver, physics-dynamics coupling, output using FMS diag_manager, and basic analyses of the model output. The notebooks should all be viewable in any browser; you can also download any of them and use them in an up-to-date Python/Jupyter environment.
+This directory contains Python (Jupyter) notebooks demonstrating basic FV3 capabilities, including characteristics of the solver, physics-dynamics coupling, output using FMS `diag_manager`, and basic analyses of the model output. The notebooks should all be viewable in any browser; you can also download any of them and use them in an up-to-date Python/Jupyter environment.
 
 ## 1D Cases
 tp_core
 : 1D advection operators in FV3. This is designed to be an *interactive* notebook for downloading and playing with the options, initial conditions, zooms, and so on.
+
+fv3_level_transmogrifier
+: An *interactive* notebook that shows different hybrid-level setups within FV3, and allows detection of discontinuities within the levels that may cause errors or instabilities. The directory contains the notebook and its dependencies, including source for a Python-wrapped version of `set_eta()`. 
 
 ## 2D Global Shallow-water Cases
 RHwave
@@ -32,6 +35,9 @@ mtn_rest_100km
 
 TornadicSupercell
 : Global super-stretched grid with Toy semi-circle hodograph creating supercell thunderstorms with tornado-like vortices, demonstrating the importance of vorticity preservation at kilometer scales. See animations on [Google Drive](https://drive.google.com/drive/folders/1pVNAuKrYKwxVAlCdVa5faIVRBaK2hdVI) (noaa.gov only).
+
+HSzuritasuperrotation
+: The classic Held-Suarez idealized climate, with modifications from [Zurita-Gotor et al. (JAS, 2022)](https://journals.ametsoc.org/view/journals/atsc/79/5/JAS-D-21-0269.1.xml) to demonstrate superrotation. 
 
 ## 2D Periodic
 
