@@ -350,6 +350,7 @@ module fv_control_mod
      logical , pointer :: reproduce_sum
      logical , pointer :: adjust_dry_mass
      logical , pointer :: fv_debug
+     logical , pointer :: fv_timers
      logical , pointer :: srf_init
      logical , pointer :: mountain
      logical , pointer :: remap_t
@@ -905,6 +906,7 @@ module fv_control_mod
        reproduce_sum                 => Atm%flagstruct%reproduce_sum
        adjust_dry_mass               => Atm%flagstruct%adjust_dry_mass
        fv_debug                      => Atm%flagstruct%fv_debug
+       fv_timers                     => Atm%flagstruct%fv_timers
        srf_init                      => Atm%flagstruct%srf_init
        mountain                      => Atm%flagstruct%mountain
        remap_t                       => Atm%flagstruct%remap_t
@@ -1045,7 +1047,7 @@ module fv_control_mod
             use_logp, p_fac, a_imp, k_split, n_split, m_split, q_split, print_freq, write_3d_diags, &
             do_schmidt, do_cube_transform, &
             hord_mt, hord_vt, hord_tm, hord_dp, hord_tr, shift_fac, stretch_fac, target_lat, target_lon, &
-            kord_mt, kord_wz, kord_tm, kord_tr, fv_debug, fv_land, nudge, do_sat_adj, do_inline_mp, do_f3d, &
+            kord_mt, kord_wz, kord_tm, kord_tr, fv_debug, fv_timers, fv_land, nudge, do_sat_adj, do_inline_mp, do_f3d, &
             external_ic, read_increment, ncep_ic, nggps_ic, hrrrv3_ic, ecmwf_ic, use_new_ncep, use_ncep_phy, fv_diag_ic, &
             external_eta, res_latlon_dynamics, res_latlon_tracers, scale_z, w_max, z_min, lim_fac, &
             dddmp, d2_bg, d4_bg, vtdm4, trdm2, d_ext, delt_max, beta, non_ortho, n_sponge, &

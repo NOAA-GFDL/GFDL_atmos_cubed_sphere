@@ -748,6 +748,8 @@ module fv_arrays_mod
                                           !< is recommended to only set this to .true. when initializing the model.
    logical :: fv_debug  = .false.  !< Whether to turn on additional diagnostics in fv_dynamics.
                                    !< The default is .false.
+   logical :: fv_timers  = .false. !< Whether to turn on performance metering timers in the dycore and moving nest
+                                   !< The default is .false.
    logical :: srf_init  = .false.
    logical :: mountain  = .true.  !< Takes topography into account when initializing the
                                   !< model. Set this to .true. to apply the terrain filter (if n_zs_filter = 2

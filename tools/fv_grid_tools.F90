@@ -606,11 +606,13 @@ contains
 
     logical, save       :: first_time = .true.
     integer, save       :: id_timer1, id_timer2, id_timer3, id_timer3a, id_timer3b, id_timer4, id_timer5, id_timer6, id_timer7, id_timer8
-    logical             :: use_timer = .True.  ! Set to True for detailed performance profiling
+    logical             :: use_timer   ! Set to True for detailed performance profiling, from fv_timers in namelist
     logical             :: debug_log = .false.
     integer             :: this_pe
 
     this_pe = mpp_pe()
+
+    use_timer = Atm%flagstruct%fv_timers
 
     if (first_time) then
        if (use_timer) then
@@ -1554,8 +1556,6 @@ contains
 
       this_pe = mpp_pe()
 
-      if (debug_log) print '("[INFO] Filling out_grid(",I0,"-",I0,",",I0,"-",I0,",1-2,1) in compute_nest_points fv_grid_tools.F90. npe=",I0)', range_x(1), range_x(2), range_y(1), range_y(2), this_pe
-
       do j=range_y(1), range_y(2)
          jc = joffset + (j-1)/refinement !int( real(j-1) / real(refinement) )
          jmod = mod(j-1,refinement)
@@ -2152,8 +2152,6 @@ contains
 
          ! End calculate shifted version of global_grid
          !  Validate that they match
-
-         if (debug_log) print '("[INFO] Filling grid_global(",I0,"-",I0,",",I0,"-",I0,",1-2,1) in setup_aligned_grid fv_grid_tools.F90. npe=",I0)', 1-ng, npx+ng, 1-ng, npy+ng, this_pe
 
          if (first_time) then
       ! Generate grid global and parent_grid indices
