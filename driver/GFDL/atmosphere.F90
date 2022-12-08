@@ -582,8 +582,15 @@ contains
    if ( any((/ id_qdt_dyn, id_qldt_dyn, id_qidt_dyn, id_qadt_dyn /) > 0) .or. &
         query_cmip_diag_id(ID_tnhusa) ) qtend(:, :, :, 1:4) = Atm(mygrid)%q (isc:iec, jsc:jec, :, 1:4)
 
-   mw_air_store = Mw_air(sum(Atm(mygrid)%q(isc:iec,jsc:jec,:,1:3),dim=4)) !g/mol
+   mw_air_store = Mw_air(Atm(mygrid)%q (isc:iec, jsc:jec, :, sphum)   + &
+                         Atm(mygrid)%q (isc:iec, jsc:jec, :, liq_wat) + &
+                         Atm(mygrid)%q (isc:iec, jsc:jec, :, ice_wat)) !g/mol
 
+   do itrac = 1, num_tracers
+     if (id_tracerdt_dyn (itrac) >0 ) &
+          qtendyyf(:,:,:,itrac) = Atm(mygrid)%q(isc:iec,jsc:jec,:,itrac)
+   end do
+  
    !convert vmr tracers to mmr tracers before dynamics
    if (Atm(mygrid)%flagstruct%adj_mass_vmr .eq. 2) then
       do itrac = 1, num_tracers
@@ -594,8 +601,6 @@ contains
    end if
    
    do itrac = 1, num_tracers
-     if (id_tracerdt_dyn (itrac) >0 ) &
-          qtendyyf(:,:,:,itrac) = Atm(mygrid)%q(isc:iec,jsc:jec,:,itrac)
      if (id_tracerdt_dyn_dp (itrac) >0 ) then
         qtendyyf_dp(:,:,:,itrac) = Atm(mygrid)%q(isc:iec,jsc:jec,:,itrac)*Atm(mygrid)%delp(isc:iec,jsc:jec,:)/grav
      end if
@@ -668,10 +673,19 @@ contains
                   used = send_cmip_data_3d (ID_tnhusa, (Atm(mygrid)%q(isc:iec,jsc:jec,:,sphum)-qtend(:,:,:,sphum))/dt_atmos, Time)
 !miz
 
+   mw_air_store = Mw_air(Atm(mygrid)%q (isc:iec, jsc:jec, :, sphum)   + &
+                         Atm(mygrid)%q (isc:iec, jsc:jec, :, liq_wat) + &
+                         Atm(mygrid)%q (isc:iec, jsc:jec, :, ice_wat)) !g/mol
+   
    do itrac = 1, num_tracers
-     if(id_tracerdt_dyn(itrac)>0) then
-       qtendyyf(:,:,:,itrac) = (Atm(mygrid)%q (isc:iec, jsc:jec, :,itrac)-  &
-                                qtendyyf(:,:,:,itrac))/dt_atmos
+      if(id_tracerdt_dyn(itrac)>0) then
+         if (is_vmr(itrac) .and. Atm(mygrid)%flagstruct%adj_mass_vmr.eq. 2 ) then         !if adj_mass_vmr == 1, no conversion to mmr is done, so do not convert
+            qtendyyf(:,:,:,itrac) = (Atm(mygrid)%q (isc:iec, jsc:jec, :,itrac)*mw_air_store -  &
+                 qtendyyf(:,:,:,itrac))/dt_atmos
+         else
+            qtendyyf(:,:,:,itrac) = (Atm(mygrid)%q (isc:iec, jsc:jec, :,itrac) -  &
+                 qtendyyf(:,:,:,itrac))/dt_atmos
+         end if
        used = send_data(id_tracerdt_dyn(itrac), qtendyyf(:,:,:,itrac), Time)
      endif
 
@@ -720,8 +734,11 @@ contains
    endif
 
    !convert back to vmr if needed
-   if (Atm(mygrid)%flagstruct%adj_mass_vmr.eq. 2) then      
-      mw_air_store = Mw_air(sum(Atm(mygrid)%q(isc:iec,jsc:jec,:,1:3),dim=4))
+   if (Atm(mygrid)%flagstruct%adj_mass_vmr.eq. 2) then
+      mw_air_store = Mw_air(Atm(mygrid)%q (isc:iec, jsc:jec, :, sphum)   + &
+                            Atm(mygrid)%q (isc:iec, jsc:jec, :, liq_wat) + &
+                            Atm(mygrid)%q (isc:iec, jsc:jec, :, ice_wat)) !g/mol
+      
       do itrac = 1, num_tracers
          if (is_vmr(itrac)) then
             Atm(mygrid)%q(isc:iec,jsc:jec,:,itrac) = Atm(mygrid)%q(isc:iec,jsc:jec,:,itrac)*mw_air_store 
