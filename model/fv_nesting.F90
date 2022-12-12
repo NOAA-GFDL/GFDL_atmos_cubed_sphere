@@ -118,7 +118,11 @@ module fv_nesting_mod
    use fv_arrays_mod,       only: allocate_fv_nest_BC_type, fv_atmos_type, fv_grid_bounds_type, deallocate_fv_nest_BC_type
    use fv_grid_utils_mod,   only: ptop_min, g_sum, cubed_to_latlon, f_p
    use init_hydro_mod,      only: p_var
+#ifdef OVERLOAD_R4
+   use constantsR4_mod,       only: grav, pi=>pi_8, radius, hlv, rdgas, cp_air, rvgas, cp_vapor, kappa
+#else
    use constants_mod,       only: grav, pi=>pi_8, radius, hlv, rdgas, cp_air, rvgas, cp_vapor, kappa
+#endif
    use fv_mapz_mod,         only: mappm, remap_2d
    use fv_timing_mod,       only: timing_on, timing_off
    use fv_mp_mod,           only: is_master
