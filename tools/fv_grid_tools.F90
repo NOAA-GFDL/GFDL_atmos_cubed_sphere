@@ -605,19 +605,22 @@ contains
     !  Setup timing variables
 
     logical, save       :: first_time = .true.
-    integer, save       :: id_timer1, id_timer2, id_timer3, id_timer3a, id_timer4, id_timer5, id_timer6, id_timer7, id_timer8
-    logical             :: use_timer = .false.  ! Set to True for detailed performance profiling
+    integer, save       :: id_timer1, id_timer2, id_timer3, id_timer3a, id_timer3b, id_timer4, id_timer5, id_timer6, id_timer7, id_timer8
+    logical             :: use_timer   ! Set to True for detailed performance profiling, from fv_timers in namelist
     logical             :: debug_log = .false.
     integer             :: this_pe
 
     this_pe = mpp_pe()
+
+    use_timer = Atm%flagstruct%fv_timers
 
     if (first_time) then
        if (use_timer) then
           id_timer1     = mpp_clock_id ('init_grid Step 1',  flags = clock_flag_default, grain=CLOCK_ROUTINE )
           id_timer2     = mpp_clock_id ('init_grid Step 2',  flags = clock_flag_default, grain=CLOCK_ROUTINE )
           id_timer3     = mpp_clock_id ('init_grid Step 3',  flags = clock_flag_default, grain=CLOCK_ROUTINE )
-          id_timer3a    = mpp_clock_id ('init_grid Step 3a',  flags = clock_flag_default, grain=CLOCK_ROUTINE )
+          id_timer3a    = mpp_clock_id ('init_grid Step 3a read_grid',  flags = clock_flag_default, grain=CLOCK_ROUTINE )
+          id_timer3b    = mpp_clock_id ('init_grid Step 3b setup_aligned_nest',  flags = clock_flag_default, grain=CLOCK_ROUTINE )
           id_timer4     = mpp_clock_id ('init_grid Step 4',  flags = clock_flag_default, grain=CLOCK_ROUTINE )
           id_timer5     = mpp_clock_id ('init_grid Step 5',  flags = clock_flag_default, grain=CLOCK_ROUTINE )
           id_timer6     = mpp_clock_id ('init_grid Step 6',  flags = clock_flag_default, grain=CLOCK_ROUTINE )
@@ -677,10 +680,8 @@ contains
     e2     => Atm%gridstruct%e2
 
     if (Atm%neststruct%nested .or. ANY(Atm%neststruct%child_grids)) then
-       if (debug_log) print '("[INFO] WDR grid_global => Atm%grid_global in init_grid fv_grid_tools.F90. npe=",I0)', this_pe
         grid_global => Atm%grid_global
     else if( trim(grid_file) .EQ. 'Inline') then
-       if (debug_log) print '("[INFO] WDR inline, allocating grid_global in init_grid fv_grid_tools.F90. npe=",I0)', this_pe
        allocate(grid_global(1-ng:npx  +ng,1-ng:npy  +ng,ndims,1:nregions))
     endif
 
@@ -741,15 +742,17 @@ contains
           if (Atm%neststruct%nested) then
              !Read grid if it exists
 
-             if (use_timer) call mpp_clock_begin (id_timer3a)
              if (Atm%flagstruct%grid_type < 0) then
+                if (use_timer) call mpp_clock_begin (id_timer3a)
                 !Note that read_grid only reads in grid corners. Will still need to compute all other grid metrics.
                 !NOTE: cannot currently read in mosaic for both coarse and nested grids simultaneously
                 call read_grid(Atm, grid_file, ndims, 1, ng)
+                if (use_timer) call mpp_clock_end (id_timer3a)
              endif
              ! still need to set up weights
+             if (use_timer) call mpp_clock_begin (id_timer3b)
              call setup_aligned_nest(Atm)
-             if (use_timer) call mpp_clock_end (id_timer3a)
+             if (use_timer) call mpp_clock_end (id_timer3b)
 
           else
              if(trim(grid_file) .NE. 'Inline' .or. Atm%flagstruct%grid_type < 0) then
@@ -1553,8 +1556,6 @@ contains
 
       this_pe = mpp_pe()
 
-      if (debug_log) print '("[INFO] Filling out_grid(",I0,"-",I0,",",I0,"-",I0,",1-2,1) in compute_nest_points fv_grid_tools.F90. npe=",I0)', range_x(1), range_x(2), range_y(1), range_y(2), this_pe
-
       do j=range_y(1), range_y(2)
          jc = joffset + (j-1)/refinement !int( real(j-1) / real(refinement) )
          jmod = mod(j-1,refinement)
@@ -2050,8 +2051,6 @@ contains
          delta_j_c = joffset - prev_joffset
       end if
 
-      if (debug_log) print '("[INFO] WDR setup_aligned_nest fv_grid_tools.F90. npe=",I0," delta_i_c=",I0," delta_j_c=",I0," ioffset=",I0," joffset=",I0)', this_pe, delta_i_c, delta_j_c, ioffset, joffset
-
       call mpp_get_data_domain( Atm%parent_grid%domain, &
            isd_p,  ied_p,  jsd_p,  jed_p  )
       call mpp_get_global_domain( Atm%parent_grid%domain, &
@@ -2110,25 +2109,13 @@ contains
               lbound(grid_global,3):ubound(grid_global,3), &
               lbound(grid_global,4):ubound(grid_global,4) ) )
 
-         if (debug_log) print '("[INFO] WDR bounds grid_global setup_nest_grid npe=",I0," grid_global(",I0,"-",I0,",",I0,"-",I0,",",I0,"-",I0,",",I0,"-",I0,")")', this_pe, lbound(grid_global,1), ubound(grid_global,1), &
-              lbound(grid_global,2), ubound(grid_global,2), &
-              lbound(grid_global,3), ubound(grid_global,3), &
-              lbound(grid_global,4), ubound(grid_global,4)
-
-         if (debug_log) print '("[INFO] WDR bounds out_grid setup_nest_grid npe=",I0," out_grid(",I0,"-",I0,",",I0,"-",I0,",",I0,"-",I0,",",I0,"-",I0,")")', this_pe, lbound(out_grid,1), ubound(out_grid,1), &
-              lbound(out_grid,2), ubound(out_grid,2), &
-              lbound(out_grid,3), ubound(out_grid,3), &
-              lbound(out_grid,4), ubound(out_grid,4)
-
          out_grid = grid_global
 
          if ( delta_i_c .ne. 0 ) then
-            if (debug_log) print '("[INFO] setup_nest_grid EOSHIFT delta_i_c=",I0," start. npe=",I0)', delta_i_c, this_pe
             out_grid = eoshift(out_grid, refinement * delta_i_c, DIM=1)
          end if
 
          if (delta_j_c .ne.  0) then
-            if (debug_log) print '("[INFO] setup_nest_grid EOSHIFT delta_j_c=",I0," start. npe=",I0)', delta_j_c, this_pe
             out_grid = eoshift(out_grid, refinement * delta_j_c, DIM=2)
          end if
 
@@ -2165,8 +2152,6 @@ contains
 
          ! End calculate shifted version of global_grid
          !  Validate that they match
-
-         if (debug_log) print '("[INFO] Filling grid_global(",I0,"-",I0,",",I0,"-",I0,",1-2,1) in setup_aligned_grid fv_grid_tools.F90. npe=",I0)', 1-ng, npx+ng, 1-ng, npy+ng, this_pe
 
          if (first_time) then
       ! Generate grid global and parent_grid indices
