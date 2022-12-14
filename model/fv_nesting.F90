@@ -159,13 +159,6 @@ subroutine dealloc_nested_buffers(Atm)
 
   integer :: n, ncnst
   !logical :: dummy = .false.
-  logical :: debug_log = .false.
-
-  integer :: this_pe
-
-  this_pe = mpp_pe()
-
-  if (debug_log) print '("[INFO] WDR NBC deallocating buffers fv_nesting.F90 npe=",I0)', this_pe
 
   call deallocate_fv_nest_BC_type(u_buf)
   call deallocate_fv_nest_BC_type(v_buf)

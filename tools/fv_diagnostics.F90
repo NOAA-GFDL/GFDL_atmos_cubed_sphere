@@ -254,8 +254,6 @@ contains
     isc = Atm(n)%bd%isc; iec = Atm(n)%bd%iec
     jsc = Atm(n)%bd%jsc; jec = Atm(n)%bd%jec
 
-    !print '("[INFO] WDR fv_diag_reinit npe=",I0," i=",I0,"-",I0," j=",I0,"-",I0)', this_pe, isc, iec, jsc, jec
-
     ginv = 1./GRAV
 
     do j=jsc,jec
