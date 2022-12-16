@@ -223,6 +223,8 @@ if(OPENMP)
   target_link_libraries(fv3 PUBLIC OpenMP::OpenMP_Fortran)
 endif()
 
+target_link_libraries(fv3 PUBLIC NetCDF::NetCDF_C NetCDF::NetCDF_Fortran)
+
 # Install compiled Fortran module files
 install(DIRECTORY ${CMAKE_CURRENT_BINARY_DIR}/include DESTINATION ${CMAKE_INSTALL_PREFIX})
 
