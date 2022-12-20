@@ -161,11 +161,6 @@ module fv_control_mod
    use molecular_diffusion_mod,     only: molecular_diffusion_init, &
                                           read_namelist_molecular_diffusion_nml
 
-#ifdef MOVING_NEST
-   use fv_moving_nest_types_mod, only: fv_moving_nest_init, deallocate_fv_moving_nests
-   use fv_tracker_mod,           only: deallocate_tracker
-#endif
-
    implicit none
    private
 
@@ -355,6 +350,7 @@ module fv_control_mod
      logical , pointer :: reproduce_sum
      logical , pointer :: adjust_dry_mass
      logical , pointer :: fv_debug
+     logical , pointer :: fv_timers
      logical , pointer :: srf_init
      logical , pointer :: mountain
      logical , pointer :: remap_t
@@ -541,13 +537,6 @@ module fv_control_mod
            Atm(n)%neststruct%refinement             = -1
         endif
      enddo
-
-#ifdef MOVING_NEST
-     ! This has to be called on the input.nml namelist for all PEs
-     !   input_nest02.nml does not have any of the moving nest parameters
-     !   Later call to read_input_nml changes which namelist is used
-     call fv_moving_nest_init(Atm)
-#endif
 
      if (pecounter /= npes) then
         if (mpp_pe() == 0) then
@@ -917,6 +906,7 @@ module fv_control_mod
        reproduce_sum                 => Atm%flagstruct%reproduce_sum
        adjust_dry_mass               => Atm%flagstruct%adjust_dry_mass
        fv_debug                      => Atm%flagstruct%fv_debug
+       fv_timers                     => Atm%flagstruct%fv_timers
        srf_init                      => Atm%flagstruct%srf_init
        mountain                      => Atm%flagstruct%mountain
        remap_t                       => Atm%flagstruct%remap_t
@@ -1057,7 +1047,7 @@ module fv_control_mod
             use_logp, p_fac, a_imp, k_split, n_split, m_split, q_split, print_freq, write_3d_diags, &
             do_schmidt, do_cube_transform, &
             hord_mt, hord_vt, hord_tm, hord_dp, hord_tr, shift_fac, stretch_fac, target_lat, target_lon, &
-            kord_mt, kord_wz, kord_tm, kord_tr, fv_debug, fv_land, nudge, do_sat_adj, do_inline_mp, do_f3d, &
+            kord_mt, kord_wz, kord_tm, kord_tr, fv_debug, fv_timers, fv_land, nudge, do_sat_adj, do_inline_mp, do_f3d, &
             external_ic, read_increment, ncep_ic, nggps_ic, hrrrv3_ic, ecmwf_ic, use_new_ncep, use_ncep_phy, fv_diag_ic, &
             external_eta, res_latlon_dynamics, res_latlon_tracers, scale_z, w_max, z_min, lim_fac, &
             dddmp, d2_bg, d4_bg, vtdm4, trdm2, d_ext, delt_max, beta, non_ortho, n_sponge, &
@@ -1336,11 +1326,6 @@ module fv_control_mod
        call deallocate_fv_atmos_type(Atm(n))
        call deallocate_coarse_restart_type(Atm(n)%coarse_graining%restart)
     end do
-
-#ifdef MOVING_NEST
-    call deallocate_fv_moving_nests(ngrids)
-    call deallocate_tracker(ngrids)
-#endif
 
  end subroutine fv_end
 !-------------------------------------------------------------------------------

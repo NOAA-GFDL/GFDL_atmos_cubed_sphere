@@ -902,8 +902,9 @@
 
 #ifndef MOVING_NEST
 ! WDR Need to use these arrays again if moving the nest
-!     So don't deallocate them.
+!     So don't want to deallocate them here.
 !     TODO clean them up at end of model run for completeness
+! These are deallocated in fv_moving_nest_main.F90::moving_nest_end()
 
 !--- deallocate the higher-order gridstruct arrays
 !rab      deallocate ( Atm%gridstruct%grid_64 )
