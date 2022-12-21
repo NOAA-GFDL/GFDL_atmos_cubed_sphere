@@ -1196,7 +1196,8 @@ contains
     real    tvm
     real    :: zvir, rrg, ginv
 #ifdef USE_COND
-    real, dimension(size(pe,1),size(pe,3),size(pe,2):: peg, pelng
+    real    dlg
+    real, dimension(size(pe,1),size(pe,3),size(pe,2)):: peg, pelng
 #endif
 
     isiz=size(phis,1)
