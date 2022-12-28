@@ -54,17 +54,9 @@ endif()
 
 if(NOT FMS_FOUND)
   find_package(FMS REQUIRED COMPONENTS ${kind})
-  add_library(fms ALIAS FMS::fms_${kind})
+  string(TOLOWER ${kind} kind_lower)
+  add_library(fms ALIAS FMS::fms_${kind_lower})
 endif()
-
-list(APPEND moving_srcs
-  moving_nest/bounding_box.F90
-  moving_nest/fv_tracker.F90
-  moving_nest/fv_moving_nest.F90
-  moving_nest/fv_moving_nest_main.F90
-  moving_nest/fv_moving_nest_physics.F90
-  moving_nest/fv_moving_nest_types.F90
-  moving_nest/fv_moving_nest_utils.F90)
 
 list(APPEND model_srcs
   model/a2b_edge.F90
@@ -120,7 +112,6 @@ list(APPEND driver_srcs
   driver/fvGFS/atmosphere.F90)
 
 list(APPEND fv3_srcs ${model_srcs}
-                     ${moving_srcs}
                      ${tools_srcs})
 
 list(APPEND fv3_defs SPMD
@@ -189,7 +180,7 @@ set_property(SOURCE model/fv_mapz.F90  APPEND_STRING PROPERTY COMPILE_FLAGS "${F
 set_property(SOURCE tools/fv_diagnostics.F90  APPEND_STRING PROPERTY COMPILE_FLAGS "-O0")
 
 set_target_properties(fv3 PROPERTIES Fortran_MODULE_DIRECTORY ${CMAKE_CURRENT_BINARY_DIR}/include/fv3)
-target_include_directories(fv3 INTERFACE $<BUILD_INTERFACE:${CMAKE_CURRENT_BINARY_DIR}/include/fv3>
+target_include_directories(fv3 PUBLIC $<BUILD_INTERFACE:${CMAKE_CURRENT_BINARY_DIR}/include/fv3>
                                          $<INSTALL_INTERFACE:include/fv3>)
 
 target_include_directories(fv3 PRIVATE ${CMAKE_CURRENT_SOURCE_DIR}

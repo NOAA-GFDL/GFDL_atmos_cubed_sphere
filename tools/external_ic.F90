@@ -158,8 +158,12 @@ module external_ic_mod
    use tracer_manager_mod, only: get_tracer_names, get_number_tracers, get_tracer_index
    use tracer_manager_mod, only: set_tracer_profile
    use field_manager_mod,  only: MODEL_ATMOS
-
+   use platform_mod,       only: r4_kind, r8_kind
+#ifdef OVERLOAD_R4
+   use constantsR4_mod,     only: pi=>pi_8, omega, grav, kappa, rdgas, rvgas, cp_air
+#else
    use constants_mod,     only: pi=>pi_8, omega, grav, kappa, rdgas, rvgas, cp_air
+#endif
    use fv_arrays_mod,     only: fv_atmos_type, fv_grid_type, fv_grid_bounds_type, R_GRID
    use fv_diagnostics_mod,only: prt_maxmin, prt_gb_nh_sh, prt_height
    use fv_grid_utils_mod, only: ptop_min, g_sum,mid_pt_sphere,get_unit_vect2,get_latlon_vector,inner_prod
@@ -202,7 +206,7 @@ module external_ic_mod
 ! Include variable "version" to be written to log file.
 #include<file_version.h>
 
-   public get_external_ic, get_cubed_sphere_terrain
+   public get_external_ic, get_cubed_sphere_terrain, remap_scalar, remap_dwinds
 
 contains
 
@@ -1648,7 +1652,7 @@ contains
         call ncep2fms(im, jm, lon, lat, wk2)
         if( is_master() ) then
           write(*,*) 'External_ic_mod: i_sst=', i_sst, ' j_sst=', j_sst
-          call pmaxmin( 'SST_ncep_fms',  sst_ncep, i_sst, j_sst, 1.)
+          call pmaxmin( 'SST_ncep_fms',  real(sst_ncep), i_sst, j_sst, 1.)
         endif
 #endif
       endif  !(read_ts)
@@ -4170,8 +4174,6 @@ contains
 
   end subroutine d2a3d
 
-
-
   subroutine pmaxmin( qname, a, im, jm, fac )
 
       integer, intent(in):: im, jm
@@ -4207,7 +4209,7 @@ contains
 
  end subroutine pmaxmin
 
-subroutine pmaxmn(qname, q, is, ie, js, je, km, fac, area, domain)
+ subroutine pmaxmn(qname, q, is, ie, js, je, km, fac, area, domain)
       character(len=*), intent(in)::  qname
       integer, intent(in):: is, ie, js, je
       integer, intent(in):: km
