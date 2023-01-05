@@ -196,7 +196,7 @@ module external_ic_mod
    real, parameter:: zvir = rvgas/rdgas - 1.
    real(kind=R_GRID), parameter :: cnst_0p20=0.20d0
    real, parameter :: deg2rad = pi/180.
-   logical :: data_source_fv3gfs
+   logical, public :: data_source_fv3gfs
 
 ! version number of this module
 ! Include variable "version" to be written to log file.
