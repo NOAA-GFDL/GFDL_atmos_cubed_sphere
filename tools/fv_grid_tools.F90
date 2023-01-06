@@ -184,7 +184,7 @@ contains
     real, allocatable, dimension(:,:)  :: tmpx, tmpy
     real(kind=R_GRID), pointer, dimension(:,:,:)    :: grid
     character(len=128)                 :: units = ""
-    character(len=256)                 :: atm_mosaic, atm_hgrid, grid_form
+    character(len=256)                 :: atm_mosaic, atm_hgrid, grid_form, gridfiles_path
     character(len=1024)                :: attvalue
     integer                            :: ntiles, i, j, stdunit
     integer                            :: isc2, iec2, jsc2, jec2
@@ -222,10 +222,22 @@ contains
        else
           atm_mosaic = trim(grid_file)
        endif
+
+       ! Option to have a path that is /gridfiles_path/INPUT/CXXX_grid.tileY.nc instead of just INPUT/CXXX_grid.tileY.nc
+       if(variable_exists(Grid_input, 'gridfiles_path') ) then
+         call read_data(Grid_input, "gridfiles_path", gridfiles_path)
+         gridfiles_path = trim(gridfiles_path)//"/"  ! Just incase it doesn't end in a slash
+       else
+         gridfiles_path = ''
+       endif
+
        call close_file(Grid_input)
     endif
 
     call get_mosaic_tile_grid(atm_hgrid, atm_mosaic, Atm%domain)
+
+    ! Add optional path to the atm_hgrid path
+    atm_hgrid = trim(gridfiles_path)//trim(atm_hgrid)
 
     grid_form = "none"
     if (open_file(Grid_input, atm_hgrid, "read")) then
