@@ -97,7 +97,11 @@
 !   </tr>
 ! </table>
 
+#ifdef OVERLOAD_R4
+      use constantsR4_mod,     only: cnst_radius=>radius, pi=>pi_8, omega, grav, kappa, rdgas, cp_air, rvgas
+#else
       use constants_mod,     only: cnst_radius=>radius, pi=>pi_8, omega, grav, kappa, rdgas, cp_air, rvgas
+#endif
       use init_hydro_mod,    only: p_var, hydro_eq
       use fv_mp_mod,         only: is_master,        &
                                    domain_decomp, fill_corners, XDir, YDir, &

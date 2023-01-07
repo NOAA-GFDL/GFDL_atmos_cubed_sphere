@@ -59,15 +59,6 @@ if(NOT FMS_FOUND)
   add_library(fms ALIAS FMS::fms_${kind_lower})
 endif()
 
-list(APPEND moving_srcs
-  moving_nest/bounding_box.F90
-  moving_nest/fv_tracker.F90
-  moving_nest/fv_moving_nest.F90
-  moving_nest/fv_moving_nest_main.F90
-  moving_nest/fv_moving_nest_physics.F90
-  moving_nest/fv_moving_nest_types.F90
-  moving_nest/fv_moving_nest_utils.F90)
-
 list(APPEND model_srcs
   model/a2b_edge.F90
   model/multi_gases.F90
@@ -122,7 +113,6 @@ list(APPEND driver_srcs
   driver/fvGFS/atmosphere.F90)
 
 list(APPEND fv3_srcs ${model_srcs}
-                     ${moving_srcs}
                      ${tools_srcs})
 
 list(APPEND fv3_defs SPMD
