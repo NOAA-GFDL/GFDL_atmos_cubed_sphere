@@ -72,7 +72,7 @@ use fv_control_mod,     only: fv_control_init, fv_end, ngrids
 use fv_eta_mod,         only: get_eta_level
 use fv_dynamics_mod,    only: fv_dynamics
 use fv_nesting_mod,     only: twoway_nesting
-use fv_diagnostics_mod, only: fv_diag_init, fv_diag, fv_time, prt_maxmin, prt_height
+use fv_diagnostics_mod, only: fv_diag_init, fv_diag, fv_time, prt_maxmin, prt_height, Mw_air!_3d
 use fv_cmip_diag_mod,   only: fv_cmip_diag_init, fv_cmip_diag, fv_cmip_diag_end
 use fv_restart_mod,     only: fv_restart, fv_write_restart
 use fv_timing_mod,      only: timing_on, timing_off
@@ -141,7 +141,7 @@ character(len=20)   :: mod_name = 'GFDL/atmosphere_mod'
   integer :: id_dynam, id_fv_diag, id_subgridz
   logical :: cold_start = .false.       ! read in initial condition
 
-  integer, dimension(:), allocatable :: id_tracerdt_dyn
+  integer, dimension(:), allocatable :: id_tracerdt_dyn, id_tracer, id_tracerdt_dyn_dp
   integer :: num_tracers = 0
 
 !miz
@@ -150,9 +150,9 @@ character(len=20)   :: mod_name = 'GFDL/atmosphere_mod'
   integer :: id_udt_dyn, id_vdt_dyn, id_tdt_dyn, id_qdt_dyn
   integer :: id_qldt_dyn, id_qidt_dyn, id_qadt_dyn
   logical :: used
-  character(len=64) :: field
+  character(len=64) :: field  
   real, allocatable :: ttend(:,:,:)
-  real, allocatable :: qtendyyf(:,:,:,:)
+  real, allocatable :: qtendyyf(:,:,:,:), qtendyyf_dp(:,:,:,:), mw_air_store(:,:,:)
   real, allocatable :: qtend(:,:,:,:)
   real              :: mv = -1.e10   ! missing value for diagnostics
   integer :: sphum, liq_wat, rainwat, ice_wat, snowwat, graupel  !condensate species
@@ -177,7 +177,9 @@ character(len=20)   :: mod_name = 'GFDL/atmosphere_mod'
    logical :: do_adiabatic_init
 #endif
 
-  integer, parameter :: kind_phys=8
+   integer, parameter :: kind_phys=8
+
+   logical, allocatable :: is_vmr(:)
 
 contains
 
@@ -417,6 +419,9 @@ contains
 !miz
 !---allocate id_tracer_*
    allocate (id_tracerdt_dyn    (num_tracers))
+   allocate (id_tracerdt_dyn_dp (num_tracers))
+   allocate (is_vmr             (num_tracers))
+   is_vmr(:) = .false.
    if ( Atm(mygrid)%flagstruct%write_3d_diags) then
       id_udt_dyn    =register_diag_field(mod_name,'udt_dyn', Atm(mygrid)%atmos_axes(1:3),  &
            Time,'udt_dyn',    'm/s/s', missing_value=mv)
@@ -454,10 +459,27 @@ contains
                  Atm(mygrid)%atmos_axes(1:3),Time,                       &
                  TRIM(tracer_name)//' total tendency from advection',    &
                  TRIM(tracer_units)//'/s', missing_value = mv)
+
+            if ( trim(tracer_units) .eq. 'vmr' ) then
+               is_vmr(itrac) = .true.
+               id_tracerdt_dyn_dp(itrac) = register_diag_field(mod_name, TRIM(tracer_name)//'dt_dyn_dp',  &
+                    Atm(mygrid)%atmos_axes(1:3),Time,                       &
+                    TRIM(tracer_name)//' total tendency from advection',    &
+                    'mol/m2/s', missing_value = mv)
+            else
+               id_tracerdt_dyn_dp(itrac) = register_diag_field(mod_name, TRIM(tracer_name)//'dt_dyn_dp',  &
+                    Atm(mygrid)%atmos_axes(1:3),Time,                       &
+                    TRIM(tracer_name)//' total tendency from advection',    &
+                    'kg/m2/s', missing_value = mv)               
+            end if
          endif
+         
       enddo
    endif
    if (any(id_tracerdt_dyn(:)>0)) allocate(qtendyyf(isc:iec, jsc:jec,1:npz,num_tracers))
+   if (any(id_tracerdt_dyn_dp(:)>0)) allocate(qtendyyf_dp(isc:iec, jsc:jec,1:npz,num_tracers))
+   allocate(mw_air_store(isc:iec, jsc:jec,1:npz))
+   
    if ( id_tdt_dyn>0 .or. query_cmip_diag_id(ID_tnta) .or. query_cmip_diag_id(ID_tnt) ) &
                                                       allocate(ttend(isc:iec, jsc:jec, 1:npz))
    if ( any((/ id_qdt_dyn, id_qldt_dyn, id_qidt_dyn, id_qadt_dyn /) > 0) .or. &
@@ -559,11 +581,30 @@ contains
    if ( id_tdt_dyn>0 .or. query_cmip_diag_id(ID_tnta) ) ttend(:, :, :) = Atm(mygrid)%pt(isc:iec, jsc:jec, :)
    if ( any((/ id_qdt_dyn, id_qldt_dyn, id_qidt_dyn, id_qadt_dyn /) > 0) .or. &
         query_cmip_diag_id(ID_tnhusa) ) qtend(:, :, :, 1:4) = Atm(mygrid)%q (isc:iec, jsc:jec, :, 1:4)
-!miz
+
+   mw_air_store = Mw_air(Atm(mygrid)%q (isc:iec, jsc:jec, :, sphum)   + &
+                         Atm(mygrid)%q (isc:iec, jsc:jec, :, liq_wat) + &
+                         Atm(mygrid)%q (isc:iec, jsc:jec, :, ice_wat)) !g/mol
+
    do itrac = 1, num_tracers
      if (id_tracerdt_dyn (itrac) >0 ) &
-            qtendyyf(:,:,:,itrac) = Atm(mygrid)%q(isc:iec,jsc:jec,:,itrac)
-   enddo
+          qtendyyf(:,:,:,itrac) = Atm(mygrid)%q(isc:iec,jsc:jec,:,itrac)
+   end do
+  
+   !convert vmr tracers to mmr tracers before dynamics
+   if (Atm(mygrid)%flagstruct%adj_mass_vmr .eq. 2) then
+      do itrac = 1, num_tracers
+         if (is_vmr(itrac)) then
+            Atm(mygrid)%q(isc:iec,jsc:jec,:,itrac) = Atm(mygrid)%q(isc:iec,jsc:jec,:,itrac)/mw_air_store 
+         end if
+      end do
+   end if
+   
+   do itrac = 1, num_tracers
+     if (id_tracerdt_dyn_dp (itrac) >0 ) then
+        qtendyyf_dp(:,:,:,itrac) = Atm(mygrid)%q(isc:iec,jsc:jec,:,itrac)*Atm(mygrid)%delp(isc:iec,jsc:jec,:)/grav
+     end if
+  enddo
 
    n = mygrid
    a_step = a_step + 1
@@ -609,6 +650,8 @@ contains
     end do !p_split
     call mpp_clock_end (id_dynam)
 
+    
+
    Surf_diff%ddp_dyn(:,:,:) =(Atm(mygrid)%delp(isc:iec,jsc:jec,:)-Surf_diff%ddp_dyn(:,:,:))/dt_atmos
    Surf_diff%tdt_dyn(:,:,:) =(Atm(mygrid)%pt(isc:iec,jsc:jec,:)  -Surf_diff%tdt_dyn(:,:,:))/dt_atmos
    Surf_diff%qdt_dyn(:,:,:) =(Atm(mygrid)%q (isc:iec,jsc:jec,:,sphum) + &
@@ -630,13 +673,33 @@ contains
                   used = send_cmip_data_3d (ID_tnhusa, (Atm(mygrid)%q(isc:iec,jsc:jec,:,sphum)-qtend(:,:,:,sphum))/dt_atmos, Time)
 !miz
 
+   mw_air_store = Mw_air(Atm(mygrid)%q (isc:iec, jsc:jec, :, sphum)   + &
+                         Atm(mygrid)%q (isc:iec, jsc:jec, :, liq_wat) + &
+                         Atm(mygrid)%q (isc:iec, jsc:jec, :, ice_wat)) !g/mol
+   
    do itrac = 1, num_tracers
-     if(id_tracerdt_dyn(itrac)>0) then
-       qtendyyf(:,:,:,itrac) = (Atm(mygrid)%q (isc:iec, jsc:jec, :,itrac)-  &
-                                qtendyyf(:,:,:,itrac))/dt_atmos
+      if(id_tracerdt_dyn(itrac)>0) then
+         if (is_vmr(itrac) .and. Atm(mygrid)%flagstruct%adj_mass_vmr.eq. 2 ) then         !if adj_mass_vmr == 1, no conversion to mmr is done, so do not convert
+            qtendyyf(:,:,:,itrac) = (Atm(mygrid)%q (isc:iec, jsc:jec, :,itrac)*mw_air_store -  &
+                 qtendyyf(:,:,:,itrac))/dt_atmos
+         else
+            qtendyyf(:,:,:,itrac) = (Atm(mygrid)%q (isc:iec, jsc:jec, :,itrac) -  &
+                 qtendyyf(:,:,:,itrac))/dt_atmos
+         end if
        used = send_data(id_tracerdt_dyn(itrac), qtendyyf(:,:,:,itrac), Time)
      endif
-   enddo
+
+     if(id_tracerdt_dyn_dp(itrac)>0) then
+        qtendyyf_dp(:,:,:,itrac) = (Atm(mygrid)%q (isc:iec, jsc:jec, :,itrac)*Atm(mygrid)%delp(isc:iec,jsc:jec,:)/grav -  qtendyyf_dp(:,:,:,itrac))/dt_atmos
+
+        !this is in kg/m2/s. For vmr we need to convert to mol/m2/s [we used 1g/mol for conversion purposes]
+        if (is_vmr(itrac)) then
+           qtendyyf_dp(:,:,:,itrac) = qtendyyf_dp(:,:,:,itrac) * 1e3            
+        end if
+       used = send_data(id_tracerdt_dyn_dp(itrac), qtendyyf_dp(:,:,:,itrac), Time)
+     endif
+
+  enddo
 
 !-----------------------------------------------------
 !--- COMPUTE SUBGRID Z
@@ -668,7 +731,21 @@ contains
                         Atm(n)%ua, Atm(n)%va, Atm(n)%flagstruct%hydrostatic,&
                         Atm(n)%w, Atm(n)%delz, u_dt, v_dt, t_dt, q_dt,      &
                         Atm(n)%flagstruct%n_sponge)
-    endif
+   endif
+
+   !convert back to vmr if needed
+   if (Atm(mygrid)%flagstruct%adj_mass_vmr.eq. 2) then
+      mw_air_store = Mw_air(Atm(mygrid)%q (isc:iec, jsc:jec, :, sphum)   + &
+                            Atm(mygrid)%q (isc:iec, jsc:jec, :, liq_wat) + &
+                            Atm(mygrid)%q (isc:iec, jsc:jec, :, ice_wat)) !g/mol
+      
+      do itrac = 1, num_tracers
+         if (is_vmr(itrac)) then
+            Atm(mygrid)%q(isc:iec,jsc:jec,:,itrac) = Atm(mygrid)%q(isc:iec,jsc:jec,:,itrac)*mw_air_store 
+         end if
+      end do
+   end if
+   
 
 #ifdef USE_Q_DT
     if ( .not. Atm(n)%flagstruct%hydrostatic .and. w_diff /= NO_TRACER ) then
@@ -732,6 +809,7 @@ contains
 
    deallocate ( Atm )
    deallocate ( u_dt, v_dt, t_dt, qv_dt, q_dt, pref, dum1d )
+   deallocate ( is_vmr )
 
  end subroutine atmosphere_end
 

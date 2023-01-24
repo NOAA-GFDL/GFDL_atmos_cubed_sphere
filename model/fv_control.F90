@@ -273,7 +273,7 @@ module fv_control_mod
      logical , pointer :: phys_hydrostatic
      logical , pointer :: use_hydro_pressure
      logical , pointer :: do_uni_zfull !miz
-     logical , pointer :: adj_mass_vmr ! f1p
+     integer , pointer :: adj_mass_vmr ! f1p
      logical , pointer :: hybrid_z
      logical , pointer :: Make_NH
      logical , pointer :: make_hybrid_z

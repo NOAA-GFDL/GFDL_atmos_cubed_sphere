@@ -892,9 +892,7 @@ module fv_arrays_mod
   integer, pointer :: grid_number
 
   !f1p
-  logical  :: adj_mass_vmr = .false. !TER: This is to reproduce answers for verona patch.  This default can be changed
-                                     !     to .true. in the next city release if desired
-
+  integer  :: adj_mass_vmr = 2 !0: no correction; 1: AM4/CM4 correction; 2: correction based on convertion of VMR to dry mixing ratio
   logical :: w_limiter = .true. ! Fix excessive w - momentum conserving --- sjl
 
   ! options related to regional mode

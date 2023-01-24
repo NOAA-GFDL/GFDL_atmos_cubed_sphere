@@ -73,7 +73,9 @@
 ! ESM requested diagnostics  -  dry mass/volume mixing ratios
  integer, allocatable :: id_tracer_dmmr(:)
  integer, allocatable :: id_tracer_dvmr(:)
+ integer, allocatable :: id_tracer_burden(:)
  real,    allocatable :: w_mr(:)
+ logical, allocatable :: conv_vmr_mmr(:)
 
      real, allocatable :: phalf(:)
      real, allocatable :: zsurf(:,:)
