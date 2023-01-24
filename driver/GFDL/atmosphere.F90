@@ -737,7 +737,9 @@ contains
      call clean_aero()
    endif
 
-   call gfdl_mp_end ( )
+   if (Atm(mygrid)%flagstruct%do_inline_mp) then
+     call gfdl_mp_end ( )
+   endif
 
       call timing_on('FV_DIAG')
    call atmos_global_diag_end
