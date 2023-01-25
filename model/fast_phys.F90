@@ -64,9 +64,9 @@ subroutine fast_phys (is, ie, js, je, isd, ied, jsd, jed, km, npx, npy, nq, &
     ! input / output arguments
     ! -----------------------------------------------------------------------
 
-    integer, intent (in) :: is, ie, js, je, isd, ied, jsd, jed, km, npx, npy, nq, c2l_ord
+    integer, intent (in) :: is, ie, js, je, isd, ied, jsd, jed, km, npx, npy, nq, c2l_ord, adj_mass_vmr
 
-    logical, intent (in) :: hydrostatic, do_adiabatic_init, consv_checker, adj_mass_vmr
+    logical, intent (in) :: hydrostatic, do_adiabatic_init, consv_checker
 
     real, intent (in) :: consv, mdt, akap, r_vir, ptop, te_err, tw_err
 
@@ -144,7 +144,7 @@ subroutine fast_phys (is, ie, js, je, isd, ied, jsd, jed, km, npx, npy, nq, &
     ! decide which tracer needs adjustment
     if (.not. allocated (conv_vmr_mmr)) allocate (conv_vmr_mmr (nq))
     conv_vmr_mmr (:) = .false.
-    if (adj_mass_vmr) then
+    if (adj_mass_vmr .gt. 0) then
         do m = 1, nq
             call get_tracer_names (model_atmos, m, name = tracer_name, units = tracer_units)
             if (trim (tracer_units) .eq. 'vmr') then
