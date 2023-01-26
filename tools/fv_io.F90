@@ -832,7 +832,7 @@ contains
       fname = 'RESTART/fv_core.res'//trim(suffix)//'.nc'
     endif
 
-    Atm%Fv_restart_tile_is_open = open_file(Atm%Fv_restart_tile, fname, "overwrite", fv_domain, nc_format="netcdf4", is_restart=.true.)
+    Atm%Fv_restart_tile_is_open = open_file(Atm%Fv_restart_tile, fname, "overwrite", fv_domain, is_restart=.true.)
     if (Atm%Fv_restart_tile_is_open) then
        call fv_io_register_restart(Atm)
        call write_restart (Atm%Fv_restart_tile)
@@ -845,7 +845,7 @@ contains
     else
       fname = 'RESTART/fv_srf_wnd.res'//trim(suffix)//'.nc'
     endif
-    Atm%Rsf_restart_is_open = open_file(Atm%Rsf_restart, fname, "overwrite", fv_domain, nc_format="netcdf4", is_restart=.true.)
+    Atm%Rsf_restart_is_open = open_file(Atm%Rsf_restart, fname, "overwrite", fv_domain, is_restart=.true.)
     if (Atm%Rsf_restart_is_open) then
        call fv_io_register_restart(Atm)
        call write_restart (Atm%Rsf_restart)
@@ -859,7 +859,7 @@ contains
        else
          fname = 'RESTART/mg_drag.res'//trim(suffix)//'.nc'
        endif
-       Atm%Mg_restart_is_open = open_file(Atm%Mg_restart, fname, "overwrite", fv_domain, nc_format="netcdf4", is_restart=.true.)
+       Atm%Mg_restart_is_open = open_file(Atm%Mg_restart, fname, "overwrite", fv_domain, is_restart=.true.)
        if (Atm%Mg_restart_is_open) then
           call fv_io_register_restart(Atm)
           call write_restart(Atm%Mg_restart)
@@ -872,7 +872,7 @@ contains
        else
          fname = 'RESTART/fv_land.res'//trim(suffix)//'.nc'
        endif
-       Atm%Lnd_restart_is_open = open_file(Atm%Lnd_restart, fname, "overwrite", fv_domain, nc_format="netcdf4", is_restart=.true.)
+       Atm%Lnd_restart_is_open = open_file(Atm%Lnd_restart, fname, "overwrite", fv_domain, is_restart=.true.)
        if (Atm%Lnd_restart_is_open) then
           call fv_io_register_restart(Atm)
           call write_restart(Atm%Lnd_restart)
@@ -886,7 +886,7 @@ contains
     else
       fname = 'RESTART/fv_tracer.res'//trim(suffix)//'.nc'
     endif
-    Atm%Tra_restart_is_open = open_file(Atm%Tra_restart, fname, "overwrite", fv_domain, nc_format="netcdf4", is_restart=.true.)
+    Atm%Tra_restart_is_open = open_file(Atm%Tra_restart, fname, "overwrite", fv_domain, is_restart=.true.)
     if (Atm%Tra_restart_is_open) then
        call fv_io_register_restart(Atm)
        call write_restart(Atm%Tra_restart)
