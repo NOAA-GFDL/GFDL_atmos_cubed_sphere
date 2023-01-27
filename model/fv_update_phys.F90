@@ -327,7 +327,7 @@ module fv_update_phys_mod
 
 !--------------------------------------------------------
 ! Adjust total air mass due to changes in water substance
-       !--------------------------------------------------------
+!--------------------------------------------------------
       do j=js,je
          do i=is,ie
             ps_dt(i,j)  = 1. + dt*sum(q_dt(i,j,k,1:nwat))
@@ -338,14 +338,6 @@ module fv_update_phys_mod
                         (ps_dt(i,j) - sum(q(i,j,k,1:nwat))) /  &
                         (1.d0       - sum(q(i,j,k,1:nwat)))
              elseif (flagstruct%adj_mass_vmr .eq. 2) then
-                !correction consistent with FV3
-
-                !mmr_aft = mmr_bef / ps_dt
-                !mmr = vmr * Mw(q)/Mw(air)
-                !vmr_aft * Mw(q)/Mw(air_aft) = vmr_bef * Mw(q)/Mw(air_bef) * 1/ps_dt
-                !adj_vmr = Mw(air_aft)/Mw(air_bef)
-                !Mw_air = 1/((1-qwat)/WTMAIR+qwat/WTMH2O))
-                !adj_vmr(i,j,k) = ((1-sum(q(i,j,k,1:nwat))+dt*sum(q_dt(i,j,k,1:nwat)))/WTMAIR+(sum(q(i,j,k,1:nwat))-dt*sum(q_dt(i,j,k,1:nwat)))/WTMH2O)/((1-sum(q(i,j,k,1:nwat)))/WTMAIR+sum(q(i,j,k,1:nwat))/WTMH2O)
                 adj_vmr(i,j,k) = Mw_air(sum(q(i,j,k,1:nwat)))/Mw_air(sum(q(i,j,k,1:nwat))-dt*sum(q_dt(i,j,k,1:nwat)))
             end if
          enddo
@@ -365,8 +357,10 @@ module fv_update_phys_mod
                    q(is:ie,js:je,k,m) = q(is:ie,js:je,k,m) * adj_vmr(is:ie,js:je,k)
             else
                qdiag(is:ie,js:je,k,m) = qdiag(is:ie,js:je,k,m) / ps_dt(is:ie,js:je)
+               !it seems that the adjustment should be applied to diagnostic tracers as well. 
+               !Only for adj_mass_vmr=2 to maintain backward compatibility
                if (conv_vmr_mmr(m) .and. flagstruct%adj_mass_vmr .eq. 2) &
-                   qdiag(is:ie,js:je,k,m) = qdiag(is:ie,js:je,k,m) * adj_vmr(is:ie,js:je,k) !it seems that the adjustment should be applied to diagnostic tracers as well. Only for adj_mass_vmr=2 to maintain backward compatibility
+                   qdiag(is:ie,js:je,k,m) = qdiag(is:ie,js:je,k,m) * adj_vmr(is:ie,js:je,k)
             endif
           endif
         enddo

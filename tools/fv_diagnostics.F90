@@ -1431,17 +1431,15 @@ contains
                         'kg/m2', missing_value=missing_value)
                 end if
              endif
-             if (master) then
-                unit = stdlog()
-                if (id_tracer_dmmr(i) > 0) then
-                   write(unit,'(a,a,a,a)') 'Diagnostics available for '//trim(tname)//' dry mmr ', &
-                        trim(tname)//'_dmmr', ' in module ', trim(field)
-                end if
-                if (id_tracer_dvmr(i) > 0) then
-                   write(unit,'(a,a,a,a)') 'Diagnostics available for '//trim(tname)//' dry vmr ', &
-                        trim(tname)//'_dvmr', ' in module ', trim(field)
-                end if
-             endif
+             unit = stdlog()
+             if (id_tracer_dmmr(i) > 0) then
+                write(unit,'(a,a,a,a)') 'Diagnostics available for '//trim(tname)//' dry mmr ', &
+                     trim(tname)//'_dmmr', ' in module ', trim(field)
+             end if
+             if (id_tracer_dvmr(i) > 0) then
+                write(unit,'(a,a,a,a)') 'Diagnostics available for '//trim(tname)//' dry vmr ', &
+                     trim(tname)//'_dvmr', ' in module ', trim(field)
+             end if
              !---end co2
 
           enddo
@@ -3902,13 +3900,9 @@ contains
           if (id_tracer_dmmr(itrac) > 0 .or. id_tracer_dvmr(itrac) > 0) then
              if (.not. conv_vmr_mmr(itrac)) then
                 if (itrac .gt. nq) then
-                   ! dmmr(:,:,:) = Atm(n)%qdiag(isc:iec,jsc:jec,1:npz,itrac)  &
-                   !               /(1.0-Atm(n)%q(isc:iec,jsc:jec,1:npz,1))
                    dmmr(:,:,:) = Atm(n)%qdiag(isc:iec,jsc:jec,1:npz,itrac)  &
                         /(1.0-sum(Atm(n)%q(isc:iec,jsc:jec,1:npz,1:Atm(n)%flagstruct%nwat),dim=4))
                 else
-                   ! dmmr(:,:,:) = Atm(n)%q(isc:iec,jsc:jec,1:npz,itrac)  &
-                   !               /(1.0-Atm(n)%q(isc:iec,jsc:jec,1:npz,1))
                    dmmr(:,:,:) = Atm(n)%q(isc:iec,jsc:jec,1:npz,itrac)  &
                         /(1.0-sum(Atm(n)%q(isc:iec,jsc:jec,1:npz,1:Atm(n)%flagstruct%nwat),dim=4))
                 endif
@@ -3931,18 +3925,6 @@ contains
                    used = send_data (id_tracer_burden(itrac),Atm(n)%q(isc:iec,jsc:jec,1:npz,itrac) * Atm(n)%delp(isc:iec,jsc:jec,1:npz)/grav, Time ) !kg/m2
                 end if
              else
-                !for now only dvmr
-                !mmr = vmr * Mw_q/Mw_air (note that Mw_air needs to account for water)
-                !dmmr = mmr / (1-qwat) [kg/kg(air)]/[kg(dry_air)/kg(air)]
-                !dvmr = dmmr * WTMAIR/Mw_q
-                !dvmr = vmr * WTMAIR/(Mw_air*(1-qwat))
-                !Mw_air  = 1/((1-qwat)/WTMAIR+qwat/WTMH2O))
-                !Mw_air  = WTMAIR*WTMH2O/(((1-qwat)*WTMH2O+qwat*WTMAIR)
-                !dvmr    = vmr * ((1-qwat)*WTMH2O+qwat*WTMAIR)/(WTMH2O*(1-qwat))
-                !dvmr    = vmr * (1+qwat/(1-qwat)*WTMAIR/WTMH2O)
-
-                !simplified expression
-                !dvmr(:,:,:) = Atm(n)%q(isc:iec,jsc:jec,1:npz,itrac) * (1+sum(Atm(n)%q(isc:iec,jsc:jec,1:npz,1:Atm(n)%flagstruct%nwat),dim=4)/(1.-sum(Atm(n)%q(isc:iec,jsc:jec,1:npz,1:Atm(n)%flagstruct%nwat),dim=4))*WTMAIR/WTMH2O)
                 ! now use Mw_air function for clarity
                 if (itrac.gt.nq) then
                    dvmr(:,:,:) = Atm(n)%qdiag(isc:iec,jsc:jec,1:npz,itrac) * WTMAIR/(Mw_air(sum(Atm(n)%q(isc:iec,jsc:jec,1:npz,1:Atm(n)%flagstruct%nwat),dim=4))*(1-sum(Atm(n)%q(isc:iec,jsc:jec,1:npz,1:Atm(n)%flagstruct%nwat),dim=4)))
