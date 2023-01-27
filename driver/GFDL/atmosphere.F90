@@ -45,7 +45,7 @@ use fms2_io_mod,           only: file_exists
 use mpp_mod,               only: mpp_error, FATAL, NOTE, input_nml_file, &
                                  mpp_npes, mpp_get_current_pelist, &
                                  mpp_set_current_pelist, stdout, &
-                                 mpp_pe, mpp_root_pe, mpp_chksum
+                                 mpp_pe, mpp_root_pe, mpp_chksum, mpp_sync
 use mpp_domains_mod,       only: domain2d
 use xgrid_mod,             only: grid_box_type
 !miz
@@ -72,7 +72,7 @@ use fv_control_mod,     only: fv_control_init, fv_end, ngrids
 use fv_eta_mod,         only: get_eta_level
 use fv_dynamics_mod,    only: fv_dynamics
 use fv_nesting_mod,     only: twoway_nesting
-use fv_diagnostics_mod, only: fv_diag_init, fv_diag, fv_time, prt_maxmin, prt_height
+use fv_diagnostics_mod, only: fv_diag_init, fv_diag, fv_time, prt_maxmin, prt_height, Mw_air!_3d
 use fv_cmip_diag_mod,   only: fv_cmip_diag_init, fv_cmip_diag, fv_cmip_diag_end
 use fv_restart_mod,     only: fv_restart, fv_write_restart
 use fv_timing_mod,      only: timing_on, timing_off
@@ -96,7 +96,6 @@ use amip_interp_mod,      only: forecast_mode
 
 use mpp_domains_mod, only:  mpp_get_data_domain, mpp_get_compute_domain
 use gfdl_mp_mod,        only: gfdl_mp_init, gfdl_mp_end
-use cloud_diagnosis_mod,only: cloud_diagnosis_init
 use coarse_graining_mod, only: coarse_graining_init
 use coarse_grained_diagnostics_mod, only: fv_coarse_diag_init, fv_coarse_diag
 use coarse_grained_restart_files_mod, only: fv_coarse_restart_init
@@ -141,7 +140,7 @@ character(len=20)   :: mod_name = 'GFDL/atmosphere_mod'
   integer :: id_dynam, id_fv_diag, id_subgridz
   logical :: cold_start = .false.       ! read in initial condition
 
-  integer, dimension(:), allocatable :: id_tracerdt_dyn
+  integer, dimension(:), allocatable :: id_tracerdt_dyn, id_tracer, id_tracerdt_dyn_dp
   integer :: num_tracers = 0
 
 !miz
@@ -152,7 +151,7 @@ character(len=20)   :: mod_name = 'GFDL/atmosphere_mod'
   logical :: used
   character(len=64) :: field
   real, allocatable :: ttend(:,:,:)
-  real, allocatable :: qtendyyf(:,:,:,:)
+  real, allocatable :: qtendyyf(:,:,:,:), qtendyyf_dp(:,:,:,:), mw_air_store(:,:,:)
   real, allocatable :: qtend(:,:,:,:)
   real              :: mv = -1.e10   ! missing value for diagnostics
   integer :: sphum, liq_wat, rainwat, ice_wat, snowwat, graupel  !condensate species
@@ -177,7 +176,9 @@ character(len=20)   :: mod_name = 'GFDL/atmosphere_mod'
    logical :: do_adiabatic_init
 #endif
 
-  integer, parameter :: kind_phys=8
+   integer, parameter :: kind_phys=8
+
+   logical, allocatable :: is_vmr(:)
 
 contains
 
@@ -309,11 +310,11 @@ contains
    allocate(pref(npz+1,2), dum1d(npz+1))
 
    if (Atm(mygrid)%flagstruct%do_inline_mp) then
-     call gfdl_mp_init(mpp_pe(), mpp_root_pe(), nlunit, input_nml_file, stdlog(), fn_nml)
-     call cloud_diagnosis_init(nlunit, input_nml_file, stdlog(), fn_nml)
+     call gfdl_mp_init(input_nml_file, stdlog(), Atm(mygrid)%flagstruct%hydrostatic)
    endif
 
-   call fv_restart(Atm(mygrid)%domain, Atm, dt_atmos, seconds, days, cold_start, Atm(mygrid)%gridstruct%grid_type, mygrid)
+   call fv_restart(Atm(mygrid)%domain, Atm, dt_atmos, seconds, days, cold_start, &
+                   Atm(mygrid)%gridstruct%grid_type, mygrid)
 
    fv_time = Time
 
@@ -416,6 +417,9 @@ contains
 !miz
 !---allocate id_tracer_*
    allocate (id_tracerdt_dyn    (num_tracers))
+   allocate (id_tracerdt_dyn_dp (num_tracers))
+   allocate (is_vmr             (num_tracers))
+   is_vmr(:) = .false.
    if ( Atm(mygrid)%flagstruct%write_3d_diags) then
       id_udt_dyn    =register_diag_field(mod_name,'udt_dyn', Atm(mygrid)%atmos_axes(1:3),  &
            Time,'udt_dyn',    'm/s/s', missing_value=mv)
@@ -453,10 +457,25 @@ contains
                  Atm(mygrid)%atmos_axes(1:3),Time,                       &
                  TRIM(tracer_name)//' total tendency from advection',    &
                  TRIM(tracer_units)//'/s', missing_value = mv)
+
+            if ( trim(tracer_units) .eq. 'vmr' ) then
+               is_vmr(itrac) = .true.
+               id_tracerdt_dyn_dp(itrac) = register_diag_field(mod_name, TRIM(tracer_name)//'dt_dyn_dp',  &
+                    Atm(mygrid)%atmos_axes(1:3),Time,                       &
+                    TRIM(tracer_name)//' total tendency from advection',    &
+                    'mol/m2/s', missing_value = mv)
+            else
+               id_tracerdt_dyn_dp(itrac) = register_diag_field(mod_name, TRIM(tracer_name)//'dt_dyn_dp',  &
+                    Atm(mygrid)%atmos_axes(1:3),Time,                       &
+                    TRIM(tracer_name)//' total tendency from advection',    &
+                    'kg/m2/s', missing_value = mv)
+            end if
          endif
       enddo
    endif
    if (any(id_tracerdt_dyn(:)>0)) allocate(qtendyyf(isc:iec, jsc:jec,1:npz,num_tracers))
+   if (any(id_tracerdt_dyn_dp(:)>0)) allocate(qtendyyf_dp(isc:iec, jsc:jec,1:npz,num_tracers))
+   allocate(mw_air_store(isc:iec, jsc:jec,1:npz))
    if ( id_tdt_dyn>0 .or. query_cmip_diag_id(ID_tnta) .or. query_cmip_diag_id(ID_tnt) ) &
                                                       allocate(ttend(isc:iec, jsc:jec, 1:npz))
    if ( any((/ id_qdt_dyn, id_qldt_dyn, id_qidt_dyn, id_qadt_dyn /) > 0) .or. &
@@ -558,11 +577,30 @@ contains
    if ( id_tdt_dyn>0 .or. query_cmip_diag_id(ID_tnta) ) ttend(:, :, :) = Atm(mygrid)%pt(isc:iec, jsc:jec, :)
    if ( any((/ id_qdt_dyn, id_qldt_dyn, id_qidt_dyn, id_qadt_dyn /) > 0) .or. &
         query_cmip_diag_id(ID_tnhusa) ) qtend(:, :, :, 1:4) = Atm(mygrid)%q (isc:iec, jsc:jec, :, 1:4)
-!miz
+
+   mw_air_store = Mw_air(Atm(mygrid)%q (isc:iec, jsc:jec, :, sphum)   + &
+                         Atm(mygrid)%q (isc:iec, jsc:jec, :, liq_wat) + &
+                         Atm(mygrid)%q (isc:iec, jsc:jec, :, ice_wat)) !g/mol
+
    do itrac = 1, num_tracers
      if (id_tracerdt_dyn (itrac) >0 ) &
-            qtendyyf(:,:,:,itrac) = Atm(mygrid)%q(isc:iec,jsc:jec,:,itrac)
-   enddo
+          qtendyyf(:,:,:,itrac) = Atm(mygrid)%q(isc:iec,jsc:jec,:,itrac)
+   end do
+
+   !convert vmr tracers to mmr tracers before dynamics
+   if (Atm(mygrid)%flagstruct%adj_mass_vmr .eq. 2) then
+      do itrac = 1, num_tracers
+         if (is_vmr(itrac)) then
+            Atm(mygrid)%q(isc:iec,jsc:jec,:,itrac) = Atm(mygrid)%q(isc:iec,jsc:jec,:,itrac)/mw_air_store
+         end if
+      end do
+   end if
+
+   do itrac = 1, num_tracers
+     if (id_tracerdt_dyn_dp (itrac) >0 ) then
+        qtendyyf_dp(:,:,:,itrac) = Atm(mygrid)%q(isc:iec,jsc:jec,:,itrac)*Atm(mygrid)%delp(isc:iec,jsc:jec,:)/grav
+     end if
+  enddo
 
    n = mygrid
    a_step = a_step + 1
@@ -574,6 +612,7 @@ contains
      call read_new_bc_data(Atm(n), Time, Time_step_atmos, p_split, &
                            isd, ied, jsd, jed )
    endif
+
    do psc=1,abs(p_split)
       p_step = psc
                     call timing_on('fv_dynamics')
@@ -594,11 +633,12 @@ contains
                       Atm(n)%flagstruct%hybrid_z,                          &
                       Atm(n)%gridstruct, Atm(n)%flagstruct,                &
                       Atm(n)%neststruct, Atm(n)%idiag, Atm(n)%bd,          &
-                      Atm(n)%parent_grid, Atm(n)%domain, Atm(n)%inline_mp)
-
+                      Atm(n)%parent_grid, Atm(n)%domain, Atm(n)%inline_mp, &
+                      Atm(n)%diss_est)
      call timing_off('fv_dynamics')
 
     if (ngrids > 1 .and. (psc < p_split .or. p_split < 0)) then
+       call mpp_sync()
        call timing_on('TWOWAY_UPDATE')
        call twoway_nesting(Atm, ngrids, grids_on_this_pe, zvir, fv_time, mygrid)
        call timing_off('TWOWAY_UPDATE')
@@ -628,13 +668,33 @@ contains
                   used = send_cmip_data_3d (ID_tnhusa, (Atm(mygrid)%q(isc:iec,jsc:jec,:,sphum)-qtend(:,:,:,sphum))/dt_atmos, Time)
 !miz
 
+   mw_air_store = Mw_air(Atm(mygrid)%q (isc:iec, jsc:jec, :, sphum)   + &
+                         Atm(mygrid)%q (isc:iec, jsc:jec, :, liq_wat) + &
+                         Atm(mygrid)%q (isc:iec, jsc:jec, :, ice_wat)) !g/mol
+
    do itrac = 1, num_tracers
-     if(id_tracerdt_dyn(itrac)>0) then
-       qtendyyf(:,:,:,itrac) = (Atm(mygrid)%q (isc:iec, jsc:jec, :,itrac)-  &
-                                qtendyyf(:,:,:,itrac))/dt_atmos
+      if(id_tracerdt_dyn(itrac)>0) then
+         if (is_vmr(itrac) .and. Atm(mygrid)%flagstruct%adj_mass_vmr.eq. 2 ) then         !if adj_mass_vmr == 1, no conversion to mmr is done, so do not convert
+            qtendyyf(:,:,:,itrac) = (Atm(mygrid)%q (isc:iec, jsc:jec, :,itrac)*mw_air_store -  &
+                 qtendyyf(:,:,:,itrac))/dt_atmos
+         else
+            qtendyyf(:,:,:,itrac) = (Atm(mygrid)%q (isc:iec, jsc:jec, :,itrac) -  &
+                 qtendyyf(:,:,:,itrac))/dt_atmos
+         end if
        used = send_data(id_tracerdt_dyn(itrac), qtendyyf(:,:,:,itrac), Time)
      endif
-   enddo
+
+     if(id_tracerdt_dyn_dp(itrac)>0) then
+        qtendyyf_dp(:,:,:,itrac) = (Atm(mygrid)%q (isc:iec, jsc:jec, :,itrac)*Atm(mygrid)%delp(isc:iec,jsc:jec,:)/grav -  qtendyyf_dp(:,:,:,itrac))/dt_atmos
+
+        !this is in kg/m2/s. For vmr we need to convert to mol/m2/s [we used 1g/mol for conversion purposes]
+        if (is_vmr(itrac)) then
+           qtendyyf_dp(:,:,:,itrac) = qtendyyf_dp(:,:,:,itrac) * 1e3
+        end if
+       used = send_data(id_tracerdt_dyn_dp(itrac), qtendyyf_dp(:,:,:,itrac), Time)
+     endif
+
+  enddo
 
 !-----------------------------------------------------
 !--- COMPUTE SUBGRID Z
@@ -666,7 +726,21 @@ contains
                         Atm(n)%ua, Atm(n)%va, Atm(n)%flagstruct%hydrostatic,&
                         Atm(n)%w, Atm(n)%delz, u_dt, v_dt, t_dt, q_dt,      &
                         Atm(n)%flagstruct%n_sponge)
-    endif
+   endif
+
+   !convert back to vmr if needed
+   if (Atm(mygrid)%flagstruct%adj_mass_vmr.eq. 2) then
+      mw_air_store = Mw_air(Atm(mygrid)%q (isc:iec, jsc:jec, :, sphum)   + &
+                            Atm(mygrid)%q (isc:iec, jsc:jec, :, liq_wat) + &
+                            Atm(mygrid)%q (isc:iec, jsc:jec, :, ice_wat)) !g/mol
+
+      do itrac = 1, num_tracers
+         if (is_vmr(itrac)) then
+            Atm(mygrid)%q(isc:iec,jsc:jec,:,itrac) = Atm(mygrid)%q(isc:iec,jsc:jec,:,itrac)*mw_air_store
+         end if
+      end do
+   end if
+
 
 #ifdef USE_Q_DT
     if ( .not. Atm(n)%flagstruct%hydrostatic .and. w_diff /= NO_TRACER ) then
@@ -730,6 +804,7 @@ contains
 
    deallocate ( Atm )
    deallocate ( u_dt, v_dt, t_dt, qv_dt, q_dt, pref, dum1d )
+   deallocate ( is_vmr )
 
  end subroutine atmosphere_end
 
@@ -1108,7 +1183,7 @@ contains
 
      call fv_diag(Atm(mygrid:mygrid), zvir, fv_time, Atm(mygrid)%flagstruct%print_freq)
       if (Atm(mygrid)%coarse_graining%write_coarse_diagnostics) then
-         call fv_coarse_diag(Atm(mygrid:mygrid), fv_time)
+         call fv_coarse_diag(Atm(mygrid:mygrid), fv_time, zvir)
       endif
      call fv_cmip_diag(Atm(mygrid:mygrid), zvir, fv_time)
 
@@ -1219,7 +1294,7 @@ contains
                      Atm(mygrid)%cx, Atm(mygrid)%cy, Atm(mygrid)%ze0, Atm(mygrid)%flagstruct%hybrid_z,    &
                      Atm(mygrid)%gridstruct, Atm(mygrid)%flagstruct,                            &
                      Atm(mygrid)%neststruct, Atm(mygrid)%idiag, Atm(mygrid)%bd, Atm(mygrid)%parent_grid,  &
-                     Atm(mygrid)%domain, Atm(mygrid)%inline_mp)
+                     Atm(mygrid)%domain, Atm(mygrid)%inline_mp, Atm(n)%diss_est)
 ! Backward
     call fv_dynamics(Atm(mygrid)%npx, Atm(mygrid)%npy, npz,  nq, Atm(mygrid)%ng, -dt_atmos, 0.,      &
                      Atm(mygrid)%flagstruct%fill, Atm(mygrid)%flagstruct%reproduce_sum, kappa, cp_air, zvir,  &
@@ -1233,7 +1308,7 @@ contains
                      Atm(mygrid)%cx, Atm(mygrid)%cy, Atm(mygrid)%ze0, Atm(mygrid)%flagstruct%hybrid_z,    &
                      Atm(mygrid)%gridstruct, Atm(mygrid)%flagstruct,                            &
                      Atm(mygrid)%neststruct, Atm(mygrid)%idiag, Atm(mygrid)%bd, Atm(mygrid)%parent_grid,  &
-                     Atm(mygrid)%domain, Atm(mygrid)%inline_mp)
+                     Atm(mygrid)%domain, Atm(mygrid)%inline_mp, Atm(n)%diss_est)
 ! Nudging back to IC
 !$omp parallel do default (none) &
 !$omp              shared (pref, npz, jsc, jec, isc, iec, n, sphum, Atm, u0, v0, t0, dp0, xt, zvir, mygrid, nudge_dz, dz0) &
@@ -1305,7 +1380,7 @@ contains
                      Atm(mygrid)%cx, Atm(mygrid)%cy, Atm(mygrid)%ze0, Atm(mygrid)%flagstruct%hybrid_z,    &
                      Atm(mygrid)%gridstruct, Atm(mygrid)%flagstruct,                            &
                      Atm(mygrid)%neststruct, Atm(mygrid)%idiag, Atm(mygrid)%bd, Atm(mygrid)%parent_grid,  &
-                     Atm(mygrid)%domain, Atm(mygrid)%inline_mp)
+                     Atm(mygrid)%domain, Atm(mygrid)%inline_mp, Atm(n)%diss_est)
 ! Forward call
     call fv_dynamics(Atm(mygrid)%npx, Atm(mygrid)%npy, npz,  nq, Atm(mygrid)%ng, dt_atmos, 0.,      &
                      Atm(mygrid)%flagstruct%fill, Atm(mygrid)%flagstruct%reproduce_sum, kappa, cp_air, zvir,  &
@@ -1319,7 +1394,7 @@ contains
                      Atm(mygrid)%cx, Atm(mygrid)%cy, Atm(mygrid)%ze0, Atm(mygrid)%flagstruct%hybrid_z,    &
                      Atm(mygrid)%gridstruct, Atm(mygrid)%flagstruct,                            &
                      Atm(mygrid)%neststruct, Atm(mygrid)%idiag, Atm(mygrid)%bd, Atm(mygrid)%parent_grid,  &
-                     Atm(mygrid)%domain, Atm(mygrid)%inline_mp)
+                     Atm(mygrid)%domain, Atm(mygrid)%inline_mp, Atm(n)%diss_est)
 ! Nudging back to IC
 !$omp parallel do default (none) &
 !$omp              shared (nudge_dz,npz, jsc, jec, isc, iec, n, sphum, Atm, u0, v0, t0, dz0, dp0, xt, zvir, mygrid) &

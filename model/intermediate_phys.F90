@@ -67,7 +67,8 @@ subroutine intermediate_phys (is, ie, js, je, isd, ied, jsd, jed, km, npx, npy, 
     integer, intent (in) :: is, ie, js, je, isd, ied, jsd, jed, km, npx, npy, nq, c2l_ord, nwat
 
     logical, intent (in) :: hydrostatic, do_adiabatic_init, do_inline_mp, consv_checker
-    logical, intent (in) :: do_sat_adj, last_step, do_fast_phys, adj_mass_vmr
+    logical, intent (in) :: do_sat_adj, last_step, do_fast_phys
+    integer, intent (in) :: adj_mass_vmr
 
     real, intent (in) :: consv, mdt, akap, r_vir, ptop, te_err, tw_err
 
@@ -158,7 +159,7 @@ subroutine intermediate_phys (is, ie, js, je, isd, ied, jsd, jed, km, npx, npy, 
     ! decide which tracer needs adjustment
     if (.not. allocated (conv_vmr_mmr)) allocate (conv_vmr_mmr (nq))
     conv_vmr_mmr (:) = .false.
-    if (adj_mass_vmr) then
+    if (adj_mass_vmr .gt. 0) then
         do m = 1, nq
             call get_tracer_names (model_atmos, m, name = tracer_name, units = tracer_units)
             if (trim (tracer_units) .eq. 'vmr') then
@@ -275,7 +276,7 @@ subroutine intermediate_phys (is, ie, js, je, isd, ied, jsd, jed, km, npx, npy, 
                      inline_mp%dep (is:ie, j), inline_mp%sub (is:ie, j), do_sat_adj)
 
             ! update non-microphyiscs tracers due to mass change
-            if (adj_mass_vmr) then
+            if (adj_mass_vmr .gt. 0) then
                 do m = 1, nq
                     if (conv_vmr_mmr (m)) then
                         q (is:ie, j, kmp:km, m) = q (is:ie, j, kmp:km, m) * adj_vmr (is:ie, kmp:km)
@@ -568,7 +569,7 @@ subroutine intermediate_phys (is, ie, js, je, isd, ied, jsd, jed, km, npx, npy, 
                      inline_mp%sub (is:ie, j), last_step, do_inline_mp)
 
             ! update non-microphyiscs tracers due to mass change
-            if (adj_mass_vmr) then
+            if (adj_mass_vmr .gt. 0) then
                 do m = 1, nq
                     if (conv_vmr_mmr (m)) then
                         q (is:ie, j, kmp:km, m) = q (is:ie, j, kmp:km, m) * adj_vmr (is:ie, kmp:km)

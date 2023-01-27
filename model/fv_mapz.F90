@@ -75,7 +75,7 @@ contains
   logical, intent(in):: do_am4_remap
   logical, intent(in):: do_fast_phys
   logical, intent(in):: consv_checker
-  logical, intent(in):: adj_mass_vmr
+  integer, intent(in):: adj_mass_vmr
   real,    intent(in):: mdt                   ! remap time step
   real,    intent(in):: pdt                   ! phys time step
   integer, intent(in):: npx, npy
