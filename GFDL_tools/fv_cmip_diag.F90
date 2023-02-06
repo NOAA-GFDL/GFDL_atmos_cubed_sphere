@@ -70,7 +70,7 @@ namelist /fv_cmip_diag_nml/ dummy
 
 type(cmip_diag_id_type) :: ID_ta, ID_ua, ID_va, ID_hus, ID_hur, ID_wap, ID_zg, &
                            ID_u2, ID_v2, ID_t2, ID_wap2, ID_uv, ID_ut, ID_vt,  &
-                           ID_uwap, ID_vwap, ID_twap, ID_wa, &
+                           ID_uq, ID_vq, ID_uwap, ID_vwap, ID_twap, ID_wa, &
                            ID_cls, ID_clws, ID_clis
 
 integer              :: id_ps, id_orog
@@ -195,6 +195,14 @@ integer               :: id_pl700, id_pl700_bnds, id_nv
     ID_vt = register_cmip_diag_field_3d (mod_name, 'vt', Time, &
                         'Air Temperature times Northward Wind', 'K m s-1', &
                          standard_name='product_of_northward_wind_and_air_temperature')
+
+    ID_uq= register_cmip_diag_field_3d (mod_name, 'uq', Time, &
+                        'Specific Humidity times Eastward Wind', 'kg kg-1 m s-1', &
+                         standard_name='product_of_eastward_wind_and_specific_humidity')
+
+    ID_vq = register_cmip_diag_field_3d (mod_name, 'vq', Time, &
+                        'Specific Humidity times Northward Wind', 'kg kg-1 m s-1', &
+                         standard_name='product_of_northward_wind_and_specific_humidity')
 
     ID_uwap = register_cmip_diag_field_3d (mod_name, 'uwap', Time, &
                            'Eastward Wind times Omega', 'K m s-1', &
@@ -540,6 +548,14 @@ real, dimension(Atm(1)%bd%isc:Atm(1)%bd%iec, &
 
   if (query_cmip_diag_id(ID_vt)) &
           used = send_cmip_data_3d (ID_vt,  Atm(n)%va  (isc:iec,jsc:jec,:)*Atm(n)%pt  (isc:iec,jsc:jec,:), &
+                                    Time, phalf=Atm(n)%peln, opt=1)
+
+  if (query_cmip_diag_id(ID_uq)) &
+          used = send_cmip_data_3d (ID_uq,  Atm(n)%ua  (isc:iec,jsc:jec,:)*Atm(n)%q  (isc:iec,jsc:jec,:,sphum), &
+                                    Time, phalf=Atm(n)%peln, opt=1)
+
+  if (query_cmip_diag_id(ID_vq)) &
+          used = send_cmip_data_3d (ID_vq,  Atm(n)%va  (isc:iec,jsc:jec,:)*Atm(n)%q  (isc:iec,jsc:jec,:,sphum), &
                                     Time, phalf=Atm(n)%peln, opt=1)
 
   if (query_cmip_diag_id(ID_uwap)) &
