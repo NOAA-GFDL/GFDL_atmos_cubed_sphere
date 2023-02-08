@@ -238,7 +238,11 @@ contains
     endif
 
     do i=1,size(dimnames)
-       call get_dimension_size(file_obj, dimnames(i), chunksizes(i))
+       if (dimnames(i)(1:6) == 'xaxis_' .or. dimnames(i)(1:6) == 'yaxis_' ) then
+          call get_dimension_size(file_obj, dimnames(i), chunksizes(i))
+       else
+          chunksizes(i)=1
+       endif
     end do
 
   end subroutine get_dim_chunksizes
