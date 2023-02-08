@@ -30,7 +30,7 @@ use hswf_mod,              only: Held_Suarez_Tend
 use fv_sg_mod,             only: fv_subgrid_z
 use fv_update_phys_mod,    only: fv_update_phys
 use fv_timing_mod,         only: timing_on, timing_off
-use monin_obukhov_mod,     only: mon_obkv
+use mon_obkv_mod,          only: mon_obkv
 use tracer_manager_mod,    only: get_tracer_index, adjust_mass
 use field_manager_mod,     only: MODEL_ATMOS
 use fms_mod,               only: error_mesg, FATAL, file_exist, open_namelist_file,  &

@@ -19,7 +19,7 @@
 !* If not, see <http://www.gnu.org/licenses/>.
 !***********************************************************************
 
-module monin_obukhov_mod
+module mon_obkv_mod
 
 !==============================================================================
 ! Kernel routines
@@ -665,4 +665,4 @@ end if
 
 end subroutine monin_obukhov_integral_tq
 
-end module monin_obukhov_mod
+end module mon_obkv_mod
