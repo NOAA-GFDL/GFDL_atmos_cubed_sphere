@@ -1,7 +1,7 @@
 module fv_ufs_restart_io_mod
 
   use esmf
-  use mpp_mod,            only: mpp_pe, mpp_root_pe, mpp_chksum, mpp_pe
+  use mpp_mod,            only: mpp_pe, mpp_root_pe, mpp_chksum, mpp_npes, mpp_get_current_pelist
   use fv_arrays_mod,      only: fv_atmos_type
   use tracer_manager_mod, only: get_tracer_names
   use field_manager_mod,  only: MODEL_ATMOS
@@ -165,11 +165,12 @@ module fv_ufs_restart_io_mod
 
  end subroutine fv_dyn_restart_register
 
- subroutine fv_dyn_restart_output(Atm)
+ subroutine fv_dyn_restart_output(Atm, timestamp)
 
    implicit none
 
-   type(fv_atmos_type), intent(inout) :: Atm
+   type(fv_atmos_type), intent(in) :: Atm
+   character(len=*), intent(in) :: timestamp
 
    integer :: isc, iec, jsc, jec, nx, ny
    integer :: n, nt
@@ -251,6 +252,9 @@ module fv_ufs_restart_io_mod
      ! write(tracers_var3_cksum(nt),'(Z16)') mpp_chksum(Atm%qdiag(isc:iec,jsc:jec,:,nt))
    enddo
    ! call update_chksums(tracer_bundle, nvar3d_tracers, tracers_var3_names, tracers_var3_cksum)
+
+   ! Instead of creating yet another esmf bundle just to write Atm%ak and Atm%bk, write them here synchronously
+   call write_ak_bk(Atm, timestamp)
 
  end subroutine fv_dyn_restart_output
 
@@ -489,7 +493,7 @@ module fv_ufs_restart_io_mod
    deallocate(buffer)
 
    call ESMF_AttributeSet(field, convention="NetCDF", purpose="FV3-dim", &
-                          name=trim(axis_name)//"cartesian_axis", value="Z", rc=rc)
+                          name=trim(axis_name)//"axis", value="Z", rc=rc)
    if (ESMF_LogFoundError(rcToCheck=rc, msg=ESMF_LOGERR_PASSTHRU, line=__LINE__, file=__FILE__)) return
 
  end subroutine add_zaxis_to_field
@@ -529,5 +533,61 @@ module fv_ufs_restart_io_mod
    end do
 
  end subroutine update_chksums
+
+ subroutine write_ak_bk(Atm, timestamp)
+
+
+  use fms2_io_mod,             only: FmsNetcdfFile_t, &
+                                     register_restart_field, register_axis, unlimited, &
+                                     open_file, write_restart, &
+                                     close_file, register_field, write_data, &
+                                     register_variable_attribute
+   implicit none
+
+   type(fv_atmos_type), intent(in) :: Atm
+   character(len=*), intent(in) :: timestamp
+
+   character(len=120) :: fname
+   integer, allocatable, dimension(:) :: pes
+   type(FmsNetcdfFile_t) :: Fv_restart
+   logical :: Fv_restart_is_open
+   integer, dimension(:), allocatable :: buffer
+   character(len=8), dimension(2)  :: dim_names_2d
+   integer :: j
+
+   dim_names_2d(1) = "xaxis_1"
+   dim_names_2d(2) = "Time"
+
+   fname = 'RESTART_new/'//trim(timestamp)//'.fv_core.res.nc'
+
+   allocate(pes(mpp_npes()))
+   call mpp_get_current_pelist(pes)
+
+   Fv_restart_is_open = open_file(Fv_restart, fname, "overwrite", is_restart=.true., pelist=pes)
+
+   call register_axis(Fv_restart, "xaxis_1", size(Atm%ak(:), 1))
+   call register_axis(Fv_restart, "Time", unlimited)
+   call register_field(Fv_restart, "xaxis_1", "double", (/"xaxis_1"/))
+   call register_variable_attribute(Fv_restart,"xaxis_1", "axis", "X", str_len=1)
+   if (allocated(buffer)) deallocate(buffer)
+   allocate(buffer(size(Atm%ak(:), 1)))
+   do j = 1, size(Atm%ak(:), 1)
+      buffer(j) = j
+   end do
+   call write_data(Fv_restart, "xaxis_1", buffer)
+   deallocate(buffer)
+   call register_field(Fv_restart, "Time", "double", (/"Time"/))
+   call register_variable_attribute(Fv_restart, dim_names_2d(2), "cartesian_axis", "T", str_len=1)
+   call register_variable_attribute(Fv_restart, dim_names_2d(2), "units", "time level", str_len=len("time level"))
+   call register_variable_attribute(Fv_restart, dim_names_2d(2), "long_name", dim_names_2d(2), str_len=len(dim_names_2d(2)))
+   call write_data(Fv_restart, "Time", 1)
+   call register_restart_field (Fv_restart, 'ak', Atm%ak(:), dim_names_2d)
+   call register_restart_field (Fv_restart, 'bk', Atm%bk(:), dim_names_2d)
+
+   call write_restart(Fv_restart)
+   call close_file(Fv_restart)
+   deallocate(pes)
+
+ end subroutine write_ak_bk
 
 end module fv_ufs_restart_io_mod
