@@ -1,52 +1,63 @@
 module fv_ufs_restart_io_mod
 
+  use esmf
   use mpp_mod,            only: mpp_pe, mpp_root_pe, mpp_chksum, mpp_pe
   use fv_arrays_mod,      only: fv_atmos_type
-  use tracer_manager_mod,      only: tr_get_tracer_names=>get_tracer_names, &
-                                     get_tracer_names, get_number_tracers, &
-                                     set_tracer_profile, &
-                                     get_tracer_index
-  use field_manager_mod,       only: MODEL_ATMOS
+  use tracer_manager_mod, only: get_tracer_names
+  use field_manager_mod,  only: MODEL_ATMOS
+  use atmosphere_mod,     only: atmosphere_resolution
 
   implicit none
 
-  public fv_ufs_restart_register
+  public fv_dyn_restart_register
+  public fv_dyn_restart_output
 
-  public fv_srf_wnd_restart_output
+  public fv_core_restart_bundle_setup
   public fv_srf_wnd_restart_bundle_setup
-
-  public fv_tracer_restart_output
   public fv_tracer_restart_bundle_setup
 
   private
 
   ! fv_core.res
+  integer :: nvar3d_core_center, core_zsize
+  real, allocatable, target, dimension(:,:,:) :: core_center_var2
+  real, allocatable, target, dimension(:,:,:,:) :: core_center_var3, core_east_var3, core_south_var3
+  character(len=32), allocatable,dimension(:)  :: core_center_var2_names
+  character(len=32), allocatable,dimension(:)  :: core_center_var3_names, core_east_var3_names, core_south_var3_names
 
   ! fv_srf_wnd.res
   integer :: nvar2d_srf_wnd
   real, allocatable, target, dimension(:,:,:) :: srf_wnd_var2
-  character(32), allocatable,dimension(:) :: srf_wnd_var2_names
+  character(len=32), allocatable, dimension(:) :: srf_wnd_var2_names
+  character(len=32), allocatable, dimension(:) :: srf_wnd_var2_cksum
 
   ! fv_tracers
   integer :: nvar3d_tracers
   integer :: ntprog, ntdiag, tracers_zsize
   real, allocatable, target, dimension(:,:,:,:) :: tracers_var3
-  character(32), allocatable,dimension(:) :: tracers_var3_names
+  character(len=32), allocatable, dimension(:) :: tracers_var3_names
+  character(len=32), allocatable, dimension(:) :: tracers_var3_cksum
+
+  type(ESMF_FieldBundle) :: core_bundle, srf_wnd_bundle, tracer_bundle
 
  contains
 
- subroutine fv_ufs_restart_register (Atm)
+ subroutine fv_dyn_restart_register (Atm)
 
    ! this subroutine must allocate all data buffers and set the variable names
    ! for restart bundles
+   ! must be consistent with fv_io_register_restart in atmos_cubed_sphere/tools/fv_io.F90
 
    implicit none
 
    type(fv_atmos_type), intent(inout) :: Atm
 
-   integer :: isc, iec, jsc, jec, nx, ny
-   integer :: num, nt
+   integer :: isc, iec, jsc, jec, nx, ny, nx_c, ny_c, nx_s, ny_s, nx_e, ny_e
+   integer :: nlon, nlat, mlon, mlat
+   integer :: num, nt, n
    character(len=64) :: tracer_name
+
+   ! if(mpp_pe() == mpp_root_pe()) write(0,*) ' in fv_dyn_restart_register'
 
    isc = Atm%bd%isc
    iec = Atm%bd%iec
@@ -55,11 +66,84 @@ module fv_ufs_restart_io_mod
    nx  = (iec - isc + 1)
    ny  = (jec - jsc + 1)
 
-   if(mpp_pe() == mpp_root_pe()) write(0,*) ' in fv_ufs_restart_register '
+   ! core
+   ! 'u', 'v'
+   nvar3d_core_center = 0
+   if (.not.atm%flagstruct%hydrostatic) then
+      if (atm%flagstruct%make_nh) then ! hydrostatic restarts dont have these variables
+           nvar3d_core_center = nvar3d_core_center + 2 ! 'w', 'dz'
+           if ( atm%flagstruct%hybrid_z ) then
+               nvar3d_core_center = nvar3d_core_center + 1 ! 'ze0'
+           endif
+      else !the restart file has the non-hydrostatic variables
+           nvar3d_core_center = nvar3d_core_center + 2 ! 'w', 'dz'
+           if ( atm%flagstruct%hybrid_z ) then
+               nvar3d_core_center = nvar3d_core_center + 1 ! 'ze0'
+           endif
+      endif
+   endif
+   nvar3d_core_center = nvar3d_core_center + 2 ! 't', 'delp'
+   !--- include agrid winds in restarts for use in data assimilation
+   if (atm%flagstruct%agrid_vel_rst) then
+      nvar3d_core_center = nvar3d_core_center + 2 ! 'ua', 'va'
+   endif
+   core_zsize = size(Atm%u,3)
+
+   call atmosphere_resolution (mlon, mlat, global=.true.)
+   nx_c = nx
+   ny_c = ny
+   if (iec == mlon) then
+      ! we are on task at the 'east' edge of the cubed sphere face or regional domain
+      ! corner arrays should have one extra element in 'i' direction
+      nx_c = nx + 1
+   end if
+   if (jec == mlat) then
+      ! we are on task at the 'north' edge of the cubed sphere face or regional domain
+      ! corner arrays should have one extra element in 'j' direction
+      ny_c = ny + 1
+   end if
+
+   allocate(core_south_var3  (nx  , ny_c,core_zsize,1))
+   allocate(core_east_var3   (nx_c, ny  ,core_zsize,1))
+   allocate(core_center_var3 (nx  , ny  ,core_zsize,nvar3d_core_center))
+   allocate(core_center_var2 (nx  , ny  ,1))
+
+   allocate(core_south_var3_names  (1))
+   allocate(core_east_var3_names   (1))
+   allocate(core_center_var3_names (nvar3d_core_center))
+   allocate(core_center_var2_names (1))
+
+   core_south_var3_names(1) = 'u'
+   core_east_var3_names(1) = 'v'
+   n = 1
+   if (.not.atm%flagstruct%hydrostatic) then
+      if (atm%flagstruct%make_nh) then ! hydrostatic restarts dont have these variables
+           core_center_var3_names(n) = 'W'; n=n+1
+           core_center_var3_names(n) = 'DZ'; n=n+1
+           if ( atm%flagstruct%hybrid_z ) then
+               core_center_var3_names(n) = 'ze0'; n=n+1
+           endif
+      else !the restart file has the non-hydrostatic variables
+           core_center_var3_names(n) = 'W'; n=n+1
+           core_center_var3_names(n) = 'DZ'; n=n+1
+           if ( atm%flagstruct%hybrid_z ) then
+               core_center_var3_names(n) = 'ze0'; n=n+1
+           endif
+      endif
+   endif
+   core_center_var3_names(n) = 'T'; n=n+1
+   core_center_var3_names(n) = 'delp'; n=n+1
+   !--- include agrid winds in restarts for use in data assimilation
+   if (atm%flagstruct%agrid_vel_rst) then
+     core_center_var3_names(n) = 'ua'; n=n+1
+     core_center_var3_names(n) = 'va'; n=n+1
+   endif
+
+   core_center_var2_names(1) = 'phis'
 
    ! srf_wnd
    nvar2d_srf_wnd = 2
-   allocate (srf_wnd_var2(nx,ny,nvar2d_srf_wnd), srf_wnd_var2_names(nvar2d_srf_wnd))
+   allocate (srf_wnd_var2(nx,ny,nvar2d_srf_wnd), srf_wnd_var2_names(nvar2d_srf_wnd), srf_wnd_var2_cksum(nvar2d_srf_wnd))
    srf_wnd_var2_names(1) = 'u_srf'
    srf_wnd_var2_names(2) = 'v_srf'
 
@@ -68,7 +152,7 @@ module fv_ufs_restart_io_mod
    ntdiag = size(Atm%qdiag,4)
    nvar3d_tracers = ntprog+ntdiag
    tracers_zsize = size(Atm%q,3)
-   allocate (tracers_var3(nx,ny,tracers_zsize,nvar3d_tracers), tracers_var3_names(nvar3d_tracers))
+   allocate (tracers_var3(nx,ny,tracers_zsize,nvar3d_tracers), tracers_var3_names(nvar3d_tracers), tracers_var3_cksum(nvar3d_tracers))
 
    do nt = 1, ntprog
       call get_tracer_names(MODEL_ATMOS, nt, tracer_name)
@@ -79,45 +163,144 @@ module fv_ufs_restart_io_mod
       tracers_var3_names(nt) = tracer_name
    enddo
 
- end subroutine fv_ufs_restart_register
+ end subroutine fv_dyn_restart_register
 
- subroutine fv_srf_wnd_restart_output(Atm)
-
-   implicit none
-
-   type(fv_atmos_type), intent(inout) :: Atm
-
-   if(mpp_pe() == mpp_root_pe()) write(0,*) ' in fv_srf_wnd_restart_output '
-
-   srf_wnd_var2(:,:,1) = Atm%u_srf
-   srf_wnd_var2(:,:,2) = Atm%v_srf
-
- end subroutine fv_srf_wnd_restart_output
-
- subroutine fv_tracer_restart_output(Atm)
+ subroutine fv_dyn_restart_output(Atm)
 
    implicit none
 
    type(fv_atmos_type), intent(inout) :: Atm
 
-   integer :: nt
-   integer :: isc, iec, jsc, jec
+   integer :: isc, iec, jsc, jec, nx, ny
+   integer :: n, nt
+   integer :: mlon, mlat, nx_c, ny_c
 
-   if(mpp_pe() == mpp_root_pe()) write(0,*) ' in fv_tracer_restart_output '
+   ! if(mpp_pe() == mpp_root_pe()) write(0,*) ' in fv_dyn_restart_output'
 
    isc = Atm%bd%isc
    iec = Atm%bd%iec
    jsc = Atm%bd%jsc
    jec = Atm%bd%jec
+   nx  = (iec - isc + 1)
+   ny  = (jec - jsc + 1)
 
+   call atmosphere_resolution (mlon, mlat, global=.true.)
+   nx_c = nx
+   ny_c = ny
+   if (iec == mlon) then
+      ! we are on task at the 'east' edge of the cubed sphere face or regional domain
+      ! corner arrays should have one extra element in 'i' direction
+      nx_c = nx + 1
+   end if
+   if (jec == mlat) then
+      ! we are on task at the 'north' edge of the cubed sphere face or regional domain
+      ! corner arrays should have one extra element in 'j' direction
+      ny_c = ny + 1
+   end if
+
+   ! ---- fv_core.res
+
+   core_south_var3(:,:,:,1) = Atm%u(isc:iec,jsc:(jsc+ny_c-1),:)
+   core_east_var3(:,:,:,1) = Atm%v(isc:(isc+nx_c-1),jsc:jec,:)
+
+   n = 1
+   if (.not.atm%flagstruct%hydrostatic) then
+      if (atm%flagstruct%make_nh) then ! hydrostatic restarts dont have these variables
+           ! core_center_var3(n) = 'w'; n=n+1
+           ! core_center_var3(n) = 'dz'; n=n+1
+           ! if ( atm%flagstruct%hybrid_z ) then
+           !     core_center_var3(n) = 'ze0'; n=n+1
+           ! endif
+      else !the restart file has the non-hydrostatic variables
+           core_center_var3(:,:,:,n) = Atm%w(isc:iec,jsc:jec,:); n=n+1
+           core_center_var3(:,:,:,n) = Atm%delz; n=n+1
+           if ( atm%flagstruct%hybrid_z ) then
+               core_center_var3(:,:,:,n) = Atm%ze0; n=n+1
+           endif
+      endif
+   endif
+   core_center_var3(:,:,:,n) = Atm%pt(isc:iec,jsc:jec,:);   n=n+1
+   core_center_var3(:,:,:,n) = Atm%delp(isc:iec,jsc:jec,:); n=n+1
+   !--- include agrid winds in restarts for use in data assimilation
+   if (atm%flagstruct%agrid_vel_rst) then
+     core_center_var3(:,:,:,n) = Atm%ua(isc:iec,jsc:jec,:); n=n+1
+     core_center_var3(:,:,:,n) = Atm%va(isc:iec,jsc:jec,:); n=n+1
+   endif
+
+   core_center_var2(:,:,1) = Atm%phis(isc:iec,jsc:jec)
+
+   ! ---- fv_srf_wnd.res
+   srf_wnd_var2(:,:,1) = Atm%u_srf
+   srf_wnd_var2(:,:,2) = Atm%v_srf
+   write(srf_wnd_var2_cksum(1),'(Z16)') mpp_chksum(Atm%u_srf)
+   write(srf_wnd_var2_cksum(2),'(Z16)') mpp_chksum(Atm%v_srf)
+   call update_chksums(srf_wnd_bundle, 2, srf_wnd_var2_names, srf_wnd_var2_cksum)
+
+   ! ---- fv_tracer_res
+
+   ! computing checksum for arrays that have halos is not straightforward as simply calling
+   ! mpp_chksum on full array or computational domain sub-array, unfortunately.
    do nt = 1, ntprog
      tracers_var3(:,:,:,nt) = Atm%q(isc:iec,jsc:jec,:,nt)
+     ! write(tracers_var3_cksum(nt),'(Z16)') mpp_chksum(Atm%q(:,:,:,nt))
+     ! write(tracers_var3_cksum(nt),'(Z16)') mpp_chksum(Atm%q(isc:iec,jsc:jec,:,nt))
    enddo
    do nt = ntprog+1, nvar3d_tracers
      tracers_var3(:,:,:,nt) = Atm%qdiag(isc:iec,jsc:jec,:,nt)
+     ! write(tracers_var3_cksum(nt),'(Z16)') mpp_chksum(Atm%qdiag(:,:,:,nt))
+     ! write(tracers_var3_cksum(nt),'(Z16)') mpp_chksum(Atm%qdiag(isc:iec,jsc:jec,:,nt))
    enddo
+   ! call update_chksums(tracer_bundle, nvar3d_tracers, tracers_var3_names, tracers_var3_cksum)
 
- end subroutine fv_tracer_restart_output
+ end subroutine fv_dyn_restart_output
+
+ subroutine fv_core_restart_bundle_setup(bundle, grid, rc)
+!
+!-------------------------------------------------------------
+!*** set esmf bundle for phys restart fields
+!------------------------------------------------------------
+!
+   use esmf
+
+   implicit none
+
+   type(ESMF_FieldBundle),intent(inout)        :: bundle
+   type(ESMF_Grid),intent(inout)               :: grid
+   integer,intent(out)                         :: rc
+
+!*** local variables
+   integer i, j, k, n
+   character(128)    :: bdl_name
+   type(ESMF_Field)  :: field
+   character(128)    :: outputfile
+   integer :: num
+   real,dimension(:,:),pointer   :: temp_r2d
+   real,dimension(:,:,:),pointer   :: temp_r3d
+
+   ! if(mpp_pe() == mpp_root_pe()) write(0,*) 'in fv_core_restart_bundle_setup'
+
+   core_bundle = bundle
+
+   call ESMF_FieldBundleGet(bundle, name=bdl_name,rc=rc)
+   if (ESMF_LogFoundError(rcToCheck=rc, msg=ESMF_LOGERR_PASSTHRU, line=__LINE__, file=__FILE__)) return
+
+   outputfile = trim(bdl_name)
+
+   temp_r3d => core_south_var3(:,:,:,1)
+   call create_3d_field_and_add_to_bundle(temp_r3d, trim(core_south_var3_names(1)), "zaxis_1", core_zsize, trim(outputfile), grid, bundle, staggerloc=ESMF_STAGGERLOC_EDGE2)
+
+   temp_r3d => core_east_var3(:,:,:,1)
+   call create_3d_field_and_add_to_bundle(temp_r3d, trim(core_east_var3_names(1)), "zaxis_1", core_zsize, trim(outputfile), grid, bundle, staggerloc=ESMF_STAGGERLOC_EDGE1)
+
+   do n = 1, nvar3d_core_center
+     temp_r3d => core_center_var3(:,:,:,n)
+     call create_3d_field_and_add_to_bundle(temp_r3d, trim(core_center_var3_names(n)), "zaxis_1", core_zsize, trim(outputfile), grid, bundle)
+   end do
+
+   temp_r2d => core_center_var2(:,:,1)
+   call create_2d_field_and_add_to_bundle(temp_r2d, trim(core_center_var2_names(1)), trim(outputfile), grid, bundle)
+
+ end subroutine fv_core_restart_bundle_setup
 
  subroutine fv_srf_wnd_restart_bundle_setup(bundle, grid, rc)
 !
@@ -142,7 +325,9 @@ module fv_ufs_restart_io_mod
    real,dimension(:,:),pointer   :: temp_r2d
    real,dimension(:,:,:),pointer   :: temp_r3d
 
-   if(mpp_pe() == mpp_root_pe()) write(0,*) ' in fv_srf_wnd_restart_bundle_setup '
+   ! if(mpp_pe() == mpp_root_pe()) write(0,*) 'in fv_srf_wnd_restart_bundle_setup'
+
+   srf_wnd_bundle = bundle
 
    call ESMF_FieldBundleGet(bundle, name=bdl_name,rc=rc)
    if (ESMF_LogFoundError(rcToCheck=rc, msg=ESMF_LOGERR_PASSTHRU, line=__LINE__, file=__FILE__)) return
@@ -179,7 +364,9 @@ module fv_ufs_restart_io_mod
    real,dimension(:,:),pointer   :: temp_r2d
    real,dimension(:,:,:),pointer   :: temp_r3d
 
-   if(mpp_pe() == mpp_root_pe()) write(0,*) ' in fv_tracer_restart_bundle_setup '
+   ! if(mpp_pe() == mpp_root_pe()) write(0,*) 'in fv_tracer_restart_bundle_setup'
+
+   tracer_bundle = bundle
 
    call ESMF_FieldBundleGet(bundle, name=bdl_name,rc=rc)
    if (ESMF_LogFoundError(rcToCheck=rc, msg=ESMF_LOGERR_PASSTHRU, line=__LINE__, file=__FILE__)) return
@@ -225,7 +412,7 @@ module fv_ufs_restart_io_mod
 
   end subroutine create_2d_field_and_add_to_bundle
 
- subroutine create_3d_field_and_add_to_bundle(temp_r3d, field_name, axis_name, num_levels, outputfile, grid, bundle)
+ subroutine create_3d_field_and_add_to_bundle(temp_r3d, field_name, axis_name, num_levels, outputfile, grid, bundle, staggerloc)
 
    use esmf
 
@@ -238,14 +425,20 @@ module fv_ufs_restart_io_mod
    character(len=*),                           intent(in)    :: outputfile
    type(ESMF_Grid),                            intent(in)    :: grid
    type(ESMF_FieldBundle),                     intent(inout) :: bundle
+   type(ESMF_StaggerLoc),optional,             intent(in)    :: staggerloc
 
    type(ESMF_Field) :: field
+   type(ESMF_StaggerLoc) :: stagger
 
    integer :: rc, i
 
-   ! if(mpp_pe() == mpp_root_pe()) write(0,*)'in add 3d field to bundle ', trim(field_name)
+   stagger = ESMF_STAGGERLOC_CENTER
+   if(present(staggerloc)) then
+     stagger = staggerloc
+   end if
+
    field = ESMF_FieldCreate(grid, temp_r3d, datacopyflag=ESMF_DATACOPY_REFERENCE, &
-                            name=trim(field_name), indexFlag=ESMF_INDEX_DELOCAL, rc=rc)
+                            name=trim(field_name), indexFlag=ESMF_INDEX_DELOCAL, staggerloc=stagger, rc=rc)
    if (ESMF_LogFoundError(rcToCheck=rc, msg=ESMF_LOGERR_PASSTHRU,line=__LINE__, file=__FILE__)) &
    call ESMF_Finalize(endflag=ESMF_END_ABORT)
 
@@ -301,5 +494,40 @@ module fv_ufs_restart_io_mod
 
  end subroutine add_zaxis_to_field
 
+#if 0
+ subroutine update_chksums(bundle, var_name, var_cksum)
+
+   type(ESMF_FieldBundle), intent(inout) :: bundle
+   character(len=*), intent(in) :: var_names, var_cksums
+
+   integer :: rc
+   type(ESMF_Field) :: field
+
+   call ESMF_FieldBundleGet(bundle, var_names field=field, rc=rc)
+   if (ESMF_LogFoundError(rcToCheck=rc, msg=ESMF_LOGERR_PASSTHRU, line=__LINE__, file=__FILE__)) return
+
+   call ESMF_AttributeSet(field, convention="NetCDF", purpose="FV3", name="checksum", value=var_cksums, rc=rc)
+   if (ESMF_LogFoundError(rcToCheck=rc, msg=ESMF_LOGERR_PASSTHRU, line=__LINE__, file=__FILE__)) return
+
+ end subroutine update_chksums
+#endif
+ subroutine update_chksums(bundle, nvar, var_names, var_cksums)
+
+   type(ESMF_FieldBundle), intent(inout) :: bundle
+   integer, intent(in) :: nvar
+   character(len=*), dimension(:), intent(in) :: var_names, var_cksums
+
+   integer :: n, rc
+   type(ESMF_Field) :: field
+
+   do n = 1, nvar
+     call ESMF_FieldBundleGet(bundle, var_names(n), field=field, rc=rc)
+     if (ESMF_LogFoundError(rcToCheck=rc, msg=ESMF_LOGERR_PASSTHRU, line=__LINE__, file=__FILE__)) return
+
+     call ESMF_AttributeSet(field, convention="NetCDF", purpose="FV3", name="checksum", value=var_cksums(n), rc=rc)
+     if (ESMF_LogFoundError(rcToCheck=rc, msg=ESMF_LOGERR_PASSTHRU, line=__LINE__, file=__FILE__)) return
+   end do
+
+ end subroutine update_chksums
 
 end module fv_ufs_restart_io_mod
