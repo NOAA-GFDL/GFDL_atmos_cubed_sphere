@@ -22,9 +22,6 @@
 module a2b_edge_mod
 
   use fv_grid_utils_mod, only: great_circle_dist
-#ifdef VAN2
-  use fv_grid_utils_mod, only: van2
-#endif
 
   use fv_arrays_mod,     only: fv_grid_type, R_GRID
 

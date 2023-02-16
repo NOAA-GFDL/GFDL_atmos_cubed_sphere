@@ -24,7 +24,7 @@
 
 module fv_diagnostics_mod
 
- use constants_mod,      only: grav, rdgas, rvgas, pi=>pi_8, kappa, WTMAIR, WTMCO2, &
+ use constants_mod,      only: grav, rdgas, rvgas, pi=>pi_8, kappa, WTMAIR, WTMCO2, WTMH2O, &
                                hlv, cp_air, cp_vapor, TFREEZE
  use fv_arrays_mod,      only: radius ! scaled for small earth
  use fms_mod,            only: write_version_number
@@ -99,6 +99,13 @@ module fv_diagnostics_mod
  public :: cs3_interpolator, get_vorticity, is_ideal_case
 ! needed by fv_nggps_diag
  public :: max_vv, max_uh, bunkers_vector, helicity_relative_CAPS
+ public :: max_vorticity
+ public :: Mw_air!_0d, Mw_air_3d
+
+ interface Mw_air
+    module procedure Mw_air_0d
+    module procedure Mw_air_3d
+ end interface Mw_air
 
  integer, parameter :: MAX_PLEVS = 31
 #ifdef FEWER_PLEVS
@@ -544,11 +551,16 @@ contains
     allocate(id_tracer(ncnst))
     allocate(id_tracer_dmmr(ncnst))
     allocate(id_tracer_dvmr(ncnst))
+    allocate(id_tracer_burden(ncnst))
     allocate(w_mr(ncnst))
     id_tracer(:)      = 0
     id_tracer_dmmr(:) = 0
     id_tracer_dvmr(:) = 0
+    id_tracer_burden(:) = 0
     w_mr(:) = 0.E0
+
+    allocate(conv_vmr_mmr(ncnst))
+    conv_vmr_mmr(:) = .false.
 
     allocate(id_u(nplev))
     allocate(id_v(nplev))
@@ -1364,6 +1376,7 @@ contains
        id_rh1000_cmip = register_diag_field ( trim(field), 'rh1000_cmip', axes(1:2), Time,       &
                            '1000-mb relative humidity (CMIP)', '%', missing_value=missing_value )
 
+
        if (Atm(n)%flagstruct%write_3d_diags) then
           do i=1, ncnst
              !--------------------
@@ -1381,31 +1394,52 @@ contains
                         ' in module ', trim(field)
                 end if
              endif
+
+             !vmr/mmr
+             if ( trim(tunits) .eq. 'vmr' ) then
+                conv_vmr_mmr(i) = .true.
+             end if
+
              !----------------------------------
              ! ESM Tracer dmmr/dvmr diagnostics:
              !   for specific elements only
              !----------------------------------
              !---co2
              if (trim(tname).eq.'co2') then
-                w_mr(:) = WTMCO2
+                !                w_mr(:) = WTMCO2
+                w_mr(i) = WTMCO2
                 id_tracer_dmmr(i) = register_diag_field ( field, trim(tname)//'_dmmr',  &
                      axes(1:3), Time, trim(tlongname)//" (dry mmr)",           &
                      trim(tunits), missing_value=missing_value)
                 id_tracer_dvmr(i) = register_diag_field ( field, trim(tname)//'_dvmr',  &
                      axes(1:3), Time, trim(tlongname)//" (dry vmr)",           &
                      'mol/mol', missing_value=missing_value)
-                if (master) then
-                   unit = stdlog()
-                   if (id_tracer_dmmr(i) > 0) then
-                      write(unit,'(a,a,a,a)') 'Diagnostics available for '//trim(tname)//' dry mmr ', &
-                           trim(tname)//'_dmmr', ' in module ', trim(field)
-                   end if
-                   if (id_tracer_dvmr(i) > 0) then
-                      write(unit,'(a,a,a,a)') 'Diagnostics available for '//trim(tname)//' dry vmr ', &
-                           trim(tname)//'_dvmr', ' in module ', trim(field)
-                   end if
-                endif
+             else
+                if (conv_vmr_mmr(i)) then
+                   id_tracer_dvmr(i) = register_diag_field ( field, trim(tname)//'_dvmr',  &
+                        axes(1:3), Time, trim(tlongname)//" (dry vmr)",           &
+                        'mol/mol', missing_value=missing_value)
+                   id_tracer_burden(i) = register_diag_field ( field, trim(tname)//'_burden',  &
+                        axes(1:3), Time, trim(tlongname)//" burden",           &
+                        'mol/m2', missing_value=missing_value)
+                else
+                   id_tracer_dmmr(i) = register_diag_field ( field, trim(tname)//'_dmmr',  &
+                        axes(1:3), Time, trim(tlongname)//" (dry mmr)",           &
+                        trim(tunits), missing_value=missing_value)
+                   id_tracer_burden(i) = register_diag_field ( field, trim(tname)//'_burden',  &
+                        axes(1:3), Time, trim(tlongname)//" burden",           &
+                        'kg/m2', missing_value=missing_value)
+                end if
              endif
+             unit = stdlog()
+             if (id_tracer_dmmr(i) > 0) then
+                write(unit,'(a,a,a,a)') 'Diagnostics available for '//trim(tname)//' dry mmr ', &
+                     trim(tname)//'_dmmr', ' in module ', trim(field)
+             end if
+             if (id_tracer_dvmr(i) > 0) then
+                write(unit,'(a,a,a,a)') 'Diagnostics available for '//trim(tname)//' dry vmr ', &
+                     trim(tname)//'_dvmr', ' in module ', trim(field)
+             end if
              !---end co2
 
           enddo
@@ -3862,23 +3896,50 @@ contains
 ! co2_mmr = (wco2/wair) * co2_vmr
 ! Note: There is a check to ensure tracer number one is sphum
 
+!f1p: update diagnostics to account for all water tracers (nwat)
           if (id_tracer_dmmr(itrac) > 0 .or. id_tracer_dvmr(itrac) > 0) then
-              if (itrac .gt. nq) then
-                dmmr(:,:,:) = Atm(n)%qdiag(isc:iec,jsc:jec,1:npz,itrac)  &
-                              /(1.0-Atm(n)%q(isc:iec,jsc:jec,1:npz,1))
-              else
-                dmmr(:,:,:) = Atm(n)%q(isc:iec,jsc:jec,1:npz,itrac)  &
-                              /(1.0-Atm(n)%q(isc:iec,jsc:jec,1:npz,1))
-              endif
-              dvmr(:,:,:) = dmmr(isc:iec,jsc:jec,1:npz) * WTMAIR/w_mr(itrac)
-              used = send_data (id_tracer_dmmr(itrac), dmmr, Time )
-              used = send_data (id_tracer_dvmr(itrac), dvmr, Time )
-              if( prt_minmax ) then
-                 call prt_mxm(trim(tname)//'_dmmr', dmmr, &
-                    isc, iec, jsc, jec, 0, npz, 1., Atm(n)%gridstruct%area_64, Atm(n)%domain)
-                 call prt_mxm(trim(tname)//'_dvmr', dvmr, &
-                    isc, iec, jsc, jec, 0, npz, 1., Atm(n)%gridstruct%area_64, Atm(n)%domain)
-            endif
+             if (.not. conv_vmr_mmr(itrac)) then
+                if (itrac .gt. nq) then
+                   dmmr(:,:,:) = Atm(n)%qdiag(isc:iec,jsc:jec,1:npz,itrac)  &
+                        /(1.0-sum(Atm(n)%q(isc:iec,jsc:jec,1:npz,1:Atm(n)%flagstruct%nwat),dim=4))
+                else
+                   dmmr(:,:,:) = Atm(n)%q(isc:iec,jsc:jec,1:npz,itrac)  &
+                        /(1.0-sum(Atm(n)%q(isc:iec,jsc:jec,1:npz,1:Atm(n)%flagstruct%nwat),dim=4))
+                endif
+                used = send_data (id_tracer_dmmr(itrac), dmmr, Time )
+                if (w_mr(itrac).gt.0) then
+                   dvmr(:,:,:) = dmmr(isc:iec,jsc:jec,1:npz) * WTMAIR/w_mr(itrac)
+                   used = send_data (id_tracer_dvmr(itrac), dvmr, Time )
+                end if
+                if( prt_minmax ) then
+                   call prt_mxm(trim(tname)//'_dmmr', dmmr, &
+                        isc, iec, jsc, jec, 0, npz, 1., Atm(n)%gridstruct%area_64, Atm(n)%domain)
+                   call prt_mxm(trim(tname)//'_dvmr', dvmr, &
+                        isc, iec, jsc, jec, 0, npz, 1., Atm(n)%gridstruct%area_64, Atm(n)%domain)
+                endif
+
+                !send burden diagnositcs
+                if  (itrac .gt. nq) then
+                   used = send_data (id_tracer_burden(itrac),Atm(n)%qdiag(isc:iec,jsc:jec,1:npz,itrac) * Atm(n)%delp(isc:iec,jsc:jec,1:npz)/grav, Time ) !kg/m2
+                else
+                   used = send_data (id_tracer_burden(itrac),Atm(n)%q(isc:iec,jsc:jec,1:npz,itrac) * Atm(n)%delp(isc:iec,jsc:jec,1:npz)/grav, Time ) !kg/m2
+                end if
+             else
+                ! now use Mw_air function for clarity
+                if (itrac.gt.nq) then
+                   dvmr(:,:,:) = Atm(n)%qdiag(isc:iec,jsc:jec,1:npz,itrac) * WTMAIR/(Mw_air(sum(Atm(n)%q(isc:iec,jsc:jec,1:npz,1:Atm(n)%flagstruct%nwat),dim=4))*(1-sum(Atm(n)%q(isc:iec,jsc:jec,1:npz,1:Atm(n)%flagstruct%nwat),dim=4)))
+                else
+                   dvmr(:,:,:) = Atm(n)%q(isc:iec,jsc:jec,1:npz,itrac) * WTMAIR/(Mw_air(sum(Atm(n)%q(isc:iec,jsc:jec,1:npz,1:Atm(n)%flagstruct%nwat),dim=4))*(1-sum(Atm(n)%q(isc:iec,jsc:jec,1:npz,1:Atm(n)%flagstruct%nwat),dim=4)))
+                end if
+                used = send_data (id_tracer_dvmr(itrac), dvmr, Time )
+
+                !send burden diagnostics
+                if (itrac.gt.nq) then
+                   used = send_data (id_tracer_burden(itrac),Atm(n)%qdiag(isc:iec,jsc:jec,1:npz,itrac) * Atm(n)%delp(isc:iec,jsc:jec,1:npz)/grav / Mw_air(sum(Atm(n)%q(isc:iec,jsc:jec,1:npz,1:Atm(n)%flagstruct%nwat),dim=4)) * 1.e3, Time ) !mol/m2
+                else
+                   used = send_data (id_tracer_burden(itrac),Atm(n)%q(isc:iec,jsc:jec,1:npz,itrac) * Atm(n)%delp(isc:iec,jsc:jec,1:npz)/grav / Mw_air(sum(Atm(n)%q(isc:iec,jsc:jec,1:npz,1:Atm(n)%flagstruct%nwat),dim=4)) * 1.e3, Time ) !mol/m2
+                end if
+              end if
           endif
         enddo
 !----------------------------------
@@ -6507,5 +6568,29 @@ end subroutine eqv_pot
 
     return
   end function getqvi
+
+!-----------------------------------------------------------------------
+!ccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccc
+!-----------------------------------------------------------------------
+
+  !f1p: calculate molecular weight of ambient (air+h2o) air. required for vmr
+  !sum_wat: sum of water tracers
+  function Mw_air_0d(sum_wat) result(out)
+
+    implicit none
+    real,intent(in)                                           :: sum_wat
+    real                                                      :: out
+
+    out = WTMAIR*WTMH2O/((1-sum_wat)*WTMH2O+sum_wat*WTMAIR)
+  end function Mw_air_0d
+
+  function Mw_air_3d(sum_wat) result(out)
+
+    implicit none
+    real,dimension(:,:,:),intent(in)                                           :: sum_wat
+    real, dimension(size(sum_wat,1),size(sum_wat,2),size(sum_wat,3))           :: out
+
+    out = WTMAIR*WTMH2O/((1.-sum_wat)*WTMH2O+sum_wat*WTMAIR)
+  end function Mw_air_3d
 
 end module fv_diagnostics_mod

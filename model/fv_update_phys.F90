@@ -21,12 +21,12 @@
 
 module fv_update_phys_mod
 
-  use constants_mod,      only: kappa, rdgas, rvgas, grav, cp_air, cp_vapor, pi=>pi_8, TFREEZE
+  use constants_mod,      only: kappa, rdgas, rvgas, grav, cp_air, cp_vapor, pi=>pi_8, TFREEZE, wtmair, wtmh2o
   use field_manager_mod,  only: MODEL_ATMOS
   use mpp_domains_mod,    only: mpp_update_domains, domain2d
   use mpp_parameter_mod,  only: AGRID_PARAM=>AGRID
   use mpp_mod,            only: FATAL, mpp_error
-  use mpp_mod,            only: mpp_error, NOTE, WARNING, mpp_pe
+  use mpp_mod,            only: mpp_error, NOTE, WARNING, mpp_pe,mpp_root_pe
   use time_manager_mod,   only: time_type
   use tracer_manager_mod, only: get_tracer_index, adjust_mass, get_tracer_names
   use fv_mp_mod,          only: start_group_halo_update, complete_group_halo_update
@@ -36,7 +36,7 @@ module fv_update_phys_mod
   use boundary_mod,       only: extrapolation_BC
   use fv_eta_mod,         only: get_eta_level
   use fv_timing_mod,      only: timing_on, timing_off
-  use fv_diagnostics_mod, only: prt_maxmin, range_check
+  use fv_diagnostics_mod, only: prt_maxmin, range_check, Mw_air!_0d
   use fv_mapz_mod,        only: moist_cv, moist_cp
 #if defined (ATMOS_NUDGE)
   use atmos_nudge_mod,    only: get_atmos_nudge, do_ps
@@ -154,7 +154,7 @@ module fv_update_phys_mod
 
 !f1p
 !account for change in air molecular weight because of H2O change
-    logical, dimension(nq) :: conv_vmr_mmr
+    logical, dimension(flagstruct%ncnst) :: conv_vmr_mmr
     real                   :: adj_vmr(is:ie,js:je,npz)
     character(len=32)      :: tracer_units, tracer_name
 
@@ -171,15 +171,13 @@ module fv_update_phys_mod
     endif
 
 !f1p
-    conv_vmr_mmr(1:nq) = .false.
-    if (flagstruct%adj_mass_vmr) then
-    do m=1,nq
+    conv_vmr_mmr(1:flagstruct%ncnst) = .false.
+    if (flagstruct%adj_mass_vmr .gt. 0) then
+    do m=1,flagstruct%ncnst
        call get_tracer_names (MODEL_ATMOS, m, name = tracer_name,  &
             units = tracer_units)
        if ( trim(tracer_units) .eq. 'vmr' ) then
           conv_vmr_mmr(m) = .true.
-       else
-          conv_vmr_mmr(m) = .false.
        end if
     end do
     end if
@@ -334,13 +332,17 @@ module fv_update_phys_mod
          do i=is,ie
             ps_dt(i,j)  = 1. + dt*sum(q_dt(i,j,k,1:nwat))
             delp(i,j,k) = delp(i,j,k) * ps_dt(i,j)
-            if (flagstruct%adj_mass_vmr) then
-               adj_vmr(i,j,k) =                          &
-                    (ps_dt(i,j) - sum(q(i,j,k,1:flagstruct%nwat))) /  &
-                    (1.d0       - sum(q(i,j,k,1:flagstruct%nwat)))
+            if (flagstruct%adj_mass_vmr .eq. 1) then
+               !this is wrong
+                   adj_vmr(i,j,k) =                           &
+                        (ps_dt(i,j) - sum(q(i,j,k,1:nwat))) /  &
+                        (1.d0       - sum(q(i,j,k,1:nwat)))
+             elseif (flagstruct%adj_mass_vmr .eq. 2) then
+                adj_vmr(i,j,k) = Mw_air(sum(q(i,j,k,1:nwat)))/Mw_air(sum(q(i,j,k,1:nwat))-dt*sum(q_dt(i,j,k,1:nwat)))
             end if
          enddo
       enddo
+
 
 !-----------------------------------------
 ! Adjust mass mixing ratio of all tracers
@@ -354,7 +356,11 @@ module fv_update_phys_mod
               if (conv_vmr_mmr(m)) &
                    q(is:ie,js:je,k,m) = q(is:ie,js:je,k,m) * adj_vmr(is:ie,js:je,k)
             else
-              qdiag(is:ie,js:je,k,m) = qdiag(is:ie,js:je,k,m) / ps_dt(is:ie,js:je)
+               qdiag(is:ie,js:je,k,m) = qdiag(is:ie,js:je,k,m) / ps_dt(is:ie,js:je)
+               !it seems that the adjustment should be applied to diagnostic tracers as well. 
+               !Only for adj_mass_vmr=2 to maintain backward compatibility
+               if (conv_vmr_mmr(m) .and. flagstruct%adj_mass_vmr .eq. 2) &
+                   qdiag(is:ie,js:je,k,m) = qdiag(is:ie,js:je,k,m) * adj_vmr(is:ie,js:je,k)
             endif
           endif
         enddo
