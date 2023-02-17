@@ -9,7 +9,7 @@ jobs:
     runs-on: [self-hosted]
     name: Checkout Code
     steps:
-    - run: python3 /contrib/Lauren.Chilutti/home/PWscripts/FV3checkoutStartClusters.py $GITHUB_REF
+    - run: /contrib/fv3/FV3CIScripts/checkout.sh $GITHUB_REF
     
   build:
     runs-on: [self-hosted]
@@ -19,13 +19,13 @@ jobs:
       fail-fast: true
       max-parallel: 3
       matrix:
-        runpath: [/contrib/Lauren.Chilutti/home/PWscripts]
-        runscript: [FV3swStartClusters.py, FV3nhStartClusters.py, FV3hydroStartClusters.py]
+        runpath: [/contrib/fv3/FV3CIScripts/]
+        runscript: [swcompile.sh nhcompile.sh, hydrocompile.sh]
     steps:
       - env:
           RUNPATH: ${{ matrix.runpath }}
           RUNSCRIPT: ${{ matrix.runscript }}
-        run: python3 $RUNPATH/$RUNSCRIPT $GITHUB_REF
+        run: $RUNPATH/$RUNSCRIPT $GITHUB_REF
         
   test:
     runs-on: [self-hosted]
@@ -35,53 +35,45 @@ jobs:
       fail-fast: false
       max-parallel: 13
       matrix:
-        runpath: [/contrib/Lauren.Chilutti/home/PWscripts]
+        runpath: [/contrib/fv3/FV3CIScripts/]
         runscript:
-          - FV3C128r20.solo.superCStartClusters.py
-          - FV3C128r3.solo.TC.d1StartClusters.py
-          - FV3C128r3.solo.TC.h6StartClusters.py
-          - FV3C128r3.solo.TCStartClusters.py
-          - FV3C128r3.solo.TC.tr8StartClusters.py
-          - FV3C192.sw.BLvortexStartClusters.py
-          - FV3C192.sw.BTwaveStartClusters.py
-          - FV3C192.sw.modonStartClusters.py
-          - FV3C256r20.solo.superCStartClusters.py
-          - FV3C384.sw.BLvortexStartClusters.py
-          - FV3C384.sw.BTwaveStartClusters.py
-          - FV3C512r20.solo.superCStartClusters.py
-          - FV3C768.sw.BTwaveStartClusters.py
-          - FV3C96.solo.BCdry.hydStartClusters.py
-          - FV3C96.solo.BCdryStartClusters.py
-          - FV3C96.solo.BCmoist.hyd.d3StartClusters.py
-          - FV3C96.solo.BCmoist.hydStartClusters.py
-          - FV3C96.solo.BCmoist.nhKStartClusters.py
-          - FV3C96.solo.BCmoistStartClusters.py
-          - FV3C96.solo.mtn_rest.hyd.diff2StartClusters.py
-          - FV3C96.solo.mtn_rest.hydStartClusters.py
-          - FV3C96.solo.mtn_rest.nonmono.diff2StartClusters.py
-          - FV3C96.solo.mtn_restStartClusters.py
-          - FV3C96.sw.BLvortexStartClusters.py
-          - FV3C96.sw.BTwaveStartClusters.py
-          - FV3C96.sw.modonStartClusters.py
-          - FV3C96.sw.RHwaveStartClusters.py
-          - FV3d96_1k.solo.mtn_rest_shear.olddampStartClusters.py
-          - FV3d96_1k.solo.mtn_rest_shearStartClusters.py
-          - FV3d96_1k.solo.mtn_schar.monoStartClusters.py
-          - FV3d96_1k.solo.mtn_scharStartClusters.py
-          - FV3d96_2k.solo.bubble.n0StartClusters.py
-          - FV3d96_2k.solo.bubble.nhKStartClusters.py
-          - FV3d96_2k.solo.bubbleStartClusters.py
-          - FV3d96_500m.solo.mtn_scharStartClusters.py
+          - C128r20.solo.superC.sh
+          - C128r3.solo.TC.d1.sh
+          - C128r3.solo.TC.h6.sh
+          - C128r3.solo.TC.sh
+          - C128r3.solo.TC.tr8.sh
+          - C192.sw.BLvortex.sh
+          - C192.sw.BTwave.sh
+          - C192.sw.modon.sh
+          - C256r20.solo.superC.sh
+          - C384.sw.BLvortex.sh
+          - C384.sw.BTwave.sh
+          - C512r20.solo.superC.sh
+          - C768.sw.BTwave.sh
+          - C96.solo.BCdry.hyd.sh
+          - C96.solo.BCdry.sh
+          - C96.solo.BCmoist.hyd.d3.sh
+          - C96.solo.BCmoist.hyd.sh
+          - C96.solo.BCmoist.nhK.sh
+          - C96.solo.BCmoist.sh
+          - C96.solo.mtn_rest.hyd.diff2.sh
+          - C96.solo.mtn_rest.hyd.sh
+          - C96.solo.mtn_rest.nonmono.diff2.sh
+          - C96.solo.mtn_rest.sh
+          - C96.sw.BLvortex.sh
+          - C96.sw.BTwave.sh
+          - C96.sw.modon.sh
+          - C96.sw.RHwave.sh
+          - d96_1k.solo.mtn_rest_shear.olddamp.sh
+          - d96_1k.solo.mtn_rest_shear.sh
+          - d96_1k.solo.mtn_schar.mono.sh
+          - d96_1k.solo.mtn_schar.sh
+          - d96_2k.solo.bubble.n0.sh
+          - d96_2k.solo.bubble.nhK.sh
+          - d96_2k.solo.bubble.sh
+          - d96_500m.solo.mtn_schar.sh
     steps:
       - env:
           RUNPATH: ${{ matrix.runpath }}
           RUNSCRIPT: ${{ matrix.runscript }}
-        run: python3 $RUNPATH/$RUNSCRIPT $GITHUB_REF
-        
-  shutdowncluster:
-    runs-on: [self-hosted]
-    name: Shutdown cluster
-    if: always()
-    needs: [checkout, build, test]
-    steps:
-      - run: python3 /contrib/Lauren.Chilutti/home/PWscripts/stopClusters.py cifv3
+        run: $RUNPATH/$RUNSCRIPT $GITHUB_REF
