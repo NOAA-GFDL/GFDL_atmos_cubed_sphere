@@ -9,7 +9,7 @@ jobs:
     runs-on: [self-hosted]
     name: Checkout Code
     steps:
-    - run: python3 /pw/storage/PWscripts/FV3checkoutStartClusters.py $GITHUB_REF
+    - run: python3 /contrib/Lauren.Chilutti/home/PWscripts/FV3checkoutStartClusters.py $GITHUB_REF
     
   build:
     runs-on: [self-hosted]
@@ -19,7 +19,7 @@ jobs:
       fail-fast: true
       max-parallel: 3
       matrix:
-        runpath: [/pw/storage/PWscripts]
+        runpath: [/contrib/Lauren.Chilutti/home/PWscripts]
         runscript: [FV3swStartClusters.py, FV3nhStartClusters.py, FV3hydroStartClusters.py]
     steps:
       - env:
@@ -35,7 +35,7 @@ jobs:
       fail-fast: false
       max-parallel: 13
       matrix:
-        runpath: [/pw/storage/PWscripts]
+        runpath: [/contrib/Lauren.Chilutti/home/PWscripts]
         runscript:
           - FV3C128r20.solo.superCStartClusters.py
           - FV3C128r3.solo.TC.d1StartClusters.py
@@ -84,4 +84,4 @@ jobs:
     if: always()
     needs: [checkout, build, test]
     steps:
-      - run: python3 /home/Lauren.Chilutti/pw/storage/PWscripts/stopClusters.py cifv3
+      - run: python3 /contrib/Lauren.Chilutti/home/PWscripts/stopClusters.py cifv3
