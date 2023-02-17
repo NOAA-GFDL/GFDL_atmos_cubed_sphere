@@ -20,7 +20,7 @@ jobs:
       max-parallel: 3
       matrix:
         runpath: [/contrib/fv3/FV3CIScripts/]
-        runscript: [swcompile.sh nhcompile.sh, hydrocompile.sh]
+        runscript: [swcompile.sh, nhcompile.sh, hydrocompile.sh]
     steps:
       - env:
           RUNPATH: ${{ matrix.runpath }}
