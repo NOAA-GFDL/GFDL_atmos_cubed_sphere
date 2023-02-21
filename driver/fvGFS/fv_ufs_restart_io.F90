@@ -22,8 +22,8 @@ module fv_ufs_restart_io_mod
   integer :: nvar3d_core_center, core_zsize
   real, allocatable, target, dimension(:,:,:) :: core_center_var2
   real, allocatable, target, dimension(:,:,:,:) :: core_center_var3, core_east_var3, core_south_var3
-  character(len=32), allocatable,dimension(:)  :: core_center_var2_names
-  character(len=32), allocatable,dimension(:)  :: core_center_var3_names, core_east_var3_names, core_south_var3_names
+  character(len=32), allocatable,dimension(:)  :: core_center_var2_names, core_center_var3_names, core_east_var3_names, core_south_var3_names
+  character(len=32), allocatable,dimension(:)  :: core_center_var2_cksum, core_center_var3_cksum, core_east_var3_cksum, core_south_var3_cksum
 
   ! fv_srf_wnd.res
   integer :: nvar2d_srf_wnd
@@ -108,10 +108,20 @@ module fv_ufs_restart_io_mod
    allocate(core_center_var3 (nx  , ny  ,core_zsize,nvar3d_core_center))
    allocate(core_center_var2 (nx  , ny  ,1))
 
+   core_south_var3  = 0.0
+   core_east_var3   = 0.0
+   core_center_var3 = 0.0
+   core_center_var2 = 0.0
+
    allocate(core_south_var3_names  (1))
    allocate(core_east_var3_names   (1))
    allocate(core_center_var3_names (nvar3d_core_center))
    allocate(core_center_var2_names (1))
+
+   allocate(core_south_var3_cksum  (1))
+   allocate(core_east_var3_cksum   (1))
+   allocate(core_center_var3_cksum (nvar3d_core_center))
+   allocate(core_center_var2_cksum (1))
 
    core_south_var3_names(1) = 'u'
    core_east_var3_names(1) = 'v'
@@ -202,7 +212,9 @@ module fv_ufs_restart_io_mod
    ! ---- fv_core.res
 
    core_south_var3(:,:,:,1) = Atm%u(isc:iec,jsc:(jsc+ny_c-1),:)
-   core_east_var3(:,:,:,1) = Atm%v(isc:(isc+nx_c-1),jsc:jec,:)
+   core_east_var3 (:,:,:,1) = Atm%v(isc:(isc+nx_c-1),jsc:jec,:)
+   write(core_south_var3_cksum(1),'(Z16)') mpp_chksum(Atm%u(isc:iec,jsc:(jsc+ny_c-1),:))
+   write(core_east_var3_cksum (1),'(Z16)') mpp_chksum(Atm%v(isc:(isc+nx_c-1),jsc:jec,:))
 
    n = 1
    if (.not.atm%flagstruct%hydrostatic) then
@@ -228,7 +240,17 @@ module fv_ufs_restart_io_mod
      core_center_var3(:,:,:,n) = Atm%va(isc:iec,jsc:jec,:); n=n+1
    endif
 
+   do n = 1, nvar3d_core_center
+     write(core_center_var3_cksum(n),'(Z16)') mpp_chksum(core_center_var3(:,:,:,n))
+   enddo
+
    core_center_var2(:,:,1) = Atm%phis(isc:iec,jsc:jec)
+   write(core_center_var2_cksum(1),'(Z16)') mpp_chksum(core_center_var2(:,:,1))
+
+   call update_chksums(core_bundle, 1, core_south_var3_names, core_south_var3_cksum)
+   call update_chksums(core_bundle, 1, core_east_var3_names, core_east_var3_cksum)
+   call update_chksums(core_bundle, nvar3d_core_center, core_center_var3_names, core_center_var3_cksum)
+   call update_chksums(core_bundle, 1, core_center_var2_names, core_center_var2_cksum)
 
    ! ---- fv_srf_wnd.res
    srf_wnd_var2(:,:,1) = Atm%u_srf
@@ -238,20 +260,15 @@ module fv_ufs_restart_io_mod
    call update_chksums(srf_wnd_bundle, 2, srf_wnd_var2_names, srf_wnd_var2_cksum)
 
    ! ---- fv_tracer_res
-
-   ! computing checksum for arrays that have halos is not straightforward as simply calling
-   ! mpp_chksum on full array or computational domain sub-array, unfortunately.
    do nt = 1, ntprog
      tracers_var3(:,:,:,nt) = Atm%q(isc:iec,jsc:jec,:,nt)
-     ! write(tracers_var3_cksum(nt),'(Z16)') mpp_chksum(Atm%q(:,:,:,nt))
-     ! write(tracers_var3_cksum(nt),'(Z16)') mpp_chksum(Atm%q(isc:iec,jsc:jec,:,nt))
+     write(tracers_var3_cksum(nt),'(Z16)') mpp_chksum(Atm%q(isc:iec,jsc:jec,:,nt))
    enddo
    do nt = ntprog+1, nvar3d_tracers
      tracers_var3(:,:,:,nt) = Atm%qdiag(isc:iec,jsc:jec,:,nt)
-     ! write(tracers_var3_cksum(nt),'(Z16)') mpp_chksum(Atm%qdiag(:,:,:,nt))
-     ! write(tracers_var3_cksum(nt),'(Z16)') mpp_chksum(Atm%qdiag(isc:iec,jsc:jec,:,nt))
+     write(tracers_var3_cksum(nt),'(Z16)') mpp_chksum(Atm%qdiag(isc:iec,jsc:jec,:,nt))
    enddo
-   ! call update_chksums(tracer_bundle, nvar3d_tracers, tracers_var3_names, tracers_var3_cksum)
+   call update_chksums(tracer_bundle, nvar3d_tracers, tracers_var3_names, tracers_var3_cksum)
 
    ! Instead of creating yet another esmf bundle just to write Atm%ak and Atm%bk, write them here synchronously
    call write_ak_bk(Atm, timestamp)
@@ -558,7 +575,12 @@ module fv_ufs_restart_io_mod
    dim_names_2d(1) = "xaxis_1"
    dim_names_2d(2) = "Time"
 
-   fname = 'RESTART_new/'//trim(timestamp)//'.fv_core.res.nc'
+   ! fname = 'RESTART_new/'//trim(timestamp)//'.fv_core.res.nc'
+   if (trim(timestamp) == '') then
+   fname = 'RESTART/'//'fv_core.res.nc'
+   else
+   fname = 'RESTART/'//trim(timestamp)//'.fv_core.res.nc'
+   endif
 
    allocate(pes(mpp_npes()))
    call mpp_get_current_pelist(pes)
