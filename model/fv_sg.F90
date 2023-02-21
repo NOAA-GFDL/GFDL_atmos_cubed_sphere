@@ -469,10 +469,8 @@ contains
          u_dt(i,j,k) = rdt*(u0(i,k) - ua(i,j,k))
          v_dt(i,j,k) = rdt*(v0(i,k) - va(i,j,k))
            ta(i,j,k) = t0(i,k)   ! *** temperature updated ***
-#ifdef GFS_PHYS
            ua(i,j,k) = u0(i,k)
            va(i,j,k) = v0(i,k)
-#endif
       enddo
       do iq=1,nq
          do i=is,ie
@@ -879,18 +877,14 @@ contains
 !----------------------
 ! Saturation adjustment
 !----------------------
-#ifndef GFS_PHYS
   if ( nwat > 5 ) then
     do k=1, kbot
       if ( hydrostatic ) then
         do i=is, ie
 ! Compute pressure hydrostatically
            den(i,k) = pm(i,k)/(rdgas*t0(i,k)*(1.+xvir*q0(i,k,sphum)))
-           q_liq = q0(i,k,liq_wat) + q0(i,k,rainwat)
-           q_sol = q0(i,k,ice_wat) + q0(i,k,snowwat) + q0(i,k,graupel)
-           cpm(i) = (1.-(q0(i,k,sphum)+q_liq+q_sol))*cp_air + q0(i,k,sphum)*cp_vapor + q_liq*c_liq + q_sol*c_ice
-           lcp2(i) = hlv / cpm(i)
-           icp2(i) = hlf / cpm(i)
+           lcp2(i) = hlv / cp_air
+           icp2(i) = hlf / cp_air
         enddo
       else
         do i=is, ie
@@ -929,17 +923,12 @@ contains
        enddo
     enddo
   endif
-#endif
 
    do k=1,kbot
       do i=is,ie
          u_dt(i,j,k) = rdt*(u0(i,k) - ua(i,j,k))
          v_dt(i,j,k) = rdt*(v0(i,k) - va(i,j,k))
            ta(i,j,k) = t0(i,k)   ! *** temperature updated ***
-#ifdef GFS_PHYS
-           ua(i,j,k) = u0(i,k)
-           va(i,j,k) = v0(i,k)
-#endif
       enddo
       do iq=1,nq
          if (iq .ne. cld_amt ) then
@@ -1177,11 +1166,8 @@ real, dimension(is:ie,js:je):: pt2, qv2, ql2, qi2, qs2, qr2, qg2, dp2, p2, icpk,
        do j=js, je
           do i=is, ie
              p2(i,j) = dp2(i,j)/(peln(i,k+1,j)-peln(i,k,j))
-             q_liq = max(0., ql2(i,j) + qr2(i,j))
-             q_sol = max(0., qi2(i,j) + qs2(i,j))
-             cpm = (1.-(qv2(i,j)+q_liq+q_sol))*cp_air + qv2(i,j)*cp_vapor + q_liq*c_liq + q_sol*c_ice
-             lcpk(i,j) = hlv / cpm
-             icpk(i,j) = hlf / cpm
+             lcpk(i,j) = hlv / cp_air
+             icpk(i,j) = hlf / cp_air
           enddo
        enddo
      else
