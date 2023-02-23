@@ -23,20 +23,17 @@ module fv_ufs_restart_io_mod
   real, allocatable, target, dimension(:,:,:) :: core_center_var2
   real, allocatable, target, dimension(:,:,:,:) :: core_center_var3, core_east_var3, core_south_var3
   character(len=32), allocatable,dimension(:)  :: core_center_var2_names, core_center_var3_names, core_east_var3_names, core_south_var3_names
-  character(len=32), allocatable,dimension(:)  :: core_center_var2_cksum, core_center_var3_cksum, core_east_var3_cksum, core_south_var3_cksum
 
   ! fv_srf_wnd.res
   integer :: nvar2d_srf_wnd
   real, allocatable, target, dimension(:,:,:) :: srf_wnd_var2
   character(len=32), allocatable, dimension(:) :: srf_wnd_var2_names
-  character(len=32), allocatable, dimension(:) :: srf_wnd_var2_cksum
 
   ! fv_tracers
   integer :: nvar3d_tracers
   integer :: ntprog, ntdiag, tracers_zsize
   real, allocatable, target, dimension(:,:,:,:) :: tracers_var3
   character(len=32), allocatable, dimension(:) :: tracers_var3_names
-  character(len=32), allocatable, dimension(:) :: tracers_var3_cksum
 
   type(ESMF_FieldBundle) :: core_bundle, srf_wnd_bundle, tracer_bundle
 
@@ -118,11 +115,6 @@ module fv_ufs_restart_io_mod
    allocate(core_center_var3_names (nvar3d_core_center))
    allocate(core_center_var2_names (1))
 
-   allocate(core_south_var3_cksum  (1))
-   allocate(core_east_var3_cksum   (1))
-   allocate(core_center_var3_cksum (nvar3d_core_center))
-   allocate(core_center_var2_cksum (1))
-
    core_south_var3_names(1) = 'u'
    core_east_var3_names(1) = 'v'
    n = 1
@@ -153,7 +145,7 @@ module fv_ufs_restart_io_mod
 
    ! srf_wnd
    nvar2d_srf_wnd = 2
-   allocate (srf_wnd_var2(nx,ny,nvar2d_srf_wnd), srf_wnd_var2_names(nvar2d_srf_wnd), srf_wnd_var2_cksum(nvar2d_srf_wnd))
+   allocate (srf_wnd_var2(nx,ny,nvar2d_srf_wnd), srf_wnd_var2_names(nvar2d_srf_wnd))
    srf_wnd_var2_names(1) = 'u_srf'
    srf_wnd_var2_names(2) = 'v_srf'
 
@@ -162,7 +154,7 @@ module fv_ufs_restart_io_mod
    ntdiag = size(Atm%qdiag,4)
    nvar3d_tracers = ntprog+ntdiag
    tracers_zsize = size(Atm%q,3)
-   allocate (tracers_var3(nx,ny,tracers_zsize,nvar3d_tracers), tracers_var3_names(nvar3d_tracers), tracers_var3_cksum(nvar3d_tracers))
+   allocate (tracers_var3(nx,ny,tracers_zsize,nvar3d_tracers), tracers_var3_names(nvar3d_tracers))
 
    do nt = 1, ntprog
       call get_tracer_names(MODEL_ATMOS, nt, tracer_name)
@@ -185,8 +177,6 @@ module fv_ufs_restart_io_mod
    integer :: isc, iec, jsc, jec, nx, ny
    integer :: n, nt
    integer :: mlon, mlat, nx_c, ny_c
-
-   ! if(mpp_pe() == mpp_root_pe()) write(0,*) ' in fv_dyn_restart_output'
 
    isc = Atm%bd%isc
    iec = Atm%bd%iec
@@ -213,8 +203,6 @@ module fv_ufs_restart_io_mod
 
    core_south_var3(:,:,:,1) = Atm%u(isc:iec,jsc:(jsc+ny_c-1),:)
    core_east_var3 (:,:,:,1) = Atm%v(isc:(isc+nx_c-1),jsc:jec,:)
-   write(core_south_var3_cksum(1),'(Z16)') mpp_chksum(Atm%u(isc:iec,jsc:(jsc+ny_c-1),:))
-   write(core_east_var3_cksum (1),'(Z16)') mpp_chksum(Atm%v(isc:(isc+nx_c-1),jsc:jec,:))
 
    n = 1
    if (.not.atm%flagstruct%hydrostatic) then
@@ -240,35 +228,19 @@ module fv_ufs_restart_io_mod
      core_center_var3(:,:,:,n) = Atm%va(isc:iec,jsc:jec,:); n=n+1
    endif
 
-   do n = 1, nvar3d_core_center
-     write(core_center_var3_cksum(n),'(Z16)') mpp_chksum(core_center_var3(:,:,:,n))
-   enddo
-
    core_center_var2(:,:,1) = Atm%phis(isc:iec,jsc:jec)
-   write(core_center_var2_cksum(1),'(Z16)') mpp_chksum(core_center_var2(:,:,1))
-
-   call update_chksums(core_bundle, 1, core_south_var3_names, core_south_var3_cksum)
-   call update_chksums(core_bundle, 1, core_east_var3_names, core_east_var3_cksum)
-   call update_chksums(core_bundle, nvar3d_core_center, core_center_var3_names, core_center_var3_cksum)
-   call update_chksums(core_bundle, 1, core_center_var2_names, core_center_var2_cksum)
 
    ! ---- fv_srf_wnd.res
    srf_wnd_var2(:,:,1) = Atm%u_srf
    srf_wnd_var2(:,:,2) = Atm%v_srf
-   write(srf_wnd_var2_cksum(1),'(Z16)') mpp_chksum(Atm%u_srf)
-   write(srf_wnd_var2_cksum(2),'(Z16)') mpp_chksum(Atm%v_srf)
-   call update_chksums(srf_wnd_bundle, 2, srf_wnd_var2_names, srf_wnd_var2_cksum)
 
    ! ---- fv_tracer_res
    do nt = 1, ntprog
      tracers_var3(:,:,:,nt) = Atm%q(isc:iec,jsc:jec,:,nt)
-     write(tracers_var3_cksum(nt),'(Z16)') mpp_chksum(Atm%q(isc:iec,jsc:jec,:,nt))
    enddo
    do nt = ntprog+1, nvar3d_tracers
      tracers_var3(:,:,:,nt) = Atm%qdiag(isc:iec,jsc:jec,:,nt)
-     write(tracers_var3_cksum(nt),'(Z16)') mpp_chksum(Atm%qdiag(isc:iec,jsc:jec,:,nt))
    enddo
-   call update_chksums(tracer_bundle, nvar3d_tracers, tracers_var3_names, tracers_var3_cksum)
 
    ! Instead of creating yet another esmf bundle just to write Atm%ak and Atm%bk, write them here synchronously
    call write_ak_bk(Atm, timestamp)
@@ -514,42 +486,6 @@ module fv_ufs_restart_io_mod
    if (ESMF_LogFoundError(rcToCheck=rc, msg=ESMF_LOGERR_PASSTHRU, line=__LINE__, file=__FILE__)) return
 
  end subroutine add_zaxis_to_field
-
-#if 0
- subroutine update_chksums(bundle, var_name, var_cksum)
-
-   type(ESMF_FieldBundle), intent(inout) :: bundle
-   character(len=*), intent(in) :: var_names, var_cksums
-
-   integer :: rc
-   type(ESMF_Field) :: field
-
-   call ESMF_FieldBundleGet(bundle, var_names field=field, rc=rc)
-   if (ESMF_LogFoundError(rcToCheck=rc, msg=ESMF_LOGERR_PASSTHRU, line=__LINE__, file=__FILE__)) return
-
-   call ESMF_AttributeSet(field, convention="NetCDF", purpose="FV3", name="checksum", value=var_cksums, rc=rc)
-   if (ESMF_LogFoundError(rcToCheck=rc, msg=ESMF_LOGERR_PASSTHRU, line=__LINE__, file=__FILE__)) return
-
- end subroutine update_chksums
-#endif
- subroutine update_chksums(bundle, nvar, var_names, var_cksums)
-
-   type(ESMF_FieldBundle), intent(inout) :: bundle
-   integer, intent(in) :: nvar
-   character(len=*), dimension(:), intent(in) :: var_names, var_cksums
-
-   integer :: n, rc
-   type(ESMF_Field) :: field
-
-   do n = 1, nvar
-     call ESMF_FieldBundleGet(bundle, var_names(n), field=field, rc=rc)
-     if (ESMF_LogFoundError(rcToCheck=rc, msg=ESMF_LOGERR_PASSTHRU, line=__LINE__, file=__FILE__)) return
-
-     call ESMF_AttributeSet(field, convention="NetCDF", purpose="FV3", name="checksum", value=var_cksums(n), rc=rc)
-     if (ESMF_LogFoundError(rcToCheck=rc, msg=ESMF_LOGERR_PASSTHRU, line=__LINE__, file=__FILE__)) return
-   end do
-
- end subroutine update_chksums
 
  subroutine write_ak_bk(Atm, timestamp)
 
