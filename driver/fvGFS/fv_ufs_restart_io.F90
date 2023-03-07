@@ -21,8 +21,8 @@ module fv_ufs_restart_io_mod
   ! fv_core.res
   integer :: nvar3d_core_center, core_zsize
   real, allocatable, target, dimension(:,:,:) :: core_center_var2
-  real, allocatable, target, dimension(:,:,:,:) :: core_center_var3, core_east_var3, core_south_var3
-  character(len=32), allocatable,dimension(:)  :: core_center_var2_names, core_center_var3_names, core_east_var3_names, core_south_var3_names
+  real, allocatable, target, dimension(:,:,:,:) :: core_center_var3, core_east_var3, core_north_var3
+  character(len=32), allocatable,dimension(:)  :: core_center_var2_names, core_center_var3_names, core_east_var3_names, core_north_var3_names
 
   ! fv_srf_wnd.res
   integer :: nvar2d_srf_wnd
@@ -100,22 +100,22 @@ module fv_ufs_restart_io_mod
       ny_c = ny + 1
    end if
 
-   allocate(core_south_var3  (nx  , ny_c,core_zsize,1))
+   allocate(core_north_var3  (nx  , ny_c,core_zsize,1))
    allocate(core_east_var3   (nx_c, ny  ,core_zsize,1))
    allocate(core_center_var3 (nx  , ny  ,core_zsize,nvar3d_core_center))
    allocate(core_center_var2 (nx  , ny  ,1))
 
-   core_south_var3  = 0.0
+   core_north_var3  = 0.0
    core_east_var3   = 0.0
    core_center_var3 = 0.0
    core_center_var2 = 0.0
 
-   allocate(core_south_var3_names  (1))
+   allocate(core_north_var3_names  (1))
    allocate(core_east_var3_names   (1))
    allocate(core_center_var3_names (nvar3d_core_center))
    allocate(core_center_var2_names (1))
 
-   core_south_var3_names(1) = 'u'
+   core_north_var3_names(1) = 'u'
    core_east_var3_names(1) = 'v'
    n = 1
    if (.not.atm%flagstruct%hydrostatic) then
@@ -201,7 +201,7 @@ module fv_ufs_restart_io_mod
 
    ! ---- fv_core.res
 
-   core_south_var3(:,:,:,1) = Atm%u(isc:iec,jsc:(jsc+ny_c-1),:)
+   core_north_var3(:,:,:,1) = Atm%u(isc:iec,jsc:(jsc+ny_c-1),:)
    core_east_var3 (:,:,:,1) = Atm%v(isc:(isc+nx_c-1),jsc:jec,:)
 
    n = 1
@@ -250,7 +250,7 @@ module fv_ufs_restart_io_mod
  subroutine fv_core_restart_bundle_setup(bundle, grid, rc)
 !
 !-------------------------------------------------------------
-!*** set esmf bundle for phys restart fields
+!*** set esmf bundle for fv_core restart fields
 !------------------------------------------------------------
 !
    use esmf
@@ -270,8 +270,6 @@ module fv_ufs_restart_io_mod
    real,dimension(:,:),pointer   :: temp_r2d
    real,dimension(:,:,:),pointer   :: temp_r3d
 
-   ! if(mpp_pe() == mpp_root_pe()) write(0,*) 'in fv_core_restart_bundle_setup'
-
    core_bundle = bundle
 
    call ESMF_FieldBundleGet(bundle, name=bdl_name,rc=rc)
@@ -279,8 +277,8 @@ module fv_ufs_restart_io_mod
 
    outputfile = trim(bdl_name)
 
-   temp_r3d => core_south_var3(:,:,:,1)
-   call create_3d_field_and_add_to_bundle(temp_r3d, trim(core_south_var3_names(1)), "zaxis_1", core_zsize, trim(outputfile), grid, bundle, staggerloc=ESMF_STAGGERLOC_EDGE2)
+   temp_r3d => core_north_var3(:,:,:,1)
+   call create_3d_field_and_add_to_bundle(temp_r3d, trim(core_north_var3_names(1)), "zaxis_1", core_zsize, trim(outputfile), grid, bundle, staggerloc=ESMF_STAGGERLOC_EDGE2)
 
    temp_r3d => core_east_var3(:,:,:,1)
    call create_3d_field_and_add_to_bundle(temp_r3d, trim(core_east_var3_names(1)), "zaxis_1", core_zsize, trim(outputfile), grid, bundle, staggerloc=ESMF_STAGGERLOC_EDGE1)
@@ -298,7 +296,7 @@ module fv_ufs_restart_io_mod
  subroutine fv_srf_wnd_restart_bundle_setup(bundle, grid, rc)
 !
 !-------------------------------------------------------------
-!*** set esmf bundle for phys restart fields
+!*** set esmf bundle for fv_srf_wnd restart fields
 !------------------------------------------------------------
 !
    use esmf
@@ -317,8 +315,6 @@ module fv_ufs_restart_io_mod
    integer :: num
    real,dimension(:,:),pointer   :: temp_r2d
    real,dimension(:,:,:),pointer   :: temp_r3d
-
-   ! if(mpp_pe() == mpp_root_pe()) write(0,*) 'in fv_srf_wnd_restart_bundle_setup'
 
    srf_wnd_bundle = bundle
 
@@ -337,7 +333,7 @@ module fv_ufs_restart_io_mod
  subroutine fv_tracer_restart_bundle_setup(bundle, grid, rc)
 !
 !-------------------------------------------------------------
-!*** set esmf bundle for phys restart fields
+!*** set esmf bundle for fv_tracer restart fields
 !------------------------------------------------------------
 !
    use esmf
@@ -356,8 +352,6 @@ module fv_ufs_restart_io_mod
    integer :: num
    real,dimension(:,:),pointer   :: temp_r2d
    real,dimension(:,:,:),pointer   :: temp_r3d
-
-   ! if(mpp_pe() == mpp_root_pe()) write(0,*) 'in fv_tracer_restart_bundle_setup'
 
    tracer_bundle = bundle
 
@@ -511,11 +505,10 @@ module fv_ufs_restart_io_mod
    dim_names_2d(1) = "xaxis_1"
    dim_names_2d(2) = "Time"
 
-   ! fname = 'RESTART_new/'//trim(timestamp)//'.fv_core.res.nc'
    if (trim(timestamp) == '') then
-   fname = 'RESTART/'//'fv_core.res.nc'
+      fname = 'RESTART/'//'fv_core.res.nc'
    else
-   fname = 'RESTART/'//trim(timestamp)//'.fv_core.res.nc'
+      fname = 'RESTART/'//trim(timestamp)//'.fv_core.res.nc'
    endif
 
    allocate(pes(mpp_npes()))
