@@ -9,7 +9,7 @@ jobs:
     runs-on: [self-hosted]
     name: Checkout Code
     steps:
-    - run: python3 /pw/storage/PWscripts/FV3checkoutStartClusters.py $GITHUB_REF
+    - run: /contrib/fv3/FV3CIScripts/checkout.sh $GITHUB_REF
     
   build:
     runs-on: [self-hosted]
@@ -19,13 +19,13 @@ jobs:
       fail-fast: true
       max-parallel: 3
       matrix:
-        runpath: [/pw/storage/PWscripts]
-        runscript: [FV3swStartClusters.py, FV3nhStartClusters.py, FV3hydroStartClusters.py]
+        runpath: [/contrib/fv3/FV3CIScripts/]
+        runscript: [swcompile.sh, nhcompile.sh, hydrocompile.sh]
     steps:
       - env:
           RUNPATH: ${{ matrix.runpath }}
           RUNSCRIPT: ${{ matrix.runscript }}
-        run: python3 $RUNPATH/$RUNSCRIPT $GITHUB_REF
+        run: $RUNPATH/$RUNSCRIPT $GITHUB_REF
         
   test:
     runs-on: [self-hosted]
@@ -35,18 +35,10 @@ jobs:
       fail-fast: false
       max-parallel: 3
       matrix:
-        runpath: [/pw/storage/PWscripts]
-        runscript: [FV3C128r20.solo.superCStartClusters.py]
+        runpath: [/contrib/fv3/FV3CIScripts/]
+        runscript: [C128r20.solo.superC.sh]
     steps:
       - env:
           RUNPATH: ${{ matrix.runpath }}
           RUNSCRIPT: ${{ matrix.runscript }}
-        run: python3 $RUNPATH/$RUNSCRIPT $GITHUB_REF
-        
-  shutdowncluster:
-    runs-on: [self-hosted]
-    name: Shutdown cluster
-    if: always()
-    needs: [checkout, build, test]
-    steps:
-      - run: python3 /home/Lauren.Chilutti/pw/storage/PWscripts/stopClusters.py cifv3
+        run: $RUNPATH/$RUNSCRIPT $GITHUB_REF
