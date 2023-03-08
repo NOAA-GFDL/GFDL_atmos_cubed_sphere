@@ -27,18 +27,21 @@
       runs-on: [self-hosted]
       name: SOLO SHiELD nh build
       needs: [checkout]
+      steps:
         - run: /contrib/fv3/FV3CIScripts/FMSnhcompile.sh ${{ inputs.FMSTag }}
 
     buildsw:
       runs-on: [self-hosted]
       name: SOLO SHiELD sw build
       needs: [checkout]
+      steps:
         - run: /contrib/fv3/FV3CIScripts/FMSswcompile.sh ${{ inputs.FMSTag }}
 
     buildhydro:
       runs-on: [self-hosted]
       name: SOLO SHiELD hydro build
       needs: [checkout]
+      steps:
         - run: /contrib/fv3/FV3CIScripts/FMShydrocompile.sh ${{ inputs.FMSTag }}
 
     testnh:
@@ -71,13 +74,13 @@
             - d96_2k.solo.bubble.nhK.sh
             - d96_2k.solo.bubble.sh
             - d96_500m.solo.mtn_schar.sh
-    steps:
-      - env:
-          RUNPATH: ${{ matrix.runpath }}
-          RUNSCRIPT: ${{ matrix.runscript }}
-        run: $RUNPATH/$RUNSCRIPT ${{ inputs.FMSTag }}
+      steps:
+        - env:
+            RUNPATH: ${{ matrix.runpath }}
+            RUNSCRIPT: ${{ matrix.runscript }}
+          run: $RUNPATH/$RUNSCRIPT ${{ inputs.FMSTag }}
 
-   testsw:
+    testsw:
       runs-on: [self-hosted]
       name: SOLO SHiELD sw test suite
       needs: [checkout, buildsw]
@@ -97,13 +100,13 @@
             - C96.sw.BTwave.sh
             - C96.sw.modon.sh
             - C96.sw.RHwave.sh
-    steps:
-      - env:
-          RUNPATH: ${{ matrix.runpath }}
-          RUNSCRIPT: ${{ matrix.runscript }}
-        run: $RUNPATH/$RUNSCRIPT ${{ inputs.FMSTag }}
+      steps:
+        - env:
+            RUNPATH: ${{ matrix.runpath }}
+            RUNSCRIPT: ${{ matrix.runscript }}
+          run: $RUNPATH/$RUNSCRIPT ${{ inputs.FMSTag }}
 
-   testhydro:
+    testhydro:
       runs-on: [self-hosted]
       name: SOLO SHiELD hydro test suite
       needs: [checkout, buildhydro]
@@ -118,8 +121,8 @@
             - C96.solo.BCmoist.hyd.sh
             - C96.solo.mtn_rest.hyd.diff2.sh
             - C96.solo.mtn_rest.hyd.sh
-    steps:
-      - env:
-          RUNPATH: ${{ matrix.runpath }}
-          RUNSCRIPT: ${{ matrix.runscript }}
-        run: $RUNPATH/$RUNSCRIPT ${{ inputs.FMSTag }}
+      steps:
+        - env:
+            RUNPATH: ${{ matrix.runpath }}
+            RUNSCRIPT: ${{ matrix.runscript }}
+          run: $RUNPATH/$RUNSCRIPT ${{ inputs.FMSTag }}
