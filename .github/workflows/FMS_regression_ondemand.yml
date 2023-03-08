@@ -1,0 +1,125 @@
+  name: Build and Run SHiELD solo with FMS rebuild
+
+  on:
+    workflow_dispatch:
+      inputs:
+        FMSTag:
+          description: 'FMS tag'
+          required: true
+          type: string
+        FMScouplerTag:
+          description: 'FMScoupler tag'
+          required: false
+          type: string
+        atmosdriversTag:
+          description: 'atmos_drivers tag'
+          required: false
+          type: string
+  jobs:
+    checkout:
+      runs-on: [self-hosted]
+      name: Checkout Code and build FMS
+      steps:
+        -run: /contrib/fv3/FV3CIScripts/FMScheckout.sh ${{ inputs.FMSTag }} ${{ inputs.FMScouplerTag }} ${{ inputs.atmos_driversTag }}
+        -run: /contrib/fv3/FV3CIScripts/FMScompile.sh ${{ inputs.FMSTag }}
+
+    buildnh:
+      runs-on: [self-hosted]
+      name: SOLO SHiELD nh build
+      needs: [checkout]
+        -run: /contrib/fv3/FV3CIScripts/FMSnhcompile.sh ${{ inputs.FMSTag }}
+
+    buildsw:
+      runs-on: [self-hosted]
+      name: SOLO SHiELD sw build
+      needs: [checkout]
+        -run: /contrib/fv3/FV3CIScripts/FMSswcompile.sh ${{ inputs.FMSTag }}
+
+    buildhydro:
+      runs-on: [self-hosted]
+      name: SOLO SHiELD hydro build
+      needs: [checkout]
+        -run: /contrib/fv3/FV3CIScripts/FMShydrocompile.sh ${{ inputs.FMSTag }}
+
+    testnh:
+      runs-on: [self-hosted]
+      name: SOLO SHiELD nh test suite
+      needs: [checkout, buildnh]
+      strategy:
+        fail-fast: false
+        max-parallel: 13
+        matrix:
+          runpath: [/contrib/fv3/FV3CIScripts/]
+          runscript:
+            - C128r20.solo.superC.sh
+            - C128r3.solo.TC.d1.sh
+            - C128r3.solo.TC.h6.sh
+            - C128r3.solo.TC.sh
+            - C128r3.solo.TC.tr8.sh
+            - C256r20.solo.superC.sh
+            - C512r20.solo.superC.sh
+            - C96.solo.BCdry.sh
+            - C96.solo.BCmoist.nhK.sh
+            - C96.solo.BCmoist.sh
+            - C96.solo.mtn_rest.nonmono.diff2.sh
+            - C96.solo.mtn_rest.sh
+            - d96_1k.solo.mtn_rest_shear.olddamp.sh
+            - d96_1k.solo.mtn_rest_shear.sh
+            - d96_1k.solo.mtn_schar.mono.sh
+            - d96_1k.solo.mtn_schar.sh
+            - d96_2k.solo.bubble.n0.sh
+            - d96_2k.solo.bubble.nhK.sh
+            - d96_2k.solo.bubble.sh
+            - d96_500m.solo.mtn_schar.sh
+    steps:
+      - env:
+          RUNPATH: ${{ matrix.runpath }}
+          RUNSCRIPT: ${{ matrix.runscript }}
+        run: $RUNPATH/$RUNSCRIPT ${{ inputs.FMSTag }}
+
+   testsw:
+      runs-on: [self-hosted]
+      name: SOLO SHiELD sw test suite
+      needs: [checkout, buildsw]
+      strategy:
+        fail-fast: false
+        max-parallel: 13
+        matrix:
+          runpath: [/contrib/fv3/FV3CIScripts/]
+          runscript:
+            - C192.sw.BLvortex.sh
+            - C192.sw.BTwave.sh
+            - C192.sw.modon.sh
+            - C384.sw.BLvortex.sh
+            - C384.sw.BTwave.sh
+            - C768.sw.BTwave.sh
+            - C96.sw.BLvortex.sh
+            - C96.sw.BTwave.sh
+            - C96.sw.modon.sh
+            - C96.sw.RHwave.sh
+    steps:
+      - env:
+          RUNPATH: ${{ matrix.runpath }}
+          RUNSCRIPT: ${{ matrix.runscript }}
+        run: $RUNPATH/$RUNSCRIPT ${{ inputs.FMSTag }}
+
+   testhydro:
+      runs-on: [self-hosted]
+      name: SOLO SHiELD hydro test suite
+      needs: [checkout, buildhydro]
+      strategy:
+        fail-fast: false
+        max-parallel: 13
+        matrix:
+          runpath: [/contrib/fv3/FV3CIScripts/]
+          runscript:
+            - C96.solo.BCdry.hyd.sh
+            - C96.solo.BCmoist.hyd.d3.sh
+            - C96.solo.BCmoist.hyd.sh
+            - C96.solo.mtn_rest.hyd.diff2.sh
+            - C96.solo.mtn_rest.hyd.sh
+    steps:
+      - env:
+          RUNPATH: ${{ matrix.runpath }}
+          RUNSCRIPT: ${{ matrix.runscript }}
+        run: $RUNPATH/$RUNSCRIPT ${{ inputs.FMSTag }}
