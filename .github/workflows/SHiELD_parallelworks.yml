@@ -11,26 +11,31 @@ jobs:
     steps:
     - run: /contrib/fv3/FV3CIScripts/checkout.sh $GITHUB_REF
     
-  build:
+  buildnh:
     runs-on: [self-hosted]
-    name: SOLO SHiELD build
+    name: SOLO SHiELD nh build
     needs: [checkout]
-    strategy:
-      fail-fast: true
-      max-parallel: 3
-      matrix:
-        runpath: [/contrib/fv3/FV3CIScripts/]
-        runscript: [swcompile.sh, nhcompile.sh, hydrocompile.sh]
     steps:
-      - env:
-          RUNPATH: ${{ matrix.runpath }}
-          RUNSCRIPT: ${{ matrix.runscript }}
-        run: $RUNPATH/$RUNSCRIPT $GITHUB_REF
-        
-  test:
+      - run: /contrib/fv3/FV3CIScripts/nhcompile.sh $GITHUB_REF
+
+  buildsw:
     runs-on: [self-hosted]
-    name: SOLO SHiELD test suite
-    needs: [checkout, build]
+    name: SOLO SHiELD sw build
+    needs: [checkout]
+    steps:
+      - run: /contrib/fv3/FV3CIScripts/swcompile.sh $GITHUB_REF
+
+  buildhydro:
+    runs-on: [self-hosted]
+    name: SOLO SHiELD hydro build
+    needs: [checkout]
+    steps:
+      - run: /contrib/fv3/FV3CIScripts/hydrocompile.sh $GITHUB_REF
+
+  testnh:
+    runs-on: [self-hosted]
+    name: SOLO SHiELD nh test suite
+    needs: [checkout, buildnh]
     strategy:
       fail-fast: false
       max-parallel: 13
@@ -42,28 +47,13 @@ jobs:
           - C128r3.solo.TC.h6.sh
           - C128r3.solo.TC.sh
           - C128r3.solo.TC.tr8.sh
-          - C192.sw.BLvortex.sh
-          - C192.sw.BTwave.sh
-          - C192.sw.modon.sh
           - C256r20.solo.superC.sh
-          - C384.sw.BLvortex.sh
-          - C384.sw.BTwave.sh
           - C512r20.solo.superC.sh
-          - C768.sw.BTwave.sh
-          - C96.solo.BCdry.hyd.sh
           - C96.solo.BCdry.sh
-          - C96.solo.BCmoist.hyd.d3.sh
-          - C96.solo.BCmoist.hyd.sh
           - C96.solo.BCmoist.nhK.sh
           - C96.solo.BCmoist.sh
-          - C96.solo.mtn_rest.hyd.diff2.sh
-          - C96.solo.mtn_rest.hyd.sh
           - C96.solo.mtn_rest.nonmono.diff2.sh
           - C96.solo.mtn_rest.sh
-          - C96.sw.BLvortex.sh
-          - C96.sw.BTwave.sh
-          - C96.sw.modon.sh
-          - C96.sw.RHwave.sh
           - d96_1k.solo.mtn_rest_shear.olddamp.sh
           - d96_1k.solo.mtn_rest_shear.sh
           - d96_1k.solo.mtn_schar.mono.sh
@@ -72,6 +62,53 @@ jobs:
           - d96_2k.solo.bubble.nhK.sh
           - d96_2k.solo.bubble.sh
           - d96_500m.solo.mtn_schar.sh
+    steps:
+      - env:
+          RUNPATH: ${{ matrix.runpath }}
+          RUNSCRIPT: ${{ matrix.runscript }}
+        run: $RUNPATH/$RUNSCRIPT $GITHUB_REF
+
+  testsw:
+    runs-on: [self-hosted]
+    name: SOLO SHiELD sw test suite
+    needs: [checkout, buildsw]
+    strategy:
+      fail-fast: false
+      max-parallel: 13
+      matrix:
+        runpath: [/contrib/fv3/FV3CIScripts/]
+        runscript:
+          - C192.sw.BLvortex.sh
+          - C192.sw.BTwave.sh
+          - C192.sw.modon.sh
+          - C384.sw.BLvortex.sh
+          - C384.sw.BTwave.sh
+          - C768.sw.BTwave.sh
+          - C96.sw.BLvortex.sh
+          - C96.sw.BTwave.sh
+          - C96.sw.modon.sh
+          - C96.sw.RHwave.sh
+    steps:
+      - env:
+          RUNPATH: ${{ matrix.runpath }}
+          RUNSCRIPT: ${{ matrix.runscript }}
+        run: $RUNPATH/$RUNSCRIPT $GITHUB_REF
+
+  testhydro:
+    runs-on: [self-hosted]
+    name: SOLO SHiELD hydro test suite
+    needs: [checkout, buildhydro]
+    strategy:
+      fail-fast: false
+      max-parallel: 13
+      matrix:
+        runpath: [/contrib/fv3/FV3CIScripts/]
+        runscript:
+          - C96.solo.BCdry.hyd.sh
+          - C96.solo.BCmoist.hyd.d3.sh
+          - C96.solo.BCmoist.hyd.sh
+          - C96.solo.mtn_rest.hyd.diff2.sh
+          - C96.solo.mtn_rest.hyd.sh
     steps:
       - env:
           RUNPATH: ${{ matrix.runpath }}
