@@ -20,26 +20,26 @@
       runs-on: [self-hosted]
       name: Checkout Code and build FMS
       steps:
-        -run: /contrib/fv3/FV3CIScripts/FMScheckout.sh ${{ inputs.FMSTag }} ${{ inputs.FMScouplerTag }} ${{ inputs.atmos_driversTag }}
-        -run: /contrib/fv3/FV3CIScripts/FMScompile.sh ${{ inputs.FMSTag }}
+        - run: /contrib/fv3/FV3CIScripts/FMScheckout.sh ${{ inputs.FMSTag }} ${{ inputs.FMScouplerTag }} ${{ inputs.atmos_driversTag }}
+        - run: /contrib/fv3/FV3CIScripts/FMScompile.sh ${{ inputs.FMSTag }}
 
     buildnh:
       runs-on: [self-hosted]
       name: SOLO SHiELD nh build
       needs: [checkout]
-        -run: /contrib/fv3/FV3CIScripts/FMSnhcompile.sh ${{ inputs.FMSTag }}
+        - run: /contrib/fv3/FV3CIScripts/FMSnhcompile.sh ${{ inputs.FMSTag }}
 
     buildsw:
       runs-on: [self-hosted]
       name: SOLO SHiELD sw build
       needs: [checkout]
-        -run: /contrib/fv3/FV3CIScripts/FMSswcompile.sh ${{ inputs.FMSTag }}
+        - run: /contrib/fv3/FV3CIScripts/FMSswcompile.sh ${{ inputs.FMSTag }}
 
     buildhydro:
       runs-on: [self-hosted]
       name: SOLO SHiELD hydro build
       needs: [checkout]
-        -run: /contrib/fv3/FV3CIScripts/FMShydrocompile.sh ${{ inputs.FMSTag }}
+        - run: /contrib/fv3/FV3CIScripts/FMShydrocompile.sh ${{ inputs.FMSTag }}
 
     testnh:
       runs-on: [self-hosted]
