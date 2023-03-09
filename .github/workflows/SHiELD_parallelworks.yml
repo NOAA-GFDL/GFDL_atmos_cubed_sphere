@@ -10,6 +10,42 @@ jobs:
     name: Checkout Code
     steps:
     - run: /contrib/fv3/FV3CIScripts/checkout.sh $GITHUB_REF
+    - run: |
+        RUNNER_TRACKING_ID="" && salloc --exclusive -N 4 -J ${branch}C512r20.solo.superC sleep 30m &
+        RUNNER_TRACKING_ID="" && salloc --exclusive -N 4 -J ${branch}C768.sw.BTwave sleep 30m &
+        RUNNER_TRACKING_ID="" && salloc --exclusive -N 2 -J ${branch}C256r20.solo.superC sleep 30m &
+        RUNNER_TRACKING_ID="" && salloc --exclusive -N 2 -J ${branch}C384.sw.BLvortex sleep 30m &
+        RUNNER_TRACKING_ID="" && salloc --exclusive -N 1 -J ${branch}C128r20.solo.superC sleep 30m &
+        RUNNER_TRACKING_ID="" && salloc --exclusive -N 1 -J ${branch}C128r3.solo.TC sleep 30m &
+        RUNNER_TRACKING_ID="" && salloc --exclusive -N 1 -J ${branch}C128r3.solo.TC.d1 sleep 30m &
+        RUNNER_TRACKING_ID="" && salloc --exclusive -N 1 -J ${branch}C128r3.solo.TC.h6 sleep 30m &
+        RUNNER_TRACKING_ID="" && salloc --exclusive -N 1 -J ${branch}C128r3.solo.TC.tr8 sleep 30m &
+        RUNNER_TRACKING_ID="" && salloc --exclusive -N 1 -J ${branch}C96.solo.BCdry sleep 30m &
+        RUNNER_TRACKING_ID="" && salloc --exclusive -N 1 -J ${branch}C96.solo.BCmoist sleep 30m &
+        RUNNER_TRACKING_ID="" && salloc --exclusive -N 1 -J ${branch}C96.solo.BCmoist.nhK sleep 30m &
+        RUNNER_TRACKING_ID="" && salloc --exclusive -N 1 -J ${branch}C96.solo.mtn_rest sleep 30m &
+        RUNNER_TRACKING_ID="" && salloc --exclusive -N 1 -J ${branch}C96.solo.mtn_rest.nonmono.nccmp -df2 sleep 30m &
+        RUNNER_TRACKING_ID="" && salloc --exclusive -N 1 -J ${branch}d96_1k.solo.mtn_rest_shear sleep 30m &
+        RUNNER_TRACKING_ID="" && salloc --exclusive -N 1 -J ${branch}d96_1k.solo.mtn_rest_shear.olddamp sleep 30m &
+        RUNNER_TRACKING_ID="" && salloc --exclusive -N 1 -J ${branch}d96_1k.solo.mtn_schar sleep 30m &
+        RUNNER_TRACKING_ID="" && salloc --exclusive -N 1 -J ${branch}d96_1k.solo.mtn_schar.mono sleep 30m &
+        RUNNER_TRACKING_ID="" && salloc --exclusive -N 1 -J ${branch}d96_2k.solo.bubble sleep 30m &
+        RUNNER_TRACKING_ID="" && salloc --exclusive -N 1 -J ${branch}d96_2k.solo.bubble.n0 sleep 30m &
+        RUNNER_TRACKING_ID="" && salloc --exclusive -N 1 -J ${branch}d96_2k.solo.bubble.nhK sleep 30m &
+        RUNNER_TRACKING_ID="" && salloc --exclusive -N 1 -J ${branch}d96_500m.solo.mtn_schar sleep 30m &
+        RUNNER_TRACKING_ID="" && salloc --exclusive -N 1 -J ${branch}C192.sw.BLvortex sleep 30m &
+        RUNNER_TRACKING_ID="" && salloc --exclusive -N 1 -J ${branch}C192.sw.BTwave sleep 30m &
+        RUNNER_TRACKING_ID="" && salloc --exclusive -N 1 -J ${branch}C192.sw.modon sleep 30m &
+        RUNNER_TRACKING_ID="" && salloc --exclusive -N 1 -J ${branch}C384.sw.BTwave sleep 30m &
+        RUNNER_TRACKING_ID="" && salloc --exclusive -N 1 -J ${branch}C96.sw.BLvortex sleep 30m &
+        RUNNER_TRACKING_ID="" && salloc --exclusive -N 1 -J ${branch}C96.sw.BTwave sleep 30m &
+        RUNNER_TRACKING_ID="" && salloc --exclusive -N 1 -J ${branch}C96.sw.RHwave sleep 30m &
+        RUNNER_TRACKING_ID="" && salloc --exclusive -N 1 -J ${branch}C96.sw.modon sleep 30m &
+        RUNNER_TRACKING_ID="" && salloc --exclusive -N 1 -J ${branch}C96.solo.BCdry.hyd sleep 30m &
+        RUNNER_TRACKING_ID="" && salloc --exclusive -N 1 -J ${branch}C96.solo.BCmoist.hyd sleep 30m &
+        RUNNER_TRACKING_ID="" && salloc --exclusive -N 1 -J ${branch}C96.solo.BCmoist.hyd.d3 sleep 30m &
+        RUNNER_TRACKING_ID="" && salloc --exclusive -N 1 -J ${branch}C96.solo.mtn_rest.hyd sleep 30m &
+        RUNNER_TRACKING_ID="" && salloc --exclusive -N 1 -J ${branch}C96.solo.mtn_rest.hyd.nccmp -df2 sleep 30m &
     
   buildnh:
     runs-on: [self-hosted]
