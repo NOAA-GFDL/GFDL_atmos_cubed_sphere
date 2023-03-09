@@ -35,7 +35,7 @@ jobs:
   testnh:
     runs-on: [self-hosted]
     name: SOLO SHiELD nh test suite
-    needs: [checkout, buildnh]
+    needs: [buildnh]
     strategy:
       fail-fast: false
       max-parallel: 13
@@ -71,7 +71,7 @@ jobs:
   testsw:
     runs-on: [self-hosted]
     name: SOLO SHiELD sw test suite
-    needs: [checkout, buildsw]
+    needs: [buildsw]
     strategy:
       fail-fast: false
       max-parallel: 13
@@ -97,7 +97,7 @@ jobs:
   testhydro:
     runs-on: [self-hosted]
     name: SOLO SHiELD hydro test suite
-    needs: [checkout, buildhydro]
+    needs: [buildhydro]
     strategy:
       fail-fast: false
       max-parallel: 13
@@ -114,3 +114,10 @@ jobs:
           RUNPATH: ${{ matrix.runpath }}
           RUNSCRIPT: ${{ matrix.runscript }}
         run: $RUNPATH/$RUNSCRIPT $GITHUB_REF
+
+  checkrestarts:
+    runs-on: [self-hosted]
+    name: Check Restarts
+    needs: [testnh, testsw, testhydro]
+    steps:
+    - run: /contrib/fv3/FV3CIScripts/checkrestarts.sh $GITHUB_REF
