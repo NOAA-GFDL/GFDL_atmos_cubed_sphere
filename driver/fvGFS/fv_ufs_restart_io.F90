@@ -67,17 +67,10 @@ module fv_ufs_restart_io_mod
    ! 'u', 'v'
    nvar3d_core_center = 0
    if (.not.atm%flagstruct%hydrostatic) then
-      if (atm%flagstruct%make_nh) then ! hydrostatic restarts dont have these variables
-           nvar3d_core_center = nvar3d_core_center + 2 ! 'w', 'dz'
-           if ( atm%flagstruct%hybrid_z ) then
-               nvar3d_core_center = nvar3d_core_center + 1 ! 'ze0'
-           endif
-      else !the restart file has the non-hydrostatic variables
-           nvar3d_core_center = nvar3d_core_center + 2 ! 'w', 'dz'
-           if ( atm%flagstruct%hybrid_z ) then
-               nvar3d_core_center = nvar3d_core_center + 1 ! 'ze0'
-           endif
-      endif
+     nvar3d_core_center = nvar3d_core_center + 2 ! 'w', 'dz'
+     if (atm%flagstruct%hybrid_z) then
+       nvar3d_core_center = nvar3d_core_center + 1 ! 'ze0'
+     endif
    endif
    nvar3d_core_center = nvar3d_core_center + 2 ! 't', 'delp'
    !--- include agrid winds in restarts for use in data assimilation
@@ -119,19 +112,11 @@ module fv_ufs_restart_io_mod
    core_east_var3_names(1) = 'v'
    n = 1
    if (.not.atm%flagstruct%hydrostatic) then
-      if (atm%flagstruct%make_nh) then ! hydrostatic restarts dont have these variables
-           core_center_var3_names(n) = 'W'; n=n+1
-           core_center_var3_names(n) = 'DZ'; n=n+1
-           if ( atm%flagstruct%hybrid_z ) then
-               core_center_var3_names(n) = 'ze0'; n=n+1
-           endif
-      else !the restart file has the non-hydrostatic variables
-           core_center_var3_names(n) = 'W'; n=n+1
-           core_center_var3_names(n) = 'DZ'; n=n+1
-           if ( atm%flagstruct%hybrid_z ) then
-               core_center_var3_names(n) = 'ze0'; n=n+1
-           endif
-      endif
+     core_center_var3_names(n) = 'W'; n=n+1
+     core_center_var3_names(n) = 'DZ'; n=n+1
+     if (atm%flagstruct%hybrid_z) then
+       core_center_var3_names(n) = 'ze0'; n=n+1
+     endif
    endif
    core_center_var3_names(n) = 'T'; n=n+1
    core_center_var3_names(n) = 'delp'; n=n+1
@@ -206,18 +191,10 @@ module fv_ufs_restart_io_mod
 
    n = 1
    if (.not.atm%flagstruct%hydrostatic) then
-      if (atm%flagstruct%make_nh) then ! hydrostatic restarts dont have these variables
-           ! core_center_var3(n) = 'w'; n=n+1
-           ! core_center_var3(n) = 'dz'; n=n+1
-           ! if ( atm%flagstruct%hybrid_z ) then
-           !     core_center_var3(n) = 'ze0'; n=n+1
-           ! endif
-      else !the restart file has the non-hydrostatic variables
-           core_center_var3(:,:,:,n) = Atm%w(isc:iec,jsc:jec,:); n=n+1
-           core_center_var3(:,:,:,n) = Atm%delz; n=n+1
-           if ( atm%flagstruct%hybrid_z ) then
-               core_center_var3(:,:,:,n) = Atm%ze0; n=n+1
-           endif
+      core_center_var3(:,:,:,n) = Atm%w(isc:iec,jsc:jec,:); n=n+1
+      core_center_var3(:,:,:,n) = Atm%delz; n=n+1
+      if (atm%flagstruct%hybrid_z) then
+        core_center_var3(:,:,:,n) = Atm%ze0; n=n+1
       endif
    endif
    core_center_var3(:,:,:,n) = Atm%pt(isc:iec,jsc:jec,:);   n=n+1
