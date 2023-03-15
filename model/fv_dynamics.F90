@@ -799,7 +799,19 @@ contains
        if (snowwat > 0) call prt_mxm('snowwat_dyn', q(isd,jsd,1,snowwat), is, ie, js, je, ng, npz, 1.,gridstruct%area_64, domain)
        if (graupel > 0) call prt_mxm('graupel_dyn', q(isd,jsd,1,graupel), is, ie, js, je, ng, npz, 1.,gridstruct%area_64, domain)
        if (hailwat > 0) call prt_mxm('hailwat_dyn', q(isd,jsd,1,hailwat), is, ie, js, je, ng, npz, 1.,gridstruct%area_64, domain)
-     endif
+       if ( flagstruct%range_warn ) then
+       !tgs -  check the location of negative hydrometeors
+        call range_check('liq_wat', q(:,:,:,liq_wat), is, ie, js, je, ng, npz, gridstruct%agrid,   &
+                          -1.e-20, 1.e20, bad_range,fv_time)
+        call range_check('rainwat', q(:,:,:,rainwat), is, ie, js, je, ng, npz, gridstruct%agrid,   &
+                          -1.e-20, 1.e20, bad_range,fv_time)
+        call range_check('graupel', q(:,:,:,graupel), is, ie, js, je, ng, npz, gridstruct%agrid,   &
+                          -1.e-20, 1.e20, bad_range,fv_time)
+        call range_check('snowwat', q(:,:,:,snowwat), is, ie, js, je, ng, npz, gridstruct%agrid,   &
+                          -1.e-20, 1.e20, bad_range,fv_time)
+       endif
+
+     endif ! fv_debug
 #ifdef AVEC_TIMERS
                                                   call avec_timer_stop(6)
 #endif

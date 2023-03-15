@@ -1721,6 +1721,10 @@ contains
              qv2(i,j) = qv2(i,j) - dq
              pt2(i,j) = pt2(i,j) + dq*(icpk(i,j)+lcpk(i,j))
         endif
+!tgs--  Give up and set graupel to zero 
+        if ( qg2(i,j)<0.) then
+             qg2(i,j) = 0.
+        endif
 
 !--------------
 ! Liquid phase:
