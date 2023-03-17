@@ -3848,7 +3848,7 @@ contains
 
         do itrac=1, Atm(n)%ncnst
           call get_tracer_names (MODEL_ATMOS, itrac, tname)
-          if (id_tracer(itrac) > 0 .and. itrac.gt.nq) then
+          if (itrac.gt.nq) then
             used = send_data (id_tracer(itrac), Atm(n)%qdiag(isc:iec,jsc:jec,:,itrac), Time )
           else
             used = send_data (id_tracer(itrac), Atm(n)%q(isc:iec,jsc:jec,:,itrac), Time )
