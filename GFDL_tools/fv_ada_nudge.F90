@@ -63,7 +63,7 @@ module fv_ada_nudge_mod
 
  use fms2_io_mod,       only : register_restart_field, open_file, close_file, &
                                read_restart, register_field, &
-                               register_variable_attribute, file_exists, FmsNetcdfFile_t
+                               register_variable_attribute, file_exists, FmsNetcdfDomainFile_t
  use fv_io_mod,         only : fv_io_register_axis
  use axis_utils_mod, only : frac_index
 
@@ -235,7 +235,7 @@ module fv_ada_nudge_mod
   integer :: id_u_da, id_v_da, id_t_da, id_q_da, id_ps_da ! snz
   integer :: id_ada
 
-  type(FmsNetcdfFile_t) :: ada_driver_restart ! snz
+  type(FmsNetcdfDomainFile_t) :: ada_driver_restart ! snz
   character(len=*), parameter :: restart_file="INPUT/ada_driver.res.nc" ! snz
   character(len=8), dimension(4) :: dim_names_4d
 

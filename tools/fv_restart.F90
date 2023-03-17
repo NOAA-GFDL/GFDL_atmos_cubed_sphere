@@ -48,7 +48,6 @@ module fv_restart_mod
   use mpp_mod,             only: mpp_get_current_pelist, mpp_npes, mpp_set_current_pelist
   use mpp_mod,             only: mpp_send, mpp_recv, mpp_sync_self, mpp_pe, mpp_sync
   use fms2_io_mod,         only: file_exists, set_filename_appendix, FmsNetcdfFile_t, open_file, close_file
-  use fms_io_mod,          only: fmsset_filename_appendix=> set_filename_appendix
   use test_cases_mod,      only: alpha, init_case, init_double_periodic!, init_latlon
   use fv_mp_mod,           only: is_master, mp_reduce_min, mp_reduce_max, corners_YDir => YDir, fill_corners, tile_fine, global_nest_domain
   use fv_surf_map_mod,     only: sgh_g, oro_g
@@ -202,7 +201,6 @@ contains
        if (Atm(n)%neststruct%nested .and. n==this_grid) then
           write(gnn,'(A4, I2.2)') "nest", Atm(n)%grid_number
           call set_filename_appendix(gnn)
-          call fmsset_filename_appendix(gnn)
        endif
 
        !3preN. Topography BCs for nest, including setup for blending
