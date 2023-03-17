@@ -45,7 +45,7 @@
 ! </table>
 
  use molecular_diffusion_mod,  only: molecular_diffusion_coefs, &
-                                     tau_visc, tau_cond, tau_diff
+                                     tau_visc, tau_cond, tau_diff, visc3d
  use tp_core_mod,       only: fv_tp_2d, pert_ppm, copy_corners,    &
                               deln_flux_explm, deln_flux_explm_udvd
  use fv_mp_mod, only: is_master, fill_corners, XDir, YDir
@@ -1655,6 +1655,8 @@
       call molecular_diffusion_coefs(ijm,plyr(isd,jsd  ),temp(isd,jsd),&
                                          qtra(isd,jsd,1),visc(isd,jsd),&
                                          cond(isd,jsd  ),diff(isd,jsd))
+
+      visc3d(:,:,k) = visc(:,:)
 
 ! time scale  and options
 

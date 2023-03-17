@@ -112,7 +112,7 @@ module dyn_core_mod
   use fv_mp_mod,          only: start_group_halo_update, complete_group_halo_update
   use fv_mp_mod,          only: group_halo_update_type
   use molecular_diffusion_mod,       &
-                          only: md_time, md_layers, md_consv_te, md_tadj_layers
+                          only: md_time, md_layers, md_consv_te, md_tadj_layers, visc3d
   use sw_core_mod,        only: c_sw, d_sw, d_md
   use a2b_edge_mod,       only: a2b_ord2, a2b_ord4
   use nh_core_mod,        only: Riem_Solver3, Riem_Solver_C, update_dz_c, update_dz_d, nh_bc
@@ -141,10 +141,11 @@ module dyn_core_mod
   use test_cases_mod,      only: test_case, case9_forcing1, case9_forcing2
 #endif
 #ifdef MULTI_GASES
-    use multi_gases_mod,  only:  virqd, vicpqd, vicvqd, virq, vicvq
+    use multi_gases_mod,  only:  virqd, vicpqd, vicvqd, virq, vicvq, num_gas
 #endif
   use fv_regional_mod,     only: dump_field, exch_uv, H_STAGGER, U_STAGGER, V_STAGGER
   use fv_regional_mod,     only: a_step, p_step, k_step, n_step
+  use fv_mapz_mod,         only: moist_cv
 
 implicit none
 private
@@ -174,7 +175,7 @@ contains
 
  subroutine dyn_core(npx, npy, npz, ng, sphum, nq, bdt, n_map, n_split, zvir, cp, akap, cappa,  &
 #ifdef MULTI_GASES
-                     kapad,  &
+                     kapad, kappa, liq_wat, ice_wat, rainwat, snowwat, graupel, hailwat, &
 #endif
                      grav, hydrostatic,  &
                      u,  v,  w, delz, pt, q, delp, pe, pk, phis, ws, omga, ptop, pfull, ua, va, &
@@ -203,7 +204,9 @@ contains
     real, intent(inout) ::  delz(bd%is:,bd%js:,1:)  !< delta-height (m, negative)
     real, intent(inout) :: cappa(bd%isd:bd%ied,bd%jsd:bd%jed,1:npz)  !< moist kappa
 #ifdef MULTI_GASES
+    real, intent(in) :: kappa
     real, intent(inout) :: kapad(bd%isd:bd%ied,bd%jsd:bd%jed,1:npz) !< multi_gases kappa
+    integer, intent(in) :: liq_wat, ice_wat, rainwat, snowwat, graupel, hailwat
 #endif
     real, intent(inout) :: pt(  bd%isd:bd%ied  ,bd%jsd:bd%jed  ,npz)  !< potential temperature (K)
     real, intent(inout) :: delp(bd%isd:bd%ied  ,bd%jsd:bd%jed  ,npz)  !< pressure thickness (pascal)
@@ -288,6 +291,9 @@ contains
     logical used
     real :: split_timestep_bc
 
+    real, dimension(bd%is:bd%ie) :: cvm
+    real, dimension(bd%is:bd%ie,bd%js:bd%je,npz) :: dp1
+    integer :: nwat
     integer :: is,  ie,  js,  je
     integer :: isd, ied, jsd, jed
 
@@ -299,6 +305,8 @@ contains
       ied = bd%ied
       jsd = bd%jsd
       jed = bd%jed
+
+    nwat = flagstruct%nwat
 
 #ifdef SW_DYNAMICS
     peln1 = 0.
@@ -624,6 +632,11 @@ contains
              gridstruct%ne_corner, gridstruct%nw_corner, bd, gridstruct%grid_type, flagstruct%dz_min)
                                             call timing_off('UPDATE_DZ_C')
 
+           if(.not.allocated(visc3d))then
+             allocate(visc3d(isd:ied,jsd:jed,npz))
+             visc3d = 0.0
+           endif
+
                                                call timing_on('Riem_Solver')
            call Riem_Solver_C( ms, dt2,   is,  ie,   js,   je,   npz,   ng,   &
                                akap, cappa, cp,  &
@@ -632,7 +645,7 @@ contains
 #endif
                                ptop, phis, omga, ptc,  &
                                q_con,  delpc, gz,  pkc, ws3, flagstruct%p_fac, &
-                                flagstruct%a_imp, flagstruct%scale_z )
+                                flagstruct%a_imp, flagstruct%scale_z, visc3d)
                                                call timing_off('Riem_Solver')
 
            if (gridstruct%nested) then
@@ -1050,7 +1063,7 @@ contains
                          ptop, zs, q_con, w, delz, pt, delp, zh,   &
                          pe, pkc, pk3, pk, peln, ws, &
                          flagstruct%scale_z, flagstruct%p_fac, flagstruct%a_imp, &
-                         flagstruct%use_logp, remap_step, beta<-0.1)
+                         flagstruct%use_logp, remap_step, beta<-0.1, visc3d)
                                                          call timing_off('Riem_Solver')
 
                                        call timing_on('COMM_TOTAL')
@@ -1238,6 +1251,74 @@ contains
     endif
 
     if ( flagstruct%molecular_diffusion .and. md_time ) then
+#ifdef __GFORTRAN__
+!$OMP parallel do default(none) shared(is,ie,js,je,isd,ied,jsd,jed,npz,zvir,q,q_con,sphum,liq_wat, &
+#else
+!$OMP parallel do default(none) shared(is,ie,js,je,isd,ied,jsd,jed,npz,dp1,zvir,q,q_con,sphum,liq_wat, &
+#endif
+!$OMP                                  rainwat,ice_wat,snowwat,graupel,hailwat,pkz,flagstruct, &
+#ifdef MULTI_GASES
+!$OMP                                  kapad, nq, pe,    num_gas,   &
+#endif
+#ifdef __GFORTRAN__
+!$OMP                                  kappa,rdg,delp,pt,delz,nwat)                    &
+#else
+!$OMP                                  cappa,kappa,rdg,delp,pt,delz,nwat)              &
+#endif
+!$OMP                          private(cvm,i,j,k)
+
+      do k=1,npz
+       
+        if ( flagstruct%moist_phys ) then
+          do j=js,je
+#ifdef MOIST_CAPPA
+            call moist_cv(is,ie,isd,ied,jsd,jed, npz, j, k, nwat, sphum, liq_wat, rainwat,    &
+                          ice_wat, snowwat, graupel, hailwat, q, q_con(is:ie,j,k), cvm)
+#endif
+            do i=is,ie
+#ifdef MULTI_GASES
+              dp1(i,j,k) = virq(q(i,j,k,1:num_gas))-1.
+              kapad(i,j,k)= kappa * (virqd(q(i,j,k,1:num_gas))/vicpqd(q(i,j,k,1:num_gas)))
+#else
+              dp1(i,j,k) = zvir*q(i,j,k,sphum)
+#endif
+
+#ifdef MOIST_CAPPA
+              cappa(i,j,k) = rdgas/(rdgas + cvm(i)/(1.+dp1(i,j,k)) )
+              pkz(i,j,k) = exp(cappa(i,j,k)*log(rdg*delp(i,j,k)*pt(i,j,k)*    &
+#ifdef MULTI_GASES
+                           (1.+dp1(i,j,k))                  /delz(i,j,k)) )
+#else
+                           (1.+dp1(i,j,k))*(1.-q_con(i,j,k))/delz(i,j,k)) )
+#endif
+
+#else
+              pkz(i,j,k) = exp( kappa*log(rdg*delp(i,j,k)*pt(i,j,k)*    &
+                           (1.+dp1(i,j,k))/delz(i,j,k)) )
+!			    
+! >>>>  Rd_multi = Rdgas*(1.+dp1(i,j,k))=Rdgas*virq(q(i,j,k,:))
+!
+#endif	   
+            enddo
+          enddo
+        else
+!	 
+! dry-physics
+!	 
+        do j=js,je
+          do i=is,ie
+            dp1(i,j,k) = 0.
+#ifdef MULTI_GASES
+            kapad(i,j,k)= kappa * (virqd(q(i,j,k,1:num_gas))/vicpqd(q(i,j,k,1:num_gas)))
+            pkz(i,j,k) = exp(kapad(i,j,k)*log(rdg*virqd(q(i,j,k,1:num_gas))*delp(i,j,k)*pt(i,j,k)/delz(i,j,k)))
+#else
+            pkz(i,j,k) = exp(kappa*log(rdg*delp(i,j,k)*pt(i,j,k)/delz(i,j,k)))
+#endif
+          enddo
+        enddo
+      endif
+    enddo        !k-loop
+
 ! -----------------------------------------------------
 ! direct explicit molecular diffusion
 ! -----------------------------------------------------
@@ -2832,6 +2913,7 @@ do 1000 j=jfirst,jlast
       jsd = bd%jsd
       jed = bd%jed
 
+                                       call timing_on('d_md')
 ! -----------------------------------------------------
 ! ------- update halo to prepare for diffusion -------
     pkzf = 0.0
@@ -2884,7 +2966,6 @@ do 1000 j=jfirst,jlast
                           gridstruct%nw_corner, gridstruct%ne_corner)
         enddo
     endif
-                                       call timing_on('d_md')
 
 !$OMP parallel do default(none) shared(npz,flagstruct,gridstruct,bd,      &
 !$OMP                                  it,dt,is,ie,js,je,isd,ied,jsd,jed, &
@@ -2971,6 +3052,7 @@ do 1000 j=jfirst,jlast
 ! -------------------------------------------------
     enddo       ! k loop of 2d molecular diffusion
 ! -------------------------------------------------
+                                       call timing_off('d_md')
  return
  end subroutine molecular_diffusion_run
 

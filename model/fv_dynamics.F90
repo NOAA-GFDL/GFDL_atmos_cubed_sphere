@@ -710,7 +710,7 @@ contains
                                            call timing_on('DYN_CORE')
       call dyn_core(npx, npy, npz, ng, sphum, nq, mdt, n_map, n_split, zvir, cp_air, akap, cappa, &
 #ifdef MULTI_GASES
-                    kapad,		     &
+                    kapad, kappa, liq_wat, ice_wat, rainwat, snowwat, graupel, hailwat, &
 #endif
                     grav, hydrostatic, &
                     u, v, w, delz, pt, q, delp, pe, pk, phis, ws, omga, ptop, pfull, ua, va,           &
@@ -724,8 +724,8 @@ contains
          do k=1,npz
           do j=js,je
              do i=is,ie
-	       wam_kappain(i,j,k) =cappa(i,j,k)   
-	       q(i,j,k,ind_trkap) =cappa(i,j,k) 
+               wam_kappain(i,j,k) =cappa(i,j,k)   
+               q(i,j,k,ind_trkap) =cappa(i,j,k) 
             enddo
          enddo
       enddo
@@ -775,18 +775,18 @@ contains
          do k=1,npz
           do j=js,je
              do i=is,ie   
-	                  
+                  
 !	     scal_kapcor=.5*( log(pe(i,k,j))+log(pe(i,k+1,j)) ) *(-wam_kappain(i,j,k)+q(i,j,k,ind_trkap))	     
-	     scal_kapcor=.5*( peln(i,k,j)+ peln(i,k+1,j) ) *( q(i,j,k,ind_trkap)-wam_kappain(i,j,k)) 
-	     
-	     pt(i,j,k) = pt(i,j,k) * (1.0 - scal_kapcor)
+             scal_kapcor=.5*( peln(i,k,j)+ peln(i,k+1,j) ) *( q(i,j,k,ind_trkap)-wam_kappain(i,j,k)) 
+     
+             pt(i,j,k) = pt(i,j,k) * (1.0 - scal_kapcor)
 !	     	     	     
 !	     kap_cor(i,j,k) =scal_kapcor    
 !			      
              enddo
           enddo
          enddo
-	 
+ 
 !	  if( is_master() ) then 
 !	   write(6,*) ' fv_dyn_kap_cor ', maxval(kap_cor(is:ie, js:je,1:npz)), &
 !	                                minval(kap_cor(is:ie, js:je,1:npz))

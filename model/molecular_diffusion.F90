@@ -40,7 +40,7 @@ module molecular_diffusion_mod
 
       use constants_mod,      only: rdgas, cp_air
       use fv_mp_mod,          only: is_master
-      use mpp_mod,            only: stdlog, input_nml_file
+      use mpp_mod,            only: FATAL, mpp_error, stdlog, input_nml_file
       use fms_mod,            only: check_nml_error, open_namelist_file, close_file
       use fv_grid_utils_mod,  only: g_sum
       use mpp_domains_mod,    only: domain2d
@@ -75,9 +75,11 @@ module molecular_diffusion_mod
       real, parameter:: bz=1.3806505e-23   ! Boltzmann constant J/K
       real, parameter:: a12=9.69e18 ! O-O2 diffusion params
       real, parameter:: s12=0.774
+      real, allocatable :: visc3d(:,:,:)
 !
       public molecular_diffusion_init, read_namelist_molecular_diffusion_nml
       public molecular_diffusion_coefs, thermosphere_adjustment
+      public :: visc3d
 
       CONTAINS
 ! --------------------------------------------------------
@@ -181,14 +183,8 @@ module molecular_diffusion_mod
 
       do n=1,dim
 !check
-        if(plyr(n).le.0.0) then
-           write(*,*) 'ERROR non positive value of plyr ',plyr(n)
-           stop
-        endif
-        if(temp(n).le.0.0) then
-           write(*,*) 'ERROR non positive value of temp ',temp(n)
-           stop
-        endif
+        if(plyr(n).le.0.0) call mpp_error(FATAL,"ERROR non positive value of plyr")
+        if(temp(n).le.0.0) call mpp_error(FATAL,"ERROR non positive value of temp")
 
         d12(n) = a12bz*temp(n)**s12 * temp(n)/plyr(n)
         if( d12(n).lt.0.0 .and. is_master() ) then
