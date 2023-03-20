@@ -47,7 +47,7 @@ module fv_ada_nudge_mod
  use mpp_domains_mod,   only: mpp_get_data_domain ! snz
  use time_manager_mod,  only: time_type,  get_time, get_date, set_date, increment_time
 
- use grid_mod, only : define_cube_mosaic ! snz
+ use grid2_mod, only : define_cube_mosaic ! snz
 
  use fv_grid_utils_mod, only: great_circle_dist, intp_great_circle
  use fv_grid_utils_mod, only: latlon2xyz, vect_cross, normalize_vect
@@ -65,7 +65,7 @@ module fv_ada_nudge_mod
                                read_restart, register_field, &
                                register_variable_attribute, file_exists, FmsNetcdfDomainFile_t
  use fv_io_mod,         only : fv_io_register_axis
- use axis_utils_mod, only : frac_index
+ use axis_utils2_mod, only : frac_index
 
 #ifdef ENABLE_ADA
  use ada_types_mod, only : model_data_type
