@@ -1318,7 +1318,7 @@ contains
 !***  Get the source of the input data
 !-----------------------------------------------------------------------
 !
-      if (Atm%flagstruct%hrrrv3_ic) then
+      if (Atm%flagstruct%hrrrv3_ic .or. Atm%flagstruct%input_fv3gfs) then
         data_source_fv3gfs = .TRUE.
       else
         call get_data_source(data_source_fv3gfs,Atm%flagstruct%regional)
@@ -1449,7 +1449,7 @@ contains
 !***  Get the source of the input data.
 !-----------------------------------------------------------------------
 !
-      if (Atm%flagstruct%hrrrv3_ic) then
+      if (Atm%flagstruct%hrrrv3_ic .or. Atm%flagstruct%input_fv3gfs) then
         data_source_fv3gfs = .TRUE.
       else
         call get_data_source(data_source_fv3gfs,Atm%flagstruct%regional)
