@@ -791,6 +791,7 @@ CONTAINS
             KBAS = k
          ENDIF
     ENDDO
+    KBAS = MAX(KBAS, 2)     ! start at least from 2 to avoid cloud base at k=1, since then k-1 would be zero and out of bounds
     !QC - our embryo can't start below the cloud base.
     !IF (KFZL .lt. KBAS) THEN
     !   KFZL = KBAS
