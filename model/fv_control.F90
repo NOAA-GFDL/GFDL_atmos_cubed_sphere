@@ -270,6 +270,7 @@ module fv_control_mod
      logical , pointer :: nggps_ic
      logical , pointer :: hrrrv3_ic
      logical , pointer :: ecmwf_ic
+     logical , pointer :: use_gfsO3
      logical , pointer :: gfs_phil
      logical , pointer :: agrid_vel_rst
      logical , pointer :: use_new_ncep
@@ -804,6 +805,7 @@ module fv_control_mod
        nggps_ic                      => Atm%flagstruct%nggps_ic
        hrrrv3_ic                     => Atm%flagstruct%hrrrv3_ic
        ecmwf_ic                      => Atm%flagstruct%ecmwf_ic
+       use_gfsO3                     => Atm%flagstruct%use_gfsO3
        gfs_phil                      => Atm%flagstruct%gfs_phil
        agrid_vel_rst                 => Atm%flagstruct%agrid_vel_rst
        use_new_ncep                  => Atm%flagstruct%use_new_ncep
@@ -933,7 +935,7 @@ module fv_control_mod
             hord_mt, hord_vt, hord_tm, hord_dp, hord_tr, shift_fac, stretch_fac, target_lat, target_lon, &
             kord_mt, kord_wz, kord_tm, kord_tr, remap_te, fv_debug, fv_land, &
             do_am4_remap, nudge, do_f3d, external_ic, is_ideal_case, read_increment, &
-            ncep_ic, nggps_ic, hrrrv3_ic, ecmwf_ic, use_new_ncep, use_ncep_phy, fv_diag_ic, &
+            ncep_ic, nggps_ic, hrrrv3_ic, ecmwf_ic, use_gfsO3, use_new_ncep, use_ncep_phy, fv_diag_ic, &
             external_eta, res_latlon_dynamics, res_latlon_tracers, scale_z, w_max, z_min, d2bg_zq, lim_fac, &
             dddmp, smag2d, d2_bg, d4_bg, vtdm4, trdm2, d_ext, delt_max, beta, non_ortho, n_sponge, &
             warm_start, adjust_dry_mass, mountain, d_con, ke_bg, nord, nord_tr, convert_ke, use_old_omega, &

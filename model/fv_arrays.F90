@@ -814,6 +814,8 @@ module fv_arrays_mod
    logical :: do_diss_est  = .false.     !< compute and save dissipation estimate
    logical :: ecmwf_ic = .false.   !< If external_ic = .true., reads initial conditions from ECMWF analyses.
                                    !< The default is .false.
+   logical :: use_gfsO3 = .false.     ! only work when "ecmwf_ic = .T.". 
+                                      ! Need to be 'true', when the IFS IC does not include O3 data.  
    logical :: gfs_phil = .false.      !< if .T., compute geopotential inside of GFS physics (not used?)
    logical :: agrid_vel_rst = .false.   !< Whether to write the unstaggered latitude-longitude winds
                                         !< (ua and va) to the restart files. This is useful for data

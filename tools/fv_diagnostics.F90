@@ -1287,6 +1287,28 @@ contains
        id_dp1000 = register_diag_field ( trim(field), 'dp1000', axes(1:2), Time,       &
                            '1000-mb dew point', 'K', missing_value=missing_value )
 !--------------------------
+! equivalent potential temperature:
+!--------------------------
+       id_theta_e100 = register_diag_field ( trim(field), 'theta_e100', axes(1:2), Time,       &
+                           '100-mb equivalent potential temperature', 'K', missing_value=missing_value )
+       id_theta_e200 = register_diag_field ( trim(field), 'theta_e200', axes(1:2), Time,       &
+                           '200-mb equivalent potential temperature', 'K', missing_value=missing_value )
+       id_theta_e250 = register_diag_field ( trim(field), 'theta_e250', axes(1:2), Time,       &
+                           '250-mb equivalent potential temperature', 'K', missing_value=missing_value )
+       id_theta_e300 = register_diag_field ( trim(field), 'theta_e300', axes(1:2), Time,       &
+                           '300-mb equivalent potential temperature', 'K', missing_value=missing_value )
+       id_theta_e500 = register_diag_field ( trim(field), 'theta_e500', axes(1:2), Time,       &
+                           '500-mb equivalent potential temperature', 'K', missing_value=missing_value )
+       id_theta_e700 = register_diag_field ( trim(field), 'theta_e700', axes(1:2), Time,       &
+                           '700-mb equivalent potential temperature', 'K', missing_value=missing_value )
+       id_theta_e850 = register_diag_field ( trim(field), 'theta_e850', axes(1:2), Time,       &
+                           '850-mb equivalent potential temperature', 'K', missing_value=missing_value )
+       id_theta_e925 = register_diag_field ( trim(field), 'theta_e925', axes(1:2), Time,       &
+                           '925-mb equivalent potential temperature', 'K', missing_value=missing_value )
+       id_theta_e1000 = register_diag_field ( trim(field), 'theta_e1000', axes(1:2), Time,       &
+                           '1000-mb equivalent potential temperature', 'K', missing_value=missing_value )
+
+!--------------------------
 ! relative humidity (CMIP definition):
 !--------------------------
        id_rh10_cmip = register_diag_field ( trim(field), 'rh10_cmip', axes(1:2), Time,       &
@@ -3696,7 +3718,10 @@ contains
        if(id_diss > 0) used=send_data(id_diss, Atm(n)%diss_est(isc:iec,jsc:jec,:), Time)
 
        allocate( a3(isc:iec,jsc:jec,npz) )
-       if(id_theta_e > 0 ) then
+       if(id_theta_e > 0 .or.                                              &     
+          id_theta_e100>0 .or. id_theta_e200>0 .or. id_theta_e250>0 .or. id_theta_e300>0 .or. &
+          id_theta_e500>0 .or. id_theta_e700>0 .or. id_theta_e850>0 .or. id_theta_e925>0 .or. & 
+          id_theta_e1000>0) then
 
           if ( Atm(n)%flagstruct%adiabatic .and. Atm(n)%flagstruct%kord_tm>0 ) then
              do k=1,npz
@@ -3709,6 +3734,44 @@ contains
           else
              call eqv_pot(a3, Atm(n)%pt, Atm(n)%delp, Atm(n)%delz, Atm(n)%peln, Atm(n)%pkz, Atm(n)%q(isd,jsd,1,sphum),    &
                   isc, iec, jsc, jec, ngc, npz, Atm(n)%flagstruct%hydrostatic, Atm(n)%flagstruct%moist_phys)
+          endif
+
+
+          if (id_theta_e100>0) then
+               call interpolate_vertical(isc, iec, jsc, jec, npz, 100.e2, Atm(n)%peln, a3(isc:iec,jsc:jec,:), a2)
+               used=send_data(id_theta_e100, a2, Time)
+          endif
+          if (id_theta_e200>0) then
+               call interpolate_vertical(isc, iec, jsc, jec, npz, 200.e2, Atm(n)%peln, a3(isc:iec,jsc:jec,:), a2)
+               used=send_data(id_theta_e200, a2, Time)
+          endif
+          if (id_theta_e250>0) then
+               call interpolate_vertical(isc, iec, jsc, jec, npz, 250.e2, Atm(n)%peln, a3(isc:iec,jsc:jec,:), a2)
+               used=send_data(id_theta_e250, a2, Time)
+          endif
+          if (id_theta_e300>0) then
+               call interpolate_vertical(isc, iec, jsc, jec, npz, 300.e2, Atm(n)%peln, a3(isc:iec,jsc:jec,:), a2)
+               used=send_data(id_theta_e300, a2, Time)
+          endif
+          if (id_theta_e500>0) then
+               call interpolate_vertical(isc, iec, jsc, jec, npz, 500.e2, Atm(n)%peln, a3(isc:iec,jsc:jec,:), a2)
+               used=send_data(id_theta_e500, a2, Time)
+          endif
+          if (id_theta_e700>0) then
+               call interpolate_vertical(isc, iec, jsc, jec, npz, 700.e2, Atm(n)%peln, a3(isc:iec,jsc:jec,:), a2)
+               used=send_data(id_theta_e700, a2, Time)
+          endif
+          if (id_theta_e850>0) then
+               call interpolate_vertical(isc, iec, jsc, jec, npz, 850.e2, Atm(n)%peln, a3(isc:iec,jsc:jec,:), a2)
+               used=send_data(id_theta_e850, a2, Time)
+          endif
+          if (id_theta_e925>0) then
+               call interpolate_vertical(isc, iec, jsc, jec, npz, 925.e2, Atm(n)%peln, a3(isc:iec,jsc:jec,:), a2)
+               used=send_data(id_theta_e925, a2, Time)
+          endif
+          if (id_theta_e1000>0) then
+               call interpolate_vertical(isc, iec, jsc, jec, npz, 1000.e2, Atm(n)%peln, a3(isc:iec,jsc:jec,:), a2)
+               used=send_data(id_theta_e1000, a2, Time)
           endif
 
           if (id_theta_e > 0) then

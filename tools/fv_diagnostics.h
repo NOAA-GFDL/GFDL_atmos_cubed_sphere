@@ -52,6 +52,8 @@
  integer:: id_ql_plev, id_qi_plev, id_qr_plev, id_qs_plev, id_qg_plev, id_cf_plev
  integer:: id_t_plev_ave, id_q_plev_ave, id_qv_dt_gfdlmp_plev_ave, id_t_dt_gfdlmp_plev_ave, id_qv_dt_phys_plev_ave, id_t_dt_phys_plev_ave
 
+ integer :: id_theta_e100, id_theta_e200, id_theta_e250, id_theta_e300, &
+            id_theta_e500, id_theta_e700, id_theta_e850, id_theta_e925,  id_theta_e1000
  ! IPCC diag
  integer :: id_rh10,  id_rh50,  id_rh100, id_rh200,  id_rh250, id_rh300, &
             id_rh500, id_rh700, id_rh850, id_rh925,  id_rh1000
