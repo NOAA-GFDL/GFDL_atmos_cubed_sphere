@@ -33,14 +33,16 @@ use fv_timing_mod,         only: timing_on, timing_off
 use monin_obukhov_mod,     only: mon_obkv
 use tracer_manager_mod,    only: get_tracer_index, adjust_mass
 use field_manager_mod,     only: MODEL_ATMOS
-use fms_mod,               only: error_mesg, FATAL, file_exist, open_namelist_file,  &
-                                 check_nml_error, mpp_pe, mpp_root_pe, close_file, &
-                                 write_version_number, stdlog, mpp_error
+use fms_mod,               only: error_mesg, FATAL,  &
+                                 check_nml_error, mpp_pe, mpp_root_pe, &
+                                 mpp_error
+use fms2_io_mod,           only: file_exists
 use fv_mp_mod,             only: is_master, mp_reduce_max
 use fv_diagnostics_mod,    only: prt_maxmin, gn
 
 use fv_arrays_mod,          only: fv_grid_type, fv_flags_type, fv_nest_type, fv_grid_bounds_type, phys_diag_type, nudge_diag_type
 use mpp_domains_mod,       only: domain2d
+use mpp_mod,               only: input_nml_file
 use diag_manager_mod,      only: register_diag_field, register_static_field, send_data
 use qs_tables_mod,         only: qs_wat_init, qs_wat
 
@@ -1582,27 +1584,25 @@ endif
     master = is_master()
 
 !   ----- read and write namelist -----
-    if ( file_exist('input.nml')) then
-         unit = open_namelist_file ('input.nml')
-         read  (unit, nml=sim_phys_nml, iostat=io, end=10)
+    if ( file_exists('input.nml')) then
+         read  (input_nml_file, nml=sim_phys_nml, iostat=io)
          ierr = check_nml_error(io,'sim_phys_nml')
 
          if (do_K_warm_rain) then
-            read  (unit, nml=Kessler_sim_phys_nml, iostat=io, end=10)
+            read  (input_nml_file, nml=Kessler_sim_phys_nml, iostat=io)
             ierr = check_nml_error(io,'Kessler_sim_phys_nml')
          endif
 
          if (do_GFDL_sim_phys) then
-            read  (unit, nml=GFDL_sim_phys_nml, iostat=io, end=10)
+            read  (input_nml_file, nml=GFDL_sim_phys_nml, iostat=io)
             ierr = check_nml_error(io,'GFDL_sim_phys_nml')
          endif
 
          if (do_reed_sim_phys) then
-            read  (unit, nml=reed_sim_phys_nml, iostat=io, end=10)
+            read  (input_nml_file, nml=reed_sim_phys_nml, iostat=io)
             ierr = check_nml_error(io,'reed_sim_phys_nml')
          endif
 
- 10     call close_file (unit)
     endif
 
 !!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!
