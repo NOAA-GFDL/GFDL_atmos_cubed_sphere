@@ -969,7 +969,6 @@
               diss_est(i,j) = 0.
            enddo
         enddo
-
         if ( .not. hydrostatic ) then
             if ( damp_w>1.E-5 ) then
                  dd8 = kgb*abs(dt)
@@ -982,6 +981,8 @@
 !                   heat_source(i,j) = -d_con*dw(i,j)*(w(i,j)+0.5*dw(i,j))
                     heat_source(i,j) = dd8 - dw(i,j)*(w(i,j)+0.5*dw(i,j))
                     diss_est(i,j) = heat_source(i,j)
+!LJR                 heat_source(i,j) = 0.0
+!                    diss_est(i,j) = 0.0
                    enddo
                 enddo
             endif
@@ -1460,7 +1461,6 @@
      enddo
 
    endif
-
    if ( d_con > 1.e-5 ) then
       do j=js,je+1
          do i=is,ie
@@ -1516,7 +1516,7 @@
         damp4 = (damp_v*gridstruct%da_min_c)**(nord_v+1)
         call del6_vt_flux(nord_v, npx, npy, damp4, wk, vort, ut, vt, gridstruct, bd)
    endif
-
+   
    if ( d_con > 1.e-5 .or. flagstruct%do_skeb ) then
       do j=js,je+1
          do i=is,ie

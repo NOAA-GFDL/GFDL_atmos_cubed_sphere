@@ -154,11 +154,12 @@ contains
    jsd = bd%jsd
    jed = bd%jed
 
-   if ( hord == 10 ) then
-        ord_in = 8
-   else
+   !LJR hord_tr=10 would never be actualized except on outer edges with this correction
+   !if ( hord == 10 ) then
+   !     ord_in = 8
+   !else
         ord_in = hord
-   endif
+   !endif
    ord_ou = hord
 
    if (.not. gridstruct%bounded_domain) &
