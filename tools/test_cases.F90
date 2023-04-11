@@ -5447,7 +5447,7 @@ end subroutine terminator_tracers
            enddo
           enddo
         elseif (ws_profile==1 ) then
-        ! Linear WK shear
+        ! Unidiretional WK shear
           v(:,:,:) = 0.
           do k=1,npz
             zm = 0.5*(ze1(k)+ze1(k+1))
@@ -8067,8 +8067,8 @@ end subroutine qs_table
       parameter (r = rdgas)
       parameter (g = grav)
       parameter (cp = cp_air)
-      parameter p1000mb = 100000.0, cvpm = -718./cp_air
-      parameter rvovrd = rvgas/rdgas
+      real, parameter :: p1000mb = 100000.0, cvpm = -718./cp_air
+      real, parameter :: rvovrd = rvgas/rdgas
       integer k, it, nl, nl_file, istat
       real qvf, qvf1, dz
       character*256 line
