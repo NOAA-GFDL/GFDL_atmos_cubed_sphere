@@ -37,7 +37,7 @@
 
 module fv_iau_mod
 
-  use fms_mod,             only: file_exist
+  use fms2_io_mod,         only: file_exists
   use mpp_mod,             only: mpp_error, FATAL, NOTE, mpp_pe
   use mpp_domains_mod,     only: domain2d
 
@@ -189,7 +189,7 @@ subroutine IAU_initialize (IPD_Control, IAU_Data,Init_parm)
     npz = IPD_Control%levs
     fname = 'INPUT/'//trim(IPD_Control%iau_inc_files(1))
 
-    if( file_exist(fname) ) then
+    if( file_exists(fname) ) then
       call open_ncfile( fname, ncid )        ! open the file
       call get_ncdim1( ncid, 'lon',   im)
       call get_ncdim1( ncid, 'lat',   jm)
@@ -461,7 +461,7 @@ subroutine read_iau_forcing(IPD_Control,increments,fname)
 
     npz = IPD_Control%levs
 
-    if( file_exist(fname) ) then
+    if( file_exists(fname) ) then
       call open_ncfile( fname, ncid )        ! open the file
     else
       call mpp_error(FATAL,'==> Error in read_iau_forcing: Expected file '&
