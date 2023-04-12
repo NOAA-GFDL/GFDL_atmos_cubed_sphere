@@ -874,6 +874,7 @@
       call mp_stop()
       stop
       case(0)
+         UBar = 0.
          do j=jsd,jed
             do i=isd,ied
 
@@ -1144,6 +1145,7 @@
 
 
       case(6)
+         Ubar = 0.
          gh0  = 8.E3*Grav
          R    = 4.
          omg  = 7.848E-6
@@ -1197,6 +1199,7 @@
 
       case(7)
 ! Barotropically unstable jet
+         Ubar = 0.
          gh0  = 10.E3*Grav
          phis = 0.0
          r0 = radius/12.
@@ -1369,6 +1372,7 @@
 
       case(9)
 
+         Ubar = 0.
          jm1 = jm - 1
          DDP = PI/DBLE(jm1)
          DP  = DDP
