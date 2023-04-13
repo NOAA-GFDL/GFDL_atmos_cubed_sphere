@@ -4891,7 +4891,7 @@ subroutine remap_scalar_nggps_regional_bc(Atm                         &
        if (fraction_interval .eq. 0.0 .and. it .gt. 1) then
         fraction_interval=1.0
         if (is_master()) then
-         write(0,*) 'reset of fraction_interval ', trim(bc_vbl_name),it, fcst_time
+         write(*,*) 'reset of fraction_interval ', trim(bc_vbl_name),it, fcst_time
         endif
        endif
 
