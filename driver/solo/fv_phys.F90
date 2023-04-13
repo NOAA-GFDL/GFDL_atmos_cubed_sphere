@@ -36,7 +36,6 @@ use field_manager_mod,     only: MODEL_ATMOS
 use fms_mod,               only: error_mesg, FATAL,  &
                                  check_nml_error, mpp_pe, mpp_root_pe, &
                                  mpp_error
-use fms2_io_mod,           only: file_exists
 use fv_mp_mod,             only: is_master, mp_reduce_max
 use fv_diagnostics_mod,    only: prt_maxmin, gn
 
@@ -1582,25 +1581,22 @@ endif
     master = is_master()
 
 !   ----- read and write namelist -----
-    if ( file_exists('input.nml')) then
-         read  (input_nml_file, nml=sim_phys_nml, iostat=io)
-         ierr = check_nml_error(io,'sim_phys_nml')
+    read  (input_nml_file, nml=sim_phys_nml, iostat=io)
+     ierr = check_nml_error(io,'sim_phys_nml')
 
-         if (do_K_warm_rain) then
-            read  (input_nml_file, nml=Kessler_sim_phys_nml, iostat=io)
-            ierr = check_nml_error(io,'Kessler_sim_phys_nml')
-         endif
+    if (do_K_warm_rain) then
+       read  (input_nml_file, nml=Kessler_sim_phys_nml, iostat=io)
+       ierr = check_nml_error(io,'Kessler_sim_phys_nml')
+    endif
 
-         if (do_GFDL_sim_phys) then
-            read  (input_nml_file, nml=GFDL_sim_phys_nml, iostat=io)
-            ierr = check_nml_error(io,'GFDL_sim_phys_nml')
-         endif
+    if (do_GFDL_sim_phys) then
+       read  (input_nml_file, nml=GFDL_sim_phys_nml, iostat=io)
+       ierr = check_nml_error(io,'GFDL_sim_phys_nml')
+    endif
 
-         if (do_reed_sim_phys) then
-            read  (input_nml_file, nml=reed_sim_phys_nml, iostat=io)
-            ierr = check_nml_error(io,'reed_sim_phys_nml')
-         endif
-
+    if (do_reed_sim_phys) then
+       read  (input_nml_file, nml=reed_sim_phys_nml, iostat=io)
+       ierr = check_nml_error(io,'reed_sim_phys_nml')
     endif
 
 !!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!

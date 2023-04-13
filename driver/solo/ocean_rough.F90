@@ -25,7 +25,6 @@ module ocean_rough_mod
 
 use       fms_mod, only: error_mesg, FATAL, &
                          check_nml_error, mpp_pe, mpp_root_pe
-use       fms2_io_mod, only: file_exists
 use       mpp_mod, only: input_nml_file
 
 implicit none
@@ -101,7 +100,7 @@ contains
    integer :: unit, ierr, io
 
 !   ----- read and write namelist -----
-    if ( read_namelist .and. file_exists('input.nml')) then
+    if ( read_namelist ) then
         read (input_nml_file, nml=ocean_rough_nml, iostat=io)
         ierr = check_nml_error(io,'ocean_rough_nml')
         if(master) write(*,*)'ierr =',ierr
