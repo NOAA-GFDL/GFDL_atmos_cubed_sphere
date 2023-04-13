@@ -21,7 +21,7 @@
 
 module coarse_graining_mod
 
-  use fms_mod, only: check_nml_error, close_file, open_namelist_file
+  use fms_mod, only: check_nml_error
   use mpp_domains_mod, only: domain2d, mpp_define_io_domain, mpp_define_mosaic, mpp_get_compute_domain
   use mpp_mod, only: FATAL, input_nml_file, mpp_error, mpp_npes
   use statistics_mod, only: mode

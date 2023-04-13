@@ -23,9 +23,9 @@ module ocean_rough_mod
 
 !-----------------------------------------------------------------------
 
-use       fms_mod, only: error_mesg, FATAL, file_exist, open_namelist_file,  &
-                         check_nml_error, mpp_pe, mpp_root_pe, close_file, &
-                         write_version_number, stdlog
+use       fms_mod, only: error_mesg, FATAL, &
+                         check_nml_error, mpp_pe, mpp_root_pe
+use       mpp_mod, only: input_nml_file
 
 implicit none
 private
@@ -100,15 +100,10 @@ contains
    integer :: unit, ierr, io
 
 !   ----- read and write namelist -----
-    if ( read_namelist .and. file_exist('input.nml')) then
-          unit = open_namelist_file ('input.nml')
-          if(master) write(*,*)'read input, unit', unit
-           ierr=1; do while (ierr /= 0)
-           read  (unit, nml=ocean_rough_nml, iostat=io, end=10)
-           ierr = check_nml_error(io,'ocean_rough_nml')
-           if(master) write(*,*)'ierr =',ierr
-        enddo
- 10     call close_file (unit)
+    if ( read_namelist ) then
+        read (input_nml_file, nml=ocean_rough_nml, iostat=io)
+        ierr = check_nml_error(io,'ocean_rough_nml')
+        if(master) write(*,*)'ierr =',ierr
         if(master) write(*,*)'do_init=',do_init
         if(master) write(*,*)'rough_scheme=',rough_scheme
         read_namelist = .false.
