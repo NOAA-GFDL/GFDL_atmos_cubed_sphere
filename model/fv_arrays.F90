@@ -806,7 +806,6 @@ module fv_arrays_mod
                                    !< horizontally-interpolated output from chgres. The default is .false.
                                    !< Additional options are available through external_ic_nml.
    logical :: hrrrv3_ic = .false.
-   logical :: input_fv3gfs = .false. !< .T. - input data source is fv3gfs
    logical :: ecmwf_ic = .false.   !< If external_ic = .true., reads initial conditions from ECMWF analyses.
                                    !< The default is .false.
    logical :: gfs_phil = .false.      !< if .T., compute geopotential inside of GFS physics (not used?)

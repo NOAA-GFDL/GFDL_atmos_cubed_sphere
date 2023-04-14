@@ -561,11 +561,7 @@ contains
 
 
 !
-      if (Atm%flagstruct%input_fv3gfs) then
-        data_source_fv3gfs = .TRUE.
-      else
-        call get_data_source(data_source_fv3gfs,Atm%flagstruct%regional)
-      endif
+    call get_data_source(data_source_fv3gfs,Atm%flagstruct%regional)
     if ( data_source_fv3gfs ) then
        call mpp_error(NOTE, "READING FROM REGRIDDED FV3GFS NEMSIO/NETCDF/GRIB2 FILE")
     endif
