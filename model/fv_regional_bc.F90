@@ -6898,7 +6898,9 @@ subroutine remap_scalar_nggps_regional_bc(Atm                         &
       if (.not. lstatus) then
        if (mpp_pe() == 0) write(0,*) 'INPUT source not found ',lstatus,' set source=No Source Attribute'
        source='No Source Attribute'
-       call mpp_error(FATAL,'Please add source attribute to IC')
+       call mpp_error(FATAL,'Please add source attribute to gfs_data.nc. The accepted & 
+            FV3 sources are "FV3GFS GAUSSIAN NEMSIO FILE", &
+            "FV3GFS GAUSSIAN NETCDF FILE" or "FV3GFS GRIB2 FILE".')                       
       endif
       call mpp_error(NOTE, 'INPUT gfs_data source string: '//trim(source))
 
@@ -6947,7 +6949,10 @@ subroutine remap_scalar_nggps_regional_bc(Atm                         &
       if (.not. lstatus) then
        if (mpp_pe() == 0) write(0,*) 'INPUT source not found ',lstatus,' set source=No Source Attribute' 
        source='No Source Attribute'
-       call mpp_error(FATAL,'Please add source attribute to LBC')
+       call mpp_error(FATAL,'Please add source attribute to &
+            gfs_bndy.tile7.000.nc. The accepted & 
+            FV3 sources are "FV3GFS GAUSSIAN NEMSIO FILE", &
+            "FV3GFS GAUSSIAN NETCDF FILE" or "FV3GFS GRIB2 FILE".')          
       endif
       call mpp_error(NOTE, 'INPUT gfs_bndy source string: '//trim(source))
 
