@@ -525,8 +525,9 @@ contains
            call Riem_Solver_C( ms, dt2,   is,  ie,   js,   je,   npz,   ng,   &
                                akap, cappa,  cp,  ptop, phis, omga, ptc,  &
                                q_con,  delpc, gz,  pkc, ws3, flagstruct%p_fac, &
-                                flagstruct%a_imp, flagstruct%scale_z )
-                                               call timing_off('Riem_Solver')
+                               flagstruct%a_imp, flagstruct%scale_z, pfull, &
+                               flagstruct%tau_w, flagstruct%rf_cutoff )
+           call timing_off('Riem_Solver')
 
            if (gridstruct%nested) then
            call nh_bc(ptop, grav, akap, cp, delpc, neststruct%delz_BC, ptc, phis, &
@@ -922,8 +923,9 @@ contains
                          akap, cappa, cp,  ptop, zs, q_con, w, delz, pt, delp, zh,   &
                          pe, pkc, pk3, pk, peln, ws, &
                          flagstruct%scale_z, flagstruct%p_fac, flagstruct%a_imp, &
-                         flagstruct%use_logp, remap_step, beta<-0.1)
-                                                         call timing_off('Riem_Solver')
+                         flagstruct%use_logp, remap_step, beta<-0.1, &
+                         flagstruct%tau_w)
+        call timing_off('Riem_Solver')
 
                                        call timing_on('COMM_TOTAL')
         if ( gridstruct%square_domain ) then
