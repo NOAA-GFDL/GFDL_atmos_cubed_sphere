@@ -352,7 +352,7 @@ CONTAINS
       do k=1,km
          if (pfull(k) > rf_cutoff) exit
          k_rf = k
-         rff(k) = dt/tau_w * sin(0.5*pi*log(rf_cutoff/pfull(k))/log(rf_cutoff/ptop))**2
+         rff(k) = dt/tau_w * sin(0.5d0*pi*log(rf_cutoff/pfull(k))/log(rf_cutoff/ptop))**2d0
          rff(k) = 1.0d0 / ( 1.0d0+rff(k) )
       enddo
    endif
