@@ -526,7 +526,7 @@ contains
                                akap, cappa,  cp,  ptop, phis, omga, ptc,  &
                                q_con,  delpc, gz,  pkc, ws3, flagstruct%p_fac, &
                                flagstruct%a_imp, flagstruct%scale_z, pfull, &
-                               flagstruct%tau_w, flagstruct%rf_cutoff )
+                               flagstruct%fast_tau_w_sec, flagstruct%rf_cutoff )
                                                call timing_off('Riem_Solver')
 
            if (gridstruct%nested) then
@@ -924,7 +924,7 @@ contains
                          pe, pkc, pk3, pk, peln, ws, &
                          flagstruct%scale_z, flagstruct%p_fac, flagstruct%a_imp, &
                          flagstruct%use_logp, remap_step, beta<-0.1, &
-                         flagstruct%tau_w)
+                         flagstruct%fast_tau_w_sec)
                                                          call timing_off('Riem_Solver')
 
                                        call timing_on('COMM_TOTAL')

@@ -233,6 +233,7 @@ module fv_control_mod
      real    , pointer :: consv_te
      real    , pointer :: tau
      real    , pointer :: tau_w
+     real    , pointer :: fast_tau_w_sec
      real    , pointer :: rf_cutoff
      real    , pointer :: te_err
      real    , pointer :: tw_err
@@ -765,6 +766,7 @@ module fv_control_mod
        consv_te                      => Atm%flagstruct%consv_te
        tau                           => Atm%flagstruct%tau
        tau_w                         => Atm%flagstruct%tau_w
+       fast_tau_w_sec                => Atm%flagstruct%fast_tau_w_sec
        rf_cutoff                     => Atm%flagstruct%rf_cutoff
        te_err                        => Atm%flagstruct%te_err
        tw_err                        => Atm%flagstruct%tw_err
@@ -932,7 +934,7 @@ module fv_control_mod
             dry_mass, grid_type, do_Held_Suarez, &
             consv_te, fill, filter_phys, fill_dp, fill_wz, fill_gfs, consv_am, RF_fast, &
             range_warn, dwind_2d, inline_q, z_tracer, reproduce_sum, adiabatic, do_vort_damp, no_dycore,   &
-            tau, tau_w, tau_h2o, rf_cutoff, te_err, tw_err, nf_omega, hydrostatic, fv_sg_adj, sg_cutoff, breed_vortex_inline,  &
+            tau, fast_tau_w_sec, tau_h2o, rf_cutoff, te_err, tw_err, nf_omega, hydrostatic, fv_sg_adj, sg_cutoff, breed_vortex_inline,  &
             na_init, nudge_dz, hybrid_z, Make_NH, n_zs_filter, nord_zs_filter, full_zs_filter, reset_eta,         &
             pnats, dnats, dnrts, a2b_ord, remap_t, p_ref, d2_bg_k1, d2_bg_k2,  &
             c2l_ord, dx_const, dy_const, umax, deglat,      &
