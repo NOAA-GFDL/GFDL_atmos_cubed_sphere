@@ -24,7 +24,7 @@ module nh_utils_mod
 ! To do list:
 ! include moisture effect in pt
 !------------------------------
-   use constants_mod,     only: rdgas, cp_air, grav, pi
+   use constants_mod,     only: rdgas, cp_air, grav, pi_8
    use tp_core_mod,       only: fv_tp_2d
    use sw_core_mod,       only: fill_4corners, del6_vt_flux
    use fv_arrays_mod,     only: fv_grid_bounds_type, fv_grid_type, fv_nest_BC_type_3d
@@ -336,6 +336,7 @@ CONTAINS
   real, dimension(is-1:ie+1,km  ):: dm, dz2, w2, pm2, gm2, cp2
   real, dimension(is-1:ie+1,km+1):: pem, pe2, peg
   real gama, rgrav
+  real(kind=8) :: rff_temp
   integer i, j, k
   integer is1, ie1
 
@@ -352,8 +353,8 @@ CONTAINS
       do k=1,km
          if (pfull(k) > rf_cutoff) exit
          k_rf = k
-         rff(k) = dt/tau_w * sin(0.5d0*pi*log(rf_cutoff/pfull(k))/log(rf_cutoff/ptop))**2d0
-         rff(k) = 1.0d0 / ( 1.0d0+rff(k) )
+         rff_temp = real(dt/tau_w,kind=8) * sin(0.5d0*pi_8*log(real(rf_cutoff/pfull(k),kind=8))/log(real(rf_cutoff/ptop, kind=8)))**2
+         rff(k) = 1.0d0 / ( 1.0d0+rff_temp )
       enddo
    endif
 

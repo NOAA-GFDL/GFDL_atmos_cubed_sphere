@@ -232,7 +232,6 @@ module fv_control_mod
      real    , pointer :: ke_bg
      real    , pointer :: consv_te
      real    , pointer :: tau
-     real    , pointer :: tau_w
      real    , pointer :: fast_tau_w_sec
      real    , pointer :: rf_cutoff
      real    , pointer :: te_err
@@ -765,7 +764,6 @@ module fv_control_mod
        ke_bg                         => Atm%flagstruct%ke_bg
        consv_te                      => Atm%flagstruct%consv_te
        tau                           => Atm%flagstruct%tau
-       tau_w                         => Atm%flagstruct%tau_w
        fast_tau_w_sec                => Atm%flagstruct%fast_tau_w_sec
        rf_cutoff                     => Atm%flagstruct%rf_cutoff
        te_err                        => Atm%flagstruct%te_err
