@@ -72,7 +72,7 @@ CONTAINS
                           ptop, zs, q_con, w,  delz, pt,  &
                           delp, zh, pe, ppe, pk3, pk, peln, &
                           ws, scale_m,  p_fac, a_imp, &
-                          use_logp, last_call, fp_out)
+                          use_logp, last_call, fp_out, tau_w)
 !--------------------------------------------
 ! !OUTPUT PARAMETERS
 ! Ouput: gz: grav*height at edges
@@ -82,7 +82,7 @@ CONTAINS
    integer, intent(in):: ms, is, ie, js, je, km, ng
    integer, intent(in):: isd, ied, jsd, jed
    real, intent(in):: dt         !< the BIG horizontal Lagrangian time step
-   real, intent(in):: akap, cp, ptop, p_fac, a_imp, scale_m
+   real, intent(in):: akap, cp, ptop, p_fac, a_imp, scale_m, tau_w
    real, intent(in):: zs(isd:ied,jsd:jed)
    logical, intent(in):: last_call, use_logp, fp_out
    real, intent(in):: ws(is:ie,js:je)
@@ -116,10 +116,10 @@ CONTAINS
 !$OMP parallel do default(none) shared(is,ie,js,je,km,delp,ptop,peln1,pk3,ptk,akap,rgrav,zh,pt, &
 !$OMP                                  w,a_imp,dt,gama,ws,p_fac,scale_m,ms,delz,last_call,  &
 #ifdef MULTI_GASES
-!$OMP                                  peln,pk,fp_out,ppe,use_logp,zs,pe,cappa,q_con,kapad )          &
+!$OMP                                  peln,pk,fp_out,ppe,use_logp,zs,pe,cappa,q_con,tau_w,kapad )          &
 !$OMP                          private(cp2, gm2, dm, dz2, pm2, pem, peg, pelng, pe2, peln2, w2,kapad2)
 #else
-!$OMP                                  peln,pk,fp_out,ppe,use_logp,zs,pe,cappa,q_con )          &
+!$OMP                                  peln,pk,fp_out,ppe,use_logp,zs,pe,cappa,q_con,tau_w )     &
 !$OMP                          private(cp2, gm2, dm, dz2, pm2, pem, peg, pelng, pe2, peln2, w2)
 #endif
    do 2000 j=js, je
@@ -206,7 +206,7 @@ CONTAINS
                             kapad2,  &
 #endif
                             pe2, dm,   &
-                            pm2, pem, w2, dz2, pt(is:ie,j,1:km), ws(is,j), p_fac)
+                            pm2, pem, w2, dz2, pt(is:ie,j,1:km), ws(is,j), p_fac, tau_w)
       else
            call SIM_solver(dt, is, ie, km, rdgas, gama, gm2, cp2, akap, &
 #ifdef MULTI_GASES
@@ -214,7 +214,7 @@ CONTAINS
 #endif
                            pe2, dm,  &
                            pm2, pem, w2, dz2, pt(is:ie,j,1:km), ws(is,j), &
-                           a_imp, p_fac, scale_m)
+                           a_imp, p_fac, scale_m, tau_w)
       endif
 
 

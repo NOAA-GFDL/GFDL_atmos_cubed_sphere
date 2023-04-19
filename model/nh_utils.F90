@@ -50,13 +50,14 @@ module nh_utils_mod
 ! </table>
 
 #ifdef OVERLOAD_R4
-   use constantsR4_mod,     only: rdgas, cp_air, grav
+   use constantsR4_mod,     only: rdgas, cp_air, grav, pi
 #else
-   use constants_mod,     only: rdgas, cp_air, grav
+   use constants_mod,     only: rdgas, cp_air, grav, pi
 #endif
    use tp_core_mod,       only: fv_tp_2d
    use sw_core_mod,       only: fill_4corners, del6_vt_flux
    use fv_arrays_mod,     only: fv_grid_bounds_type, fv_grid_type,fv_nest_BC_type_3d
+   use mpp_mod,           only: mpp_pe
 #ifdef MULTI_GASES
    use multi_gases_mod,  only:  vicpqd, vicvqd
 #endif
@@ -70,6 +71,10 @@ module nh_utils_mod
    public Riem_Solver_c
 
    real, parameter:: r3 = 1./3.
+
+   real, allocatable :: rff(:)
+   logical :: RFw_initialized = .false.
+   integer :: k_rf = 0
 
 CONTAINS
 
@@ -346,11 +351,12 @@ CONTAINS
                            kapad, &
 #endif
                            ptop, hs, w3,  pt, q_con, &
-                           delp, gz,  pef,  ws, p_fac, a_imp, scale_m)
+                           delp, gz,  pef,  ws, p_fac, a_imp, scale_m, &
+                           pfull, tau_w, rf_cutoff)
 
    integer, intent(in):: is, ie, js, je, ng, km
    integer, intent(in):: ms
-   real, intent(in):: dt,  akap, cp, ptop, p_fac, a_imp, scale_m
+   real, intent(in):: dt,  akap, cp, ptop, p_fac, a_imp, scale_m, tau_w, rf_cutoff
    real, intent(in):: ws(is-ng:ie+ng,js-ng:je+ng)
    real, intent(in), dimension(is-ng:ie+ng,js-ng:je+ng,km):: pt, delp
    real, intent(in), dimension(is-ng:,js-ng:,1:):: q_con, cappa
@@ -359,6 +365,7 @@ CONTAINS
 #endif
    real, intent(in)::   hs(is-ng:ie+ng,js-ng:je+ng)
    real, intent(in), dimension(is-ng:ie+ng,js-ng:je+ng,km):: w3
+   real, intent(in) :: pfull(km)
 ! OUTPUT PARAMETERS
    real, intent(inout), dimension(is-ng:ie+ng,js-ng:je+ng,km+1):: gz
    real, intent(  out), dimension(is-ng:ie+ng,js-ng:je+ng,km+1):: pef
@@ -378,12 +385,25 @@ CONTAINS
    is1 = is - 1
    ie1 = ie + 1
 
+   !Set up rayleigh damping
+   if (tau_w > 1.e-5 .and. .not. RFw_initialized) then
+      allocate(rff(km))
+      RFw_initialized = .true.
+      do k=1,km
+         if (pfull(k) > rf_cutoff) exit
+         k_rf = k
+         rff(k) = dt/tau_w * sin(0.5*pi*log(rf_cutoff/pfull(k))/log(rf_cutoff/ptop))**2
+         rff(k) = 1.0d0 / ( 1.0d0+rff(k) )
+      enddo
+   endif
+
+
 !$OMP parallel do default(none) shared(js,je,is1,ie1,km,delp,pef,ptop,gz,rgrav,w3,pt, &
 #ifdef MULTI_GASES
 !$OMP                                  a_imp,dt,gama,akap,ws,p_fac,scale_m,ms,hs,q_con,cappa,kapad) &
 !$OMP                          private(cp2,gm2, dm, dz2, w2, pm2, pe2, pem, peg, kapad2)
 #else
-!$OMP                                  a_imp,dt,gama,akap,ws,p_fac,scale_m,ms,hs,q_con,cappa) &
+!$OMP                                  a_imp,dt,gama,akap,ws,p_fac,scale_m,ms,hs,q_con,cappa,tau_w) &
 !$OMP                          private(cp2,gm2, dm, dz2, w2, pm2, pe2, pem, peg)
 #endif
    do 2000 j=js-1, je+1
@@ -455,7 +475,7 @@ CONTAINS
                             kapad2, &
 #endif
                             pe2,  &
-                            dm, pm2, pem, w2, dz2, pt(is1:ie1,j,1:km), ws(is1,j), p_fac)
+                            dm, pm2, pem, w2, dz2, pt(is1:ie1,j,1:km), ws(is1,j), p_fac, tau_w)
       endif
 
       do k=2,km+1
@@ -622,7 +642,7 @@ CONTAINS
                             kapad2, &
 #endif
                             pe2, dm,   &
-                            pm2, pem, w2, dz2, pt(is:ie,j,1:km), ws(is,j), p_fac)
+                            pm2, pem, w2, dz2, pt(is:ie,j,1:km), ws(is,j), p_fac, -1.)
       else
            call SIM_solver(dt, is, ie, km, rdgas, gama, gm2, cp2, akap, &
 #ifdef MULTI_GASES
@@ -630,7 +650,7 @@ CONTAINS
 #endif
                            pe2, dm,  &
                            pm2, pem, w2, dz2, pt(is:ie,j,1:km), ws(is,j), &
-                           a_imp, p_fac, scale_m)
+                           a_imp, p_fac, scale_m, -1.)
       endif
 
       do k=1, km
@@ -1385,9 +1405,9 @@ CONTAINS
                         kapad2, &
 #endif
                         pe, dm2,   &
-                        pm2, pem, w2, dz2, pt2, ws, p_fac)
+                        pm2, pem, w2, dz2, pt2, ws, p_fac, tau_w)
    integer, intent(in):: is, ie, km
-   real,    intent(in):: dt, rgas, gama, kappa, p_fac
+   real,    intent(in):: dt, rgas, gama, kappa, p_fac, tau_w
    real, intent(in), dimension(is:ie,km):: dm2, pt2, pm2, gm2, cp2
    real, intent(in )::  ws(is:ie)
    real, intent(in ), dimension(is:ie,km+1):: pem
@@ -1464,14 +1484,14 @@ CONTAINS
     do k=2, km
        do i=is, ie
 #ifdef MOIST_CAPPA
-          aa(i,k) = t1g*0.5*(gm2(i,k-1)+gm2(i,k))/(dz2(i,k-1)+dz2(i,k)) * (pem(i,k)+pp(i,k))
+          aa(i,k) = t1g*0.5*(gm2(i,k-1)+gm2(i,k))/(dz2(i,k-1)+dz2(i,k)) * (pem(i,k))
 #else
 #ifdef MULTI_GASES
           gamax = 1./(1.-kapad2(i,k))
           t1gx = gamax * 2.*dt*dt
-          aa(i,k) = t1gx/(dz2(i,k-1)+dz2(i,k)) * (pem(i,k)+pp(i,k))
+          aa(i,k) = t1gx/(dz2(i,k-1)+dz2(i,k)) * (pem(i,k))
 #else
-          aa(i,k) = t1g/(dz2(i,k-1)+dz2(i,k)) * (pem(i,k)+pp(i,k))
+          aa(i,k) = t1g/(dz2(i,k-1)+dz2(i,k)) * (pem(i,k))
 #endif
 #endif
        enddo
@@ -1489,14 +1509,14 @@ CONTAINS
     enddo
     do i=is, ie
 #ifdef MOIST_CAPPA
-           p1(i) = t1g*gm2(i,km)/dz2(i,km)*(pem(i,km+1)+pp(i,km+1))
+       p1(i) = t1g*gm2(i,km)/dz2(i,km)*(pem(i,km+1))
 #else
 #ifdef MULTI_GASES
            gamax = 1./(1.-kapad2(i,km))
            t1gx = gamax * 2.*dt*dt
-           p1(i) = t1gx/dz2(i,km)*(pem(i,km+1)+pp(i,km+1))
+           p1(i) = t1gx/dz2(i,km)*(pem(i,km+1))
 #else
-           p1(i) = t1g/dz2(i,km)*(pem(i,km+1)+pp(i,km+1))
+           p1(i) = t1g/dz2(i,km)*(pem(i,km+1))
 #endif
 #endif
        gam(i,km) = aa(i,km) / bet(i)
@@ -1508,6 +1528,16 @@ CONTAINS
           w2(i,k) = w2(i,k) - gam(i,k+1)*w2(i,k+1)
        enddo
     enddo
+
+!!! Try Rayleigh damping of w
+    if (tau_w > 1.e-5) then
+       !currently not damping to heat
+       do k=1,k_rf
+          do i=is,ie
+             w2(i,k) = w2(i,k)*rff(k)
+          enddo
+       enddo
+    endif
 
     do i=is, ie
        pe(i,1) = 0.
@@ -1549,16 +1579,16 @@ CONTAINS
        enddo
     enddo
 
- end subroutine SIM1_solver
+  end subroutine SIM1_solver
 
  subroutine SIM_solver(dt,  is,  ie, km, rgas, gama, gm2, cp2, kappa,  &
 #ifdef MULTI_GASES
                        kapad2, &
 #endif
                        pe2, dm2,   &
-                       pm2, pem, w2, dz2, pt2, ws, alpha, p_fac, scale_m)
+                       pm2, pem, w2, dz2, pt2, ws, alpha, p_fac, scale_m, tau_w)
    integer, intent(in):: is, ie, km
-   real, intent(in):: dt, rgas, gama, kappa, p_fac, alpha, scale_m
+   real, intent(in):: dt, rgas, gama, kappa, p_fac, alpha, scale_m, tau_w
    real, intent(in), dimension(is:ie,km):: dm2, pt2, pm2, gm2, cp2
    real, intent(in )::  ws(is:ie)
    real, intent(in ), dimension(is:ie,km+1):: pem
@@ -1637,8 +1667,7 @@ CONTAINS
 
     do k=1, km+1
        do i=is, ie
-! pe2 is Full p
-          pe2(i,k) = pem(i,k) + pp(i,k)
+          pe2(i,k) = pem(i,k)
        enddo
     enddo
 
@@ -1696,6 +1725,16 @@ CONTAINS
          w2(i,k) = w2(i,k) - gam(i,k+1)*w2(i,k+1)
       enddo
     enddo
+
+!!! Try Rayleigh damping of w
+    if (tau_w > 1.e-5) then
+       !currently not damping to heat
+       do k=1,k_rf
+          do i=is,ie
+             w2(i,k) = w2(i,k)*rff(k)
+          enddo
+       enddo
+    endif
 
     do i=is, ie
        pe2(i,1) = 0.

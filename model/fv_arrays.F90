@@ -698,6 +698,9 @@ module fv_arrays_mod
                          !< considered; and for non-hydrostatic models values of 10 or less should be
                          !< considered, with smaller values for higher-resolution.
    real    :: rf_cutoff = 30.E2   !< Pressure below which no Rayleigh damping is applied if tau > 0.
+   real    :: tau_w = 0.0 !< Time scale (seconds) for Rayleigh damping applied to vertical velocity only.
+                          !< Values of 0.2 are very effective at eliminating spurious vertical motion in
+                          !< the stratosphere. Default is 0.0, which disables this.
    logical :: filter_phys = .false.
    logical :: dwind_2d = .false.   !< Whether to use a simpler & faster algorithm for interpolating
                                    !< the A-grid (cell-centered) wind tendencies computed from the physics
