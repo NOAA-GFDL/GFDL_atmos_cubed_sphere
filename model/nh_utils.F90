@@ -318,11 +318,11 @@ CONTAINS
   subroutine Riem_Solver_c(ms,   dt,  is,   ie,   js, je, km,   ng,  &
                            akap, cappa, cp,  ptop, hs, w3,  pt, q_con, &
                            delp, gz,  pef,  ws, p_fac, a_imp, scale_m, &
-                           pfull, tau_w, rf_cutoff)
+                           pfull, fast_tau_w_sec, rf_cutoff)
 
    integer, intent(in):: is, ie, js, je, ng, km
    integer, intent(in):: ms
-   real, intent(in):: dt,  akap, cp, ptop, p_fac, a_imp, scale_m, tau_w, rf_cutoff
+   real, intent(in):: dt,  akap, cp, ptop, p_fac, a_imp, scale_m, fast_tau_w_sec, rf_cutoff
    real, intent(in):: ws(is-ng:ie+ng,js-ng:je+ng)
    real, intent(in), dimension(is-ng:ie+ng,js-ng:je+ng,km):: pt, delp
    real, intent(in), dimension(is-ng:,js-ng:,1:):: q_con, cappa
@@ -347,20 +347,21 @@ CONTAINS
    ie1 = ie + 1
 
    !Set up rayleigh damping
-   if (tau_w > 1.e-5 .and. .not. RFw_initialized) then
+   if (fast_tau_w_sec > 1.e-5 .and. .not. RFw_initialized) then
       allocate(rff(km))
       RFw_initialized = .true.
       do k=1,km
          if (pfull(k) > rf_cutoff) exit
          k_rf = k
-         rff_temp = real(dt/tau_w,kind=8) * sin(0.5d0*pi_8*log(real(rf_cutoff/pfull(k),kind=8))/log(real(rf_cutoff/ptop, kind=8)))**2
+         rff_temp = real(dt/fast_tau_w_sec,kind=8) &
+                  * sin(0.5d0*pi_8*log(real(rf_cutoff/pfull(k),kind=8))/log(real(rf_cutoff/ptop, kind=8)))**2
          rff(k) = 1.0d0 / ( 1.0d0+rff_temp )
       enddo
    endif
 
 
 !$OMP parallel do default(none) shared(js,je,is1,ie1,km,delp,pef,ptop,gz,rgrav,w3,pt, &
-!$OMP                                  a_imp,dt,gama,akap,ws,p_fac,scale_m,ms,hs,q_con,cappa,tau_w) &
+!$OMP                                  a_imp,dt,gama,akap,ws,p_fac,scale_m,ms,hs,q_con,cappa,fast_tau_w_sec) &
 !$OMP                          private(cp2,gm2, dm, dz2, w2, pm2, pe2, pem, peg)
    do 2000 j=js-1, je+1
 
@@ -416,7 +417,7 @@ CONTAINS
                        dm, pm2, w2, dz2, pt(is1:ie1,j,1:km), ws(is1,j), .true.)
       else
            call SIM1_solver(dt, is1, ie1, km, rdgas, gama, gm2, cp2, akap, pe2,  &
-                            dm, pm2, pem, w2, dz2, pt(is1:ie1,j,1:km), ws(is1,j), p_fac, tau_w)
+                            dm, pm2, pem, w2, dz2, pt(is1:ie1,j,1:km), ws(is1,j), p_fac, fast_tau_w_sec)
       endif
 
       do k=2,km+1
@@ -1212,9 +1213,9 @@ CONTAINS
 
 
  subroutine SIM1_solver(dt,  is,  ie, km, rgas, gama, gm2, cp2, kappa, pe, dm2,   &
-                        pm2, pem, w2, dz2, pt2, ws, p_fac, tau_w)
+                        pm2, pem, w2, dz2, pt2, ws, p_fac, fast_tau_w_sec)
    integer, intent(in):: is, ie, km
-   real,    intent(in):: dt, rgas, gama, kappa, p_fac, tau_w
+   real,    intent(in):: dt, rgas, gama, kappa, p_fac, fast_tau_w_sec
    real, intent(in), dimension(is:ie,km):: dm2, pt2, pm2, gm2, cp2
    real, intent(in )::  ws(is:ie)
    real, intent(in ), dimension(is:ie,km+1):: pem
@@ -1314,7 +1315,7 @@ CONTAINS
     enddo
 
 !!! Try Rayleigh damping of w
-    if (tau_w > 1.e-5) then
+    if (fast_tau_w_sec > 1.e-5) then
        !currently not damping to heat
        do k=1,k_rf
           do i=is,ie
@@ -1355,9 +1356,9 @@ CONTAINS
   end subroutine SIM1_solver
 
  subroutine SIM_solver(dt,  is,  ie, km, rgas, gama, gm2, cp2, kappa, pe2, dm2,   &
-                       pm2, pem, w2, dz2, pt2, ws, alpha, p_fac, scale_m, tau_w)
+                       pm2, pem, w2, dz2, pt2, ws, alpha, p_fac, scale_m, fast_tau_w_sec)
    integer, intent(in):: is, ie, km
-   real, intent(in):: dt, rgas, gama, kappa, p_fac, alpha, scale_m, tau_w
+   real, intent(in):: dt, rgas, gama, kappa, p_fac, alpha, scale_m, fast_tau_w_sec
    real, intent(in), dimension(is:ie,km):: dm2, pt2, pm2, gm2, cp2
    real, intent(in )::  ws(is:ie)
    real, intent(in ), dimension(is:ie,km+1):: pem
@@ -1473,7 +1474,7 @@ CONTAINS
     enddo
 
 !!! Try Rayleigh damping of w
-    if (tau_w > 1.e-5) then
+    if (fast_tau_w_sec > 1.e-5) then
        !currently not damping to heat
        do k=1,k_rf
           do i=is,ie
