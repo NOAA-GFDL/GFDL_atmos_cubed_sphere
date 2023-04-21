@@ -1319,13 +1319,10 @@ contains
 !-----------------------------------------------------------------------
 !
       if (Atm%flagstruct%hrrrv3_ic) then
-!        data_source_fv3gfs = .TRUE.
         lbc_source_fv3gfs = .TRUE.
       else
-!        call get_data_source(data_source_fv3gfs,Atm%flagstruct%regional)
         call get_lbc_source(lbc_source_fv3gfs,Atm%flagstruct%regional)
       endif
-
 !
       call setup_regional_BC(Atm                                        &
                             ,isd, ied, jsd, jed                         &
@@ -1453,13 +1450,10 @@ contains
 !-----------------------------------------------------------------------
 !
       if (Atm%flagstruct%hrrrv3_ic) then
-!        data_source_fv3gfs = .TRUE.
         lbc_source_fv3gfs = .TRUE.
       else
-!        call get_data_source(data_source_fv3gfs,Atm%flagstruct%regional)
         call get_lbc_source(lbc_source_fv3gfs,Atm%flagstruct%regional)
       endif
-
 !
 !-----------------------------------------------------------------------
 !***  Preliminary setup for the forecast.
