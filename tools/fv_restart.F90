@@ -133,7 +133,11 @@ module fv_restart_mod
 ! </table>
 
 
+#ifdef OVERLOAD_R4
+  use constantsR4_mod,       only: kappa, pi=>pi_8, omega, rdgas, grav, rvgas, cp_air, radius
+#else
   use constants_mod,       only: kappa, pi=>pi_8, omega, rdgas, grav, rvgas, cp_air, radius
+#endif
   use fv_arrays_mod,       only: fv_atmos_type, fv_nest_type, fv_grid_bounds_type, R_GRID
   use fv_io_mod,           only: fv_io_init, fv_io_read_restart, fv_io_write_restart, &
                                  remap_restart, fv_io_register_nudge_restart, &
@@ -343,7 +347,7 @@ contains
           !3. External_ic
           if (Atm(n)%flagstruct%external_ic) then
              if( is_master() ) write(*,*) 'Calling get_external_ic'
-             call get_external_ic(Atm(n), Atm(n)%domain, .not. do_read_restart)
+             call get_external_ic(Atm(n), .not. do_read_restart)
              if( is_master() ) write(*,*) 'IC generated from the specified external source'
 
              !4. Restart
@@ -358,11 +362,11 @@ contains
                    write(*,*) '***** End Note from FV core **************************'
                    write(*,*) ' '
                 endif
-                call remap_restart( Atm(n)%domain, Atm(n:n) )
+                call remap_restart( Atm(n:n) )
                 if( is_master() ) write(*,*) 'Done remapping dynamical IC'
              else
                 if( is_master() ) write(*,*) 'Warm starting, calling fv_io_restart'
-                call fv_io_read_restart(Atm(n)%domain,Atm(n:n))
+                call fv_io_read_restart(Atm(n)%domain_for_read,Atm(n:n))
                 !====== PJP added DA functionality ======
                 if (Atm(n)%flagstruct%read_increment) then
                    ! print point in middle of domain for a sanity check

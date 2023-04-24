@@ -161,11 +161,6 @@ module fv_control_mod
    use molecular_diffusion_mod,     only: molecular_diffusion_init, &
                                           read_namelist_molecular_diffusion_nml
 
-#ifdef MOVING_NEST
-   use fv_moving_nest_types_mod, only: fv_moving_nest_init, deallocate_fv_moving_nests
-   use fv_tracker_mod,           only: deallocate_tracker
-#endif
-
    implicit none
    private
 
@@ -198,7 +193,7 @@ module fv_control_mod
      real,                intent(in)    :: dt_atmos
      integer,             intent(OUT)   :: this_grid
      logical, allocatable, intent(OUT) :: grids_on_this_pe(:)
-     character(len=32), optional,      intent(in)    :: nml_filename_in ! alternate nml 
+     character(len=32), optional,      intent(in)    :: nml_filename_in ! alternate nml
      logical, optional,                intent(in)    :: skip_nml_read_in ! use previously loaded nml
 
      integer, intent(INOUT) :: p_split
@@ -291,6 +286,7 @@ module fv_control_mod
      real(kind=R_GRID) , pointer :: target_lon
 
      logical , pointer :: reset_eta
+     logical , pointer :: ignore_rst_cksum
      real    , pointer :: p_fac
      real    , pointer :: a_imp
      integer , pointer :: n_split
@@ -354,6 +350,7 @@ module fv_control_mod
      logical , pointer :: reproduce_sum
      logical , pointer :: adjust_dry_mass
      logical , pointer :: fv_debug
+     logical , pointer :: fv_timers
      logical , pointer :: srf_init
      logical , pointer :: mountain
      logical , pointer :: remap_t
@@ -407,7 +404,7 @@ module fv_control_mod
      integer, pointer :: nrows_blend
      logical, pointer :: regional_bcs_from_gsi
      logical, pointer :: write_restart_with_bcs
-     integer, pointer :: parent_tile, refinement, nestbctype, nestupdate, nsponge, ioffset, joffset
+     integer, pointer :: parent_tile, refinement, nestbctype, nestupdate, upoff, nsponge, ioffset, joffset
      real, pointer :: s_weight, update_blend
 
      character(len=16), pointer :: restart_resolution
@@ -541,13 +538,6 @@ module fv_control_mod
         endif
      enddo
 
-#ifdef MOVING_NEST
-     ! This has to be called on the input.nml namelist for all PEs
-     !   input_nest02.nml does not have any of the moving nest parameters
-     !   Later call to read_input_nml changes which namelist is used
-     call fv_moving_nest_init(Atm)
-#endif
-
      if (pecounter /= npes) then
         if (mpp_pe() == 0) then
            print*, 'npes = ', npes, ', grid_pes = ', grid_pes(1:ngrids)
@@ -676,7 +666,8 @@ module fv_control_mod
           Atm(this_grid)%flagstruct%grid_type,Atm(this_grid)%neststruct%nested, &
           Atm(this_grid)%layout,Atm(this_grid)%io_layout,Atm(this_grid)%bd,Atm(this_grid)%tile_of_mosaic, &
           Atm(this_grid)%gridstruct%square_domain,Atm(this_grid)%npes_per_tile,Atm(this_grid)%domain, &
-          Atm(this_grid)%domain_for_coupler,Atm(this_grid)%num_contact,Atm(this_grid)%pelist)
+          Atm(this_grid)%domain_for_coupler,Atm(this_grid)%domain_for_read,Atm(this_grid)%num_contact, &
+          Atm(this_grid)%pelist)
      call broadcast_domains(Atm,Atm(this_grid)%pelist,size(Atm(this_grid)%pelist))
      do n=1,ngrids
         tile_id = mpp_get_tile_id(Atm(n)%domain)
@@ -857,6 +848,7 @@ module fv_control_mod
        regional_bcs_from_gsi         => Atm%flagstruct%regional_bcs_from_gsi
        write_restart_with_bcs        => Atm%flagstruct%write_restart_with_bcs
        reset_eta                     => Atm%flagstruct%reset_eta
+       ignore_rst_cksum              => Atm%flagstruct%ignore_rst_cksum
        p_fac                         => Atm%flagstruct%p_fac
        a_imp                         => Atm%flagstruct%a_imp
        n_split                       => Atm%flagstruct%n_split
@@ -914,6 +906,7 @@ module fv_control_mod
        reproduce_sum                 => Atm%flagstruct%reproduce_sum
        adjust_dry_mass               => Atm%flagstruct%adjust_dry_mass
        fv_debug                      => Atm%flagstruct%fv_debug
+       fv_timers                     => Atm%flagstruct%fv_timers
        srf_init                      => Atm%flagstruct%srf_init
        mountain                      => Atm%flagstruct%mountain
        remap_t                       => Atm%flagstruct%remap_t
@@ -968,6 +961,7 @@ module fv_control_mod
        refinement                    => Atm%neststruct%refinement
        nestbctype                    => Atm%neststruct%nestbctype
        nestupdate                    => Atm%neststruct%nestupdate
+       upoff                         => Atm%neststruct%upoff
        nsponge                       => Atm%neststruct%nsponge
        s_weight                      => Atm%neststruct%s_weight
        ioffset                       => Atm%neststruct%ioffset
@@ -1053,7 +1047,7 @@ module fv_control_mod
             use_logp, p_fac, a_imp, k_split, n_split, m_split, q_split, print_freq, write_3d_diags, &
             do_schmidt, do_cube_transform, &
             hord_mt, hord_vt, hord_tm, hord_dp, hord_tr, shift_fac, stretch_fac, target_lat, target_lon, &
-            kord_mt, kord_wz, kord_tm, kord_tr, fv_debug, fv_land, nudge, do_sat_adj, do_inline_mp, do_f3d, &
+            kord_mt, kord_wz, kord_tm, kord_tr, fv_debug, fv_timers, fv_land, nudge, do_sat_adj, do_inline_mp, do_f3d, &
             external_ic, read_increment, ncep_ic, nggps_ic, hrrrv3_ic, ecmwf_ic, use_new_ncep, use_ncep_phy, fv_diag_ic, &
             external_eta, res_latlon_dynamics, res_latlon_tracers, scale_z, w_max, z_min, lim_fac, &
             dddmp, d2_bg, d4_bg, vtdm4, trdm2, d_ext, delt_max, beta, non_ortho, n_sponge, &
@@ -1068,14 +1062,14 @@ module fv_control_mod
             deglon_start, deglon_stop, deglat_start, deglat_stop, &
             phys_hydrostatic, use_hydro_pressure, make_hybrid_z, old_divg_damp, add_noise, butterfly_effect, &
             molecular_diffusion, dz_min, psm_bc, nested, twowaynest, nudge_qv, &
-            nestbctype, nestupdate, nsponge, s_weight, &
+            nestbctype, nestupdate, upoff, nsponge, s_weight, &
             check_negative, nudge_ic, halo_update_type, gfs_phil, agrid_vel_rst,     &
             do_uni_zfull, adj_mass_vmr, fac_n_spl, fhouri, update_blend, regional, bc_update_interval,  &
             regional_bcs_from_gsi, write_restart_with_bcs, nrows_blend,  &
             write_coarse_restart_files,&
             write_coarse_diagnostics,&
             write_only_coarse_intermediate_restarts, &
-            write_coarse_agrid_vel_rst, write_coarse_dgrid_vel_rst
+            write_coarse_agrid_vel_rst, write_coarse_dgrid_vel_rst, ignore_rst_cksum
 
 
        ! Read FVCORE namelist
@@ -1332,11 +1326,6 @@ module fv_control_mod
        call deallocate_fv_atmos_type(Atm(n))
        call deallocate_coarse_restart_type(Atm(n)%coarse_graining%restart)
     end do
-
-#ifdef MOVING_NEST
-    call deallocate_fv_moving_nests(ngrids)
-    call deallocate_tracker(ngrids)
-#endif
 
  end subroutine fv_end
 !-------------------------------------------------------------------------------

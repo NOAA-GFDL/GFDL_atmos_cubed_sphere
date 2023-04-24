@@ -102,12 +102,17 @@ module fv_nwp_nudge_mod
 
  use external_sst_mod,  only: i_sst, j_sst, sst_ncep, sst_anom, forecast_mode
  use diag_manager_mod,  only: register_diag_field, send_data
+#ifdef OVERLOAD_R4
+ use constantsR4_mod,     only: pi=>pi_8, grav, rdgas, cp_air, kappa, cnst_radius =>radius
+#else
  use constants_mod,     only: pi=>pi_8, grav, rdgas, cp_air, kappa, cnst_radius =>radius
+#endif
  use fms_mod,           only: write_version_number, check_nml_error
  use fms2_io_mod,       only: file_exists
  use mpp_mod,           only: mpp_error, FATAL, stdlog, get_unit, mpp_pe, input_nml_file
  use mpp_domains_mod,   only: mpp_update_domains, domain2d
  use time_manager_mod,  only: time_type,  get_time, get_date
+ use platform_mod,      only: r4_kind, r8_kind
 
  use fv_grid_utils_mod, only: great_circle_dist, intp_great_circle
  use fv_grid_utils_mod, only: latlon2xyz, vect_cross, normalize_vect
@@ -1654,7 +1659,7 @@ module fv_nwp_nudge_mod
 #ifndef DYCORE_SOLO
 ! Perform interp to FMS SST format/grid
       call ncep2fms( wk1 )
-      if(master) call pmaxmin( 'SST_ncep', sst_ncep, i_sst, j_sst, 1.)
+      if(master) call pmaxmin( 'SST_ncep', real(sst_ncep), i_sst, j_sst, 1.)
 !     if(nfile/=1 .and. master) call pmaxmin( 'SST_anom', sst_anom, i_sst, j_sst, 1.)
 #endif
        deallocate ( wk1 )
@@ -3530,7 +3535,6 @@ module fv_nwp_nudge_mod
       endif
 
   end function leap_year
-
 
  subroutine pmaxmin( qname, a, imax, jmax, fac )
 

@@ -112,8 +112,13 @@ module fv_diagnostics_mod
 !   </tr>
 ! </table>
 
+#ifdef OVERLOAD_R4
+ use constantsR4_mod,    only: grav, rdgas, rvgas, pi=>pi_8, radius, kappa, WTMAIR, WTMCO2, &
+                               omega, hlv, cp_air, cp_vapor, TFREEZE
+#else
  use constants_mod,      only: grav, rdgas, rvgas, pi=>pi_8, radius, kappa, WTMAIR, WTMCO2, &
                                omega, hlv, cp_air, cp_vapor, TFREEZE
+#endif
  use fms_mod,            only: write_version_number
  use time_manager_mod,   only: time_type, get_date, get_time
  use mpp_domains_mod,    only: domain2d, mpp_update_domains, DGRID_NE, NORTH, EAST
@@ -248,8 +253,6 @@ contains
     n=1  ! Hardcoded to 1 because we pass in only the Atm that defines the nest grid - e.g. Atm(2:2).
     isc = Atm(n)%bd%isc; iec = Atm(n)%bd%iec
     jsc = Atm(n)%bd%jsc; jec = Atm(n)%bd%jec
-
-    !print '("[INFO] WDR fv_diag_reinit npe=",I0," i=",I0,"-",I0," j=",I0,"-",I0)', this_pe, isc, iec, jsc, jec
 
     ginv = 1./GRAV
 

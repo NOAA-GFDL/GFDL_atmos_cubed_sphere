@@ -1,6 +1,10 @@
 module coarse_grained_diagnostics_mod
 
+#ifdef OVERLOAD_R4
+  use constantsR4_mod, only: rdgas, grav, pi=>pi_8
+#else
   use constants_mod, only: rdgas, grav, pi=>pi_8
+#endif
   use diag_manager_mod, only: diag_axis_init, register_diag_field, register_static_field, send_data
   use field_manager_mod,  only: MODEL_ATMOS
   use fv_arrays_mod, only: fv_atmos_type, fv_coarse_graining_type

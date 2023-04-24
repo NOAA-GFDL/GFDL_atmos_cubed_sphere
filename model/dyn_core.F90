@@ -1329,7 +1329,7 @@ contains
 
                                                      call timing_on('COMM_TOTAL')
 #ifndef ROT3
-    if ( it/=n_split)   &
+    if ( .not. flagstruct%regional .and. it/=n_split)   &
          call start_group_halo_update(i_pack(8), u, v, domain, gridtype=DGRID_NE)
 #endif
                                                      call timing_off('COMM_TOTAL')
@@ -1432,7 +1432,10 @@ contains
                                        isd, ied, jsd, jed,      &
                                        reg_bc_update_time,it )
 
-         call mpp_update_domains(u, v, domain, gridtype=DGRID_NE)
+#ifndef ROT3
+         if (it/=n_split)   &
+            call start_group_halo_update(i_pack(8), u, v, domain, gridtype=DGRID_NE)
+#endif
 
     endif
 

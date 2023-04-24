@@ -63,7 +63,11 @@ module fv_nggps_diags_mod
 ! </table>
 
  use mpp_mod,            only: mpp_pe, mpp_root_pe,FATAL,mpp_error, input_nml_file, stdlog
+#ifdef OVERLOAD_R4
+ use constantsR4_mod,    only: grav, rdgas
+#else
  use constants_mod,      only: grav, rdgas
+#endif
  use time_manager_mod,   only: time_type, get_time
  use diag_manager_mod,   only: register_diag_field, send_data
  use diag_axis_mod,      only: get_axis_global_length, get_diag_axis, get_diag_axis_name
@@ -112,9 +116,12 @@ module fv_nggps_diags_mod
  integer :: kend_pfnh, kend_w, kend_delz, kend_diss, kend_ps,kend_hs
  integer :: kstt_dbz, kend_dbz, kstt_omga, kend_omga
  integer :: kstt_windvect, kend_windvect
+ integer :: kstt_o3_ave, kend_o3_ave, kstt_pm25_ave, kend_pm25_ave
+ integer :: kstt_no_ave, kend_no_ave, kstt_no2_ave, kend_no2_ave
  integer :: id_wmaxup,id_wmaxdn,kstt_wup, kend_wup,kstt_wdn,kend_wdn
  integer :: id_uhmax03,id_uhmin03,id_uhmax25,id_uhmin25,id_maxvort01
  integer :: id_maxvorthy1,kstt_maxvorthy1,kstt_maxvort01,id_ustm
+ integer :: id_o3_ave,id_pm25_ave,id_no_ave,id_no2_ave
  integer :: kend_maxvorthy1,kend_maxvort01,id_vstm,id_srh01,id_srh03
  integer :: kstt_uhmax03,kstt_uhmin03,kend_uhmax03,kend_uhmin03
  integer :: kstt_uhmax25,kstt_uhmin25,kend_uhmax25,kend_uhmin25
@@ -153,6 +160,7 @@ module fv_nggps_diags_mod
  real, dimension(:,:),allocatable :: up2,dn2,uhmax03,uhmin03
  real, dimension(:,:),allocatable :: uhmax25,uhmin25,maxvort01
  real, dimension(:,:),allocatable :: maxvorthy1,maxvort02
+ real, dimension(:,:,:),allocatable :: o3_ave,pm25_ave,no_ave,no2_ave
 
  public :: fv_nggps_diag_init, fv_nggps_diag, fv_nggps_tavg
 #ifdef use_WRTCOMP
@@ -429,6 +437,34 @@ contains
           allocate ( uhmin25(isco:ieco,jsco:jeco) )
           kstt_uhmin25 = nlevs+1; kend_uhmin25 = nlevs+1
           nlevs = nlevs + 1
+       endif
+        id_o3_ave = register_diag_field ( trim(file_name), 'o3_ave',axes(1:3), Time,      &
+           'Hourly averaged o3', 'ppbv', missing_value=missing_value )
+       if( .not.Atm(n)%flagstruct%hydrostatic .and. id_o3_ave > 0 ) then
+           allocate ( o3_ave(isco:ieco,jsco:jeco,npzo) )
+           kstt_o3_ave = nlevs+1; kend_o3_ave = nlevs+npzo
+           nlevs = nlevs + npzo
+       endif
+        id_no_ave = register_diag_field ( trim(file_name), 'no_ave',axes(1:3), Time,      &
+           'Hourly averaged no', 'ppbv', missing_value=missing_value )
+       if( .not.Atm(n)%flagstruct%hydrostatic .and. id_no_ave > 0 ) then
+           allocate ( no_ave(isco:ieco,jsco:jeco,npzo) )
+           kstt_no_ave = nlevs+1; kend_no_ave = nlevs+npzo
+           nlevs = nlevs + npzo
+       endif
+        id_no2_ave = register_diag_field ( trim(file_name), 'no2_ave',axes(1:3), Time,      &
+           'Hourly averaged no2', 'ppbv', missing_value=missing_value )
+       if( .not.Atm(n)%flagstruct%hydrostatic .and. id_no2_ave > 0 ) then
+           allocate ( no2_ave(isco:ieco,jsco:jeco,npzo) )
+           kstt_no2_ave = nlevs+1; kend_no2_ave = nlevs+npzo
+           nlevs = nlevs + npzo
+       endif
+        id_pm25_ave = register_diag_field ( trim(file_name), 'pm25_ave',axes(1:3), Time,      &
+           'Hourly averaged pm25', 'ug/m3', missing_value=missing_value )
+       if( .not.Atm(n)%flagstruct%hydrostatic .and. id_pm25_ave > 0 ) then
+           allocate ( pm25_ave(isco:ieco,jsco:jeco,npzo) )
+           kstt_pm25_ave = nlevs+1; kend_pm25_ave = nlevs+npzo
+           nlevs = nlevs + npzo
        endif
 !
        nz = size(atm(1)%ak)
@@ -732,6 +768,22 @@ contains
         deallocate ( srh01 )
         deallocate ( srh03 )
 
+    !--- hourly averaged o3  
+    if ( id_o3_ave > 0) then
+      call store_data(id_o3_ave, o3_ave, Time, kstt_o3_ave, kend_o3_ave)
+    endif
+     !--- hourly averaged no  
+    if ( id_no_ave > 0) then
+      call store_data(id_no_ave, no_ave, Time, kstt_no_ave, kend_no_ave)
+    endif
+     !--- hourly averaged no2  
+    if ( id_no2_ave > 0) then
+      call store_data(id_no2_ave, no2_ave, Time, kstt_no2_ave, kend_no2_ave)
+    endif
+    !--- hourly averaged pm25  
+    if ( id_pm25_ave > 0) then
+      call store_data(id_pm25_ave, pm25_ave, Time, kstt_pm25_ave, kend_pm25_ave)
+    endif
     !--- max hourly 0-1km vert. vorticity
     if ( id_maxvort01 > 0) then
       call store_data(id_maxvort01, maxvort01, Time, kstt_maxvort01, kend_maxvort01)
@@ -823,10 +875,12 @@ contains
     type(time_type),     intent(in) :: Time_step_atmos
     real,                intent(in):: zvir
     integer :: i, j, k, n, ngc, nq, itrac
+    integer :: o3_idx,no_idx,no2_idx,pm25_idx
     integer seconds, days, nsteps_per_reset
     logical, save :: first_call=.true.
     real, save :: first_time = 0.
-    integer, save :: kdtt = 0
+    integer, save :: kdtt = 0, kdtt1 = 0
+    real, save :: ucf1 = 1000., ucf2 = 1.
     real :: avg_max_length
     real,dimension(:,:,:),allocatable :: vort
     n = 1
@@ -913,6 +967,46 @@ contains
     endif
    endif
 
+   if ( id_o3_ave > 0 .and. id_no_ave >0 &
+       .and. id_no2_ave > 0 .and. id_pm25_ave >0 ) then
+       o3_idx = get_tracer_index(MODEL_ATMOS, 'O3')
+       no_idx = get_tracer_index(MODEL_ATMOS, 'NO')
+       no2_idx = get_tracer_index(MODEL_ATMOS, 'NO2')
+       pm25_idx = get_tracer_index(MODEL_ATMOS, 'PM25_TOT')
+    if (first_call) then
+       call get_time(Time_step_atmos, seconds,  days)
+       first_time=seconds
+       first_call=.false.
+       kdtt1=0
+    endif
+       nsteps_per_reset = nint(avg_max_length/first_time)
+    if(mod(kdtt1,nsteps_per_reset)==0)then
+       do k=1,npzo
+        do j=jsco,jeco
+         do i=isco,ieco
+            o3_ave(i,j,k)= 0.
+            no_ave(i,j,k)= 0.
+            no2_ave(i,j,k)= 0.
+            pm25_ave(i,j,k)= 0.
+         enddo      
+        enddo      
+       enddo      
+    endif
+    call average_tracer_hy1(isco,ieco,jsco,jeco,isdo,iedo,jsdo,jedo,ncnsto,npzo,&
+            Atm(n)%q,o3_idx,o3_ave,nsteps_per_reset,ucf1)
+    call average_tracer_hy1(isco,ieco,jsco,jeco,isdo,iedo,jsdo,jedo,ncnsto,npzo,&
+            Atm(n)%q,no_idx,no_ave,nsteps_per_reset,ucf1)
+    call average_tracer_hy1(isco,ieco,jsco,jeco,isdo,iedo,jsdo,jedo,ncnsto,npzo,&
+            Atm(n)%q,no2_idx,no2_ave,nsteps_per_reset,ucf1)
+    call average_tracer_hy1(isco,ieco,jsco,jeco,isdo,iedo,jsdo,jedo,ncnsto,npzo,&
+            Atm(n)%q,pm25_idx,pm25_ave,nsteps_per_reset,ucf2)
+    kdtt1=kdtt1+1
+   !else
+   ! print *,'calculating hourly-averaegtd o3 or pm25'
+   ! call mpp_error(FATAL, 'Missing hourly-averaged o3 or pm25 in diag_table')
+   ! stop
+   endif
+
    !allocate hailcast met field arrays
    if (do_hailcast) then
         call hailcast_compute(Atm(n),sphum,liq_wat,ice_wat,rainwat,snowwat,graupel, zvir, &
@@ -921,6 +1015,26 @@ contains
    endif
 
  end subroutine fv_nggps_tavg
+!
+ subroutine average_tracer_hy1(is,ie,js,je,isd,ied,jsd,jed, &
+                 ncns,npz,tracer,tr_idx,tracer_ave,nstp,unitcf) 
+   integer, intent(in):: is, ie, js, je, isd, ied, jsd, jed
+   integer, intent(in):: ncns, npz, nstp, tr_idx
+   real, intent(in) :: unitcf
+   real, intent(in), dimension(isd:ied,jsd:jed,npz,ncns):: tracer 
+   real, intent(inout), dimension(is:ie,js:je,npz):: tracer_ave
+   integer i, j, k
+!
+   do k=1,npz
+    do j=js,je
+     do i=is,ie
+        tracer_ave(i,j,k)=tracer_ave(i,j,k)+tracer(i,j,k,tr_idx)/nstp*unitcf
+     enddo 
+    enddo 
+   enddo  
+
+ end subroutine average_tracer_hy1
+
 !
  subroutine store_data(id, work, Time, nstt, nend)
    integer, intent(in)         :: id
@@ -1314,6 +1428,34 @@ contains
    enddo
 !
 !
+   if ( id_o3_ave > 0 ) then
+     call find_outputname(trim(file_name),'o3_ave',output_name)
+     call add_field_to_bundle(trim(output_name),'hourly averaged o3', 'ppbv', "time: point",   &
+          axes(1:3), fcst_grid, kstt_o3_ave,kend_o3_ave, dyn_bundle, output_file, rcd=rc)
+     if(rc==0)  num_field_dyn=num_field_dyn+1
+   endif
+!
+   if ( id_no_ave > 0 ) then
+     call find_outputname(trim(file_name),'no_ave',output_name)
+     call add_field_to_bundle(trim(output_name),'hourly averaged no', 'ppbv', "time: point",   &
+           axes(1:3), fcst_grid, kstt_no_ave,kend_no_ave, dyn_bundle, output_file, rcd=rc)
+     if(rc==0)  num_field_dyn=num_field_dyn+1
+   endif
+!
+   if ( id_no2_ave > 0 ) then
+     call find_outputname(trim(file_name),'no2_ave',output_name)
+     call add_field_to_bundle(trim(output_name),'hourly averaged no2', 'ppbv', "time: point",   &
+          axes(1:3), fcst_grid, kstt_no2_ave,kend_no2_ave, dyn_bundle, output_file, rcd=rc)
+     if(rc==0)  num_field_dyn=num_field_dyn+1
+   endif
+!
+   if ( id_pm25_ave > 0 ) then
+     call find_outputname(trim(file_name),'pm25_ave',output_name)
+     call add_field_to_bundle(trim(output_name),'hourly averaged pm25', 'ug/m3', "time: point",   &
+          axes(1:3), fcst_grid, kstt_pm25_ave,kend_pm25_ave, dyn_bundle, output_file, rcd=rc)
+     if(rc==0)  num_field_dyn=num_field_dyn+1
+   endif
+!
    if( id_ps > 0) then
      call find_outputname(trim(file_name),'ps',output_name)
      call add_field_to_bundle(trim(output_name),'surface pressure', 'pa', "time: point",   &
@@ -1585,12 +1727,12 @@ contains
    call ESMF_AttributeAdd(field, convention="NetCDF", purpose="FV3", &
         attrList=(/"missing_value"/), rc=rc)
    call ESMF_AttributeSet(field, convention="NetCDF", purpose="FV3", &
-        name='missing_value',value=missing_value,rc=rc)
+        name='missing_value',value=real(missing_value,kind=4),rc=rc)
 
    call ESMF_AttributeAdd(field, convention="NetCDF", purpose="FV3", &
         attrList=(/"_FillValue"/), rc=rc)
    call ESMF_AttributeSet(field, convention="NetCDF", purpose="FV3", &
-        name='_FillValue',value=missing_value,rc=rc)
+        name='_FillValue',value=real(missing_value,kind=4),rc=rc)
 
    call ESMF_AttributeAdd(field, convention="NetCDF", purpose="FV3", &
         attrList=(/"cell_methods"/), rc=rc)
