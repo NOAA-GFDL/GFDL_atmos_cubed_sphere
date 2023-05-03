@@ -89,7 +89,7 @@ module fv_regional_mod
             ,dump_field                                                 &
             ,current_time_in_seconds                                    &
             ,a_step, p_step, k_step, n_step, get_data_source            &
-            ,write_full_fields
+            ,get_lbc_source, write_full_fields
       integer,parameter :: bc_time_interval=3                           &
                           ,nhalo_data =4                                &
                           ,nhalo_model=3
@@ -251,7 +251,7 @@ module fv_regional_mod
 
       integer :: a_step, p_step, k_step, n_step
 !
-      logical :: data_source_fv3gfs
+      logical :: data_source_fv3gfs, lbc_source_fv3gfs
 contains
 
 
@@ -1319,9 +1319,9 @@ contains
 !-----------------------------------------------------------------------
 !
       if (Atm%flagstruct%hrrrv3_ic) then
-        data_source_fv3gfs = .TRUE.
+        lbc_source_fv3gfs = .TRUE.
       else
-        call get_data_source(data_source_fv3gfs,Atm%flagstruct%regional)
+        call get_lbc_source(lbc_source_fv3gfs,Atm%flagstruct%regional)
       endif
 !
       call setup_regional_BC(Atm                                        &
@@ -1450,9 +1450,9 @@ contains
 !-----------------------------------------------------------------------
 !
       if (Atm%flagstruct%hrrrv3_ic) then
-        data_source_fv3gfs = .TRUE.
+        lbc_source_fv3gfs = .TRUE.
       else
-        call get_data_source(data_source_fv3gfs,Atm%flagstruct%regional)
+        call get_lbc_source(lbc_source_fv3gfs,Atm%flagstruct%regional)
       endif
 !
 !-----------------------------------------------------------------------
@@ -1827,7 +1827,7 @@ contains
 
 
       else
-        if (data_source_fv3gfs) then
+        if (lbc_source_fv3gfs) then
           nlev=klev_in
         var_name_root='t'
         call read_regional_bc_file(is_input,ie_input,js_input,je_input  &
@@ -3809,7 +3809,7 @@ subroutine remap_scalar_nggps_regional_bc(Atm                         &
 
 ! Compute true temperature using hydrostatic balance if not read from input.
 
-        if ( .not. data_source_fv3gfs ) then
+        if ( .not. lbc_source_fv3gfs ) then
           do k=1,npz
             BC_side%pt_BC(i,j,k) = (gz_fv(k)-gz_fv(k+1))/( rdgas*(pn1(i,k+1)-pn1(i,k))*(1.+zvir*BC_side%q_BC(i,j,k,sphum)) )
           enddo
@@ -3834,7 +3834,7 @@ subroutine remap_scalar_nggps_regional_bc(Atm                         &
 ! If the source is from old GFS or operational GSM then the tracers will be fixed in the boundaries
 ! and may not provide a very good result
 !
-  if ( .not. data_source_fv3gfs ) then
+  if ( .not. lbc_source_fv3gfs ) then
    if ( Atm%flagstruct%nwat .eq. 6 .or. Atm%flagstruct%nwat .eq. 7 ) then
       if ( hailwat > 0 ) then
         BC_side%q_BC(is:ie,j,1:npz,hailwat) = 0.
@@ -3899,7 +3899,7 @@ subroutine remap_scalar_nggps_regional_bc(Atm                         &
 
       call mappm(km, pe0, qp, npz, pe1, qn1, is,ie, -1, 4, Atm%ptop)
 
-      if ( data_source_fv3gfs ) then
+      if ( lbc_source_fv3gfs ) then
         do k=1,npz
           do i=is,ie
             BC_side%w_BC(i,j,k) = qn1(i,k)
@@ -6892,6 +6892,10 @@ subroutine remap_scalar_nggps_regional_bc(Atm                         &
       if (.not. lstatus) then
        if (mpp_pe() == 0) write(0,*) 'INPUT source not found ',lstatus,' set source=No Source Attribute'
        source='No Source Attribute'
+       call mpp_error(FATAL,'fv_regional_bc::get_data_source - input source not &  
+            found in file gfs_data.nc. The accepted & 
+            FV3 sources are "FV3GFS GAUSSIAN NEMSIO FILE", &
+            "FV3GFS GAUSSIAN NETCDF FILE" or "FV3GFS GRIB2 FILE".')                       
       endif
       call mpp_error(NOTE, 'INPUT gfs_data source string: '//trim(source))
 
@@ -6905,6 +6909,60 @@ subroutine remap_scalar_nggps_regional_bc(Atm                         &
       endif
 
   end subroutine get_data_source
+
+!---------------------------------------------------------------------
+!+++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++
+!---------------------------------------------------------------------
+
+  subroutine get_lbc_source(lbc_source_fv3gfs,regional)
+!
+! This routine extracts the data source information if it is present in the
+! datafile.
+!
+      logical, intent(in):: regional
+      logical, intent(out):: lbc_source_fv3gfs
+
+      character (len=80) :: source
+      logical :: lstatus = .false.
+      type(FmsNetcdfFile_t) :: Gfs_data
+      integer, allocatable, dimension(:) :: pes !< Array of the pes in the current pelist               
+!
+! Use the fms call here so we can actually get the return code value.
+! The term 'source' is specified by 'chgres_cube'
+!
+      lstatus=.false.
+      allocate(pes(mpp_npes()))
+      call mpp_get_current_pelist(pes)
+
+        if (open_file(Gfs_data , 'INPUT/gfs_bndy.tile7.000.nc', "read", pelist=pes)) then 
+          lstatus = global_att_exists(Gfs_data, "source")
+          if(lstatus) call get_global_attribute(Gfs_data, "source", source)
+          call close_file(Gfs_data)
+        endif
+
+      deallocate(pes)
+      if (.not. lstatus) then
+       if (mpp_pe() == 0) write(0,*) 'INPUT source not found ',lstatus,' set source=No Source Attribute' 
+       source='No Source Attribute'
+       call mpp_error(FATAL,'fv_regional_bc::get_lbc_source - input source not &   
+            found in file &
+            gfs_bndy.tile7.000.nc. The accepted & 
+            FV3 sources are "FV3GFS GAUSSIAN NEMSIO FILE", &
+            "FV3GFS GAUSSIAN NETCDF FILE" or "FV3GFS GRIB2 FILE".')          
+      endif
+      call mpp_error(NOTE, 'INPUT gfs_bndy source string: '//trim(source))
+
+! Logical flag for fv3gfs nemsio/netcdf/grib2 --------
+      if ( trim(source)=='FV3GFS GAUSSIAN NEMSIO FILE' .or.        &
+           trim(source)=='FV3GFS GAUSSIAN NETCDF FILE' .or.        &
+           trim(source)=='FV3GFS GRIB2 FILE'                ) then
+         lbc_source_fv3gfs = .TRUE.
+      else
+         lbc_source_fv3gfs = .FALSE.
+      endif
+
+  end subroutine get_lbc_source
+
 
 !---------------------------------------------------------------------
 !+++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++
@@ -6936,7 +6994,7 @@ subroutine remap_scalar_nggps_regional_bc(Atm                         &
    graupel = get_tracer_index(MODEL_ATMOS, 'graupel')
    cld_amt = get_tracer_index(MODEL_ATMOS, 'cld_amt')
 !
-   source: if ( data_source_fv3gfs ) then
+   source: if ( lbc_source_fv3gfs ) then
 !
 !    if (cld_amt > 0) BC_side%q_BC(:,:,:,cld_amt) = 0.0    ! Moorthi
      do k=1,npz
