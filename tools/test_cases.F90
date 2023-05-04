@@ -5619,8 +5619,8 @@ end subroutine terminator_tracers
            pks = pk0 + amp*(1./ths - 1./th0)
            p_t  = exp(1./kappa*log(pks))
 
-           if (is_master()) write(*,'(I, 2F)') npz+1, ak(npz+1), bk(npz+1)
-           if (is_master()) write(*,'(2F)') ths*pk0, p_t
+           if (is_master()) write(*,'(I3, 2F11.3)') npz+1, ak(npz+1), bk(npz+1)
+           if (is_master()) write(*,'(2F11.3)') ths*pk0, p_t
 
            do k=npz,1,-1
               ze = ze+dz
@@ -5641,7 +5641,7 @@ end subroutine terminator_tracers
               endif
               thp = ths
               pkp = pks
-              if (is_master()) write(*,'(I, 5F)') k, ak(k), bk(k), ak(k+1)-ak(k) + p00*(bk(k+1)-bk(k)), ths*pk0, pp
+              if (is_master()) write(*,'(I3, 5F11.3)') k, ak(k), bk(k), ak(k+1)-ak(k) + p00*(bk(k+1)-bk(k)), ths*pk0, pp
 
            enddo
 
@@ -5873,7 +5873,7 @@ end subroutine terminator_tracers
            ak(npz+1) = 0.0
            bk(npz+1) = 1.0
            if (is_master()) print*, 'SBL Test case (102)'
-           if (is_master()) write(*,'(I, 2F)') npz+1, ak(npz+1), bk(npz+1)
+           if (is_master()) write(*,'(I3, 2F11.3)') npz+1, ak(npz+1), bk(npz+1)
            ze1(npz+1) = ze
            pk1(npz+1) = pk0
            pe1(npz+1) = p00
@@ -5902,7 +5902,7 @@ end subroutine terminator_tracers
               thp = ths
               pkp = pks
 
-              if (is_master()) write(*,'(I, 6(2x,F11.3))') k, ak(k), bk(k), ak(k+1)-ak(k) + p00*(bk(k+1)-bk(k)), ths*pks, pp, ze1(k)
+              if (is_master()) write(*,'(I3, 6(2x,F11.3))') k, ak(k), bk(k), ak(k+1)-ak(k) + p00*(bk(k+1)-bk(k)), ths*pks, pp, ze1(k)
 
            enddo
 
@@ -5968,7 +5968,7 @@ end subroutine terminator_tracers
            ak(npz+1) = 0.0
            bk(npz+1) = 1.0
            if (is_master()) print*, 'DYCOMS II SCu Test case (103)'
-           if (is_master()) write(*,'(I, 2F)') npz+1, ak(npz+1), bk(npz+1)
+           if (is_master()) write(*,'(I3, 2F11.3)') npz+1, ak(npz+1), bk(npz+1)
            ze1(npz+1) = ze
            pk1(npz+1) = pk0
            pe1(npz+1) = p00
@@ -5997,7 +5997,7 @@ end subroutine terminator_tracers
               !Liquid water temperature
               !new constants!
               ts1(k) = tl + (hlv*qc1(k) - grav*zmid)/cp_air
-              if (is_master()) write(*,'(I, 4(2x,F11.3))') k, ts1(k), qv1(k), ze1(k), qc1(k)
+              if (is_master()) write(*,'(I3, 4(2x,F11.3))') k, ts1(k), qv1(k), ze1(k), qc1(k)
            enddo
 
            !Compute pressure, integrating upward
@@ -6018,7 +6018,7 @@ end subroutine terminator_tracers
               pe1(k) = pp
               pk1(k) = exp(kappa*log(pp))
 
-              if (is_master()) write(*,'(I, 4(2x,F11.3))') k, ak(k), bk(k), pp, ze1(k)
+              if (is_master()) write(*,'(I3, 4(2x,F11.3))') k, ak(k), bk(k), pp, ze1(k)
 
            enddo
 

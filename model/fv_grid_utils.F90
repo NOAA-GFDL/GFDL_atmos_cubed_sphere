@@ -674,14 +674,14 @@
      call init_cubed_to_latlon( Atm%gridstruct, Atm%flagstruct%hydrostatic, agrid, grid_type, c2l_order, Atm%bd )
 
      call global_mx(area, Atm%ng, Atm%gridstruct%da_min, Atm%gridstruct%da_max, Atm%bd)
-     if( is_master() ) write(*,'(A, G)') 'da_max/da_min=', Atm%gridstruct%da_max/Atm%gridstruct%da_min
+     if( is_master() ) write(*,'(A, G20.8)') 'da_max/da_min=', Atm%gridstruct%da_max/Atm%gridstruct%da_min
 
      call global_mx_c(area_c(is:ie,js:je), is, ie, js, je, Atm%gridstruct%da_min_c, Atm%gridstruct%da_max_c)
 
      if( is_master() ) then
-        write(*,'(A, G)') 'da_max_c = ', Atm%gridstruct%da_max_c
-        write(*,'(A, G)') 'da_min_c = ', Atm%gridstruct%da_min_c
-        write(*,'(A, G)') 'da_max_c/da_min_c=', Atm%gridstruct%da_max_c/Atm%gridstruct%da_min_c
+        write(*,'(A, G20.8)') 'da_max_c = ', Atm%gridstruct%da_max_c
+        write(*,'(A, G20.8)') 'da_min_c = ', Atm%gridstruct%da_min_c
+        write(*,'(A, G20.8)') 'da_max_c/da_min_c=', Atm%gridstruct%da_max_c/Atm%gridstruct%da_min_c
      endif
 !------------------------------------------------
 ! Initialization for interpolation at face edges

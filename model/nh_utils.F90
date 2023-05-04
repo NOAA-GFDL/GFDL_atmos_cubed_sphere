@@ -1215,7 +1215,6 @@ CONTAINS
 
  subroutine SIM1_solver(dt,  is,  ie, km, rgas, gama, gm2, cp2, kappa, pe, dm2,   &
                         pm2, pem, w2, dz2, pt2, ws, p_fac, fast_tau_w_sec)
-                        pm2, pem, w2, dz2, pt2, ws, p_fac, tau_w)
    integer, intent(in):: is, ie, km
    real,    intent(in):: dt, rgas, gama, kappa, p_fac, fast_tau_w_sec
    real, intent(in), dimension(is:ie,km):: dm2, pt2, pm2, gm2, cp2
