@@ -683,10 +683,12 @@ contains
  end subroutine atmosphere_pref
 
 
- subroutine atmosphere_control_data (i1, i2, j1, j2, kt, p_hydro, hydro, tile_num)
+ subroutine atmosphere_control_data (i1, i2, j1, j2, kt, p_hydro, hydro, tile_num, &
+                                     do_inline_mp, do_cosp)
    integer, intent(out)           :: i1, i2, j1, j2, kt
    logical, intent(out), optional :: p_hydro, hydro
    integer, intent(out), optional :: tile_num
+   logical, intent(out), optional :: do_inline_mp, do_cosp
    i1 = Atm(mygrid)%bd%isc
    i2 = Atm(mygrid)%bd%iec
    j1 = Atm(mygrid)%bd%jsc
@@ -696,6 +698,8 @@ contains
    if (present(p_hydro)) p_hydro = Atm(mygrid)%flagstruct%phys_hydrostatic
    if (present(  hydro))   hydro = Atm(mygrid)%flagstruct%hydrostatic
    if (present(tile_num)) tile_num = Atm(mygrid)%global_tile
+   if (present(do_inline_mp)) do_inline_mp = Atm(mygrid)%flagstruct%do_inline_mp
+   if (present(do_cosp)) do_cosp = Atm(mygrid)%flagstruct%do_cosp
 
  end subroutine atmosphere_control_data
 
@@ -1929,7 +1933,6 @@ contains
            enddo
         enddo
     endif
-    IPD_Data(nb)%Statein%dycore_hydrostatic = Atm(mygrid)%flagstruct%hydrostatic
     IPD_Data(nb)%Statein%nwat = Atm(mygrid)%flagstruct%nwat
   enddo
 
