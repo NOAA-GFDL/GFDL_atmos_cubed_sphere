@@ -631,11 +631,10 @@ contains
              npx, npy, gridstruct%sw_corner, gridstruct%se_corner, &
              gridstruct%ne_corner, gridstruct%nw_corner, bd, gridstruct%grid_type, flagstruct%dz_min)
                                             call timing_off('UPDATE_DZ_C')
-
-           if(.not.allocated(visc3d))then
+         if(.not.allocated(visc3d))then
              allocate(visc3d(isd:ied,jsd:jed,npz))
              visc3d = 0.0
-           endif
+         endif
 
                                                call timing_on('Riem_Solver')
            call Riem_Solver_C( ms, dt2,   is,  ie,   js,   je,   npz,   ng,   &
@@ -645,7 +644,8 @@ contains
 #endif
                                ptop, phis, omga, ptc,  &
                                q_con,  delpc, gz,  pkc, ws3, flagstruct%p_fac, &
-                                flagstruct%a_imp, flagstruct%scale_z, visc3d)
+                               flagstruct%a_imp, flagstruct%scale_z, visc3d, pfull, &
+                               flagstruct%fast_tau_w_sec, flagstruct%rf_cutoff )
                                                call timing_off('Riem_Solver')
 
            if (gridstruct%nested) then
@@ -1052,6 +1052,7 @@ contains
 !           call prt_maxmin('WS', ws, is, ie, js, je, 0, 1, 1., master)
             used=send_data(idiag%id_ws, ws, fv_time)
         endif
+
                                                          call timing_on('Riem_Solver')
 
         call Riem_Solver3(flagstruct%m_split, dt,  is,  ie,   js,   je, npz, ng,     &
@@ -1063,7 +1064,8 @@ contains
                          ptop, zs, q_con, w, delz, pt, delp, zh,   &
                          pe, pkc, pk3, pk, peln, ws, &
                          flagstruct%scale_z, flagstruct%p_fac, flagstruct%a_imp, &
-                         flagstruct%use_logp, remap_step, beta<-0.1, visc3d)
+                         flagstruct%use_logp, remap_step, beta<-0.1, visc3d,     &
+                         flagstruct%fast_tau_w_sec)
                                                          call timing_off('Riem_Solver')
 
                                        call timing_on('COMM_TOTAL')
