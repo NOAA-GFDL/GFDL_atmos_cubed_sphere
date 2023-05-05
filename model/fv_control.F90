@@ -34,7 +34,7 @@ module fv_control_mod
    use mpp_mod,             only: FATAL, mpp_error, mpp_pe, stdlog, &
                                   mpp_npes, mpp_get_current_pelist, &
                                   input_nml_file, get_unit, WARNING, &
-                                  read_ascii_file
+                                  read_ascii_file, NOTE
    use mpp_domains_mod,     only: mpp_get_data_domain, mpp_get_compute_domain, mpp_get_tile_id
    use tracer_manager_mod,  only: tm_get_number_tracers => get_number_tracers, &
                                   tm_get_tracer_index   => get_tracer_index,   &
@@ -929,6 +929,8 @@ module fv_control_mod
        character(len=128) :: res_latlon_dynamics = ''
        character(len=128) :: res_latlon_tracers  = ''
 
+       character(len=72) :: err_str
+
        namelist /fv_core_nml/npx, npy, ntiles, npz, npz_type, fv_eta_file, npz_rst, layout, io_layout, ncnst, nwat,  &
             use_logp, p_fac, a_imp, k_split, n_split, m_split, q_split, print_freq, write_3d_diags, &
             do_schmidt, do_cube_transform, &
@@ -1070,6 +1072,35 @@ module fv_control_mod
 
        target_lon = target_lon * pi/180.
        target_lat = target_lat * pi/180.
+
+       !Checks for deprecated options
+       if (abs(kord_tr) <= 7) then
+          write(err_str,'(A, i2, A)') "**DEPRECATED KORD_TR = ", kord_tr, "**"
+          call mpp_error(NOTE, trim(err_str))
+          call mpp_error(NOTE, " The old PPM remapping operators will be removed in a future release.")
+       endif
+       if (.not. hydrostatic .and. abs(kord_wz) <= 7) then
+          write(err_str,'(A, i2, A)') "**DEPRECATED KORD_WZ = ", kord_wz, "**"
+          call mpp_error(NOTE, trim(err_str))
+          call mpp_error(NOTE, " The old PPM remapping operators will be removed in a future release.")
+       endif
+       if (abs(kord_tm) <= 7) then
+          write(err_str,'(A, i2, A)') "**DEPRECATED KORD_TM = ", kord_tm, "**"
+          call mpp_error(NOTE, trim(err_str))
+          call mpp_error(NOTE, " The old PPM remapping operators will be removed in a future release.")
+       endif
+       if (abs(kord_mt) <= 7) then
+          write(err_str,'(A, i2, A)') "**DEPRECATED KORD_MT = ", kord_mt, "**"
+          call mpp_error(NOTE, trim(err_str))
+          call mpp_error(NOTE, " The old PPM remapping operators will be removed in a future release.")
+       endif
+
+       if (do_am4_remap) then
+          call mpp_error(NOTE, "** DEPRECATED DO_AM4_REMAP **")
+          call mpp_error(NOTE, " This switch is no longer necessary because the AM4 kord=10 has been")
+          call mpp_error(NOTE, "     restored to normal operation.")
+       endif
+
 
      end subroutine read_namelist_fv_core_nml
 

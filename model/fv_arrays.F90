@@ -364,11 +364,11 @@ module fv_arrays_mod
                                     !< value as do_sat_adj in gfdl_mp_nml. Not compatible with other microphysics
                                     !< schemes. Also requires GFDL microphysics be installed within the physics driver.
    logical :: consv_checker = .false.!< turn on energy and water conservation checker
-   logical :: do_fast_phys = .false.!< Controls fast physics, in which the SA-TKE-EDMF and part of the GWD are 
-                                    !< within the acoustic time step of FV3. If .true. disabling the SA-TKE-EDMF 
+   logical :: do_fast_phys = .false.!< Controls fast physics, in which the SA-TKE-EDMF and part of the GWD are
+                                    !< within the acoustic time step of FV3. If .true. disabling the SA-TKE-EDMF
                                     !< and part of the GWD in the intermediate physics.
-   logical :: do_intermediate_phys = .true.!< Controls intermediate physics, in which the GFDL MP, SA-SAS and part of the GWD are 
-                                    !< within the remapping time step of FV3. If .false. disabling the GFDL MP, SA-SAS 
+   logical :: do_intermediate_phys = .true.!< Controls intermediate physics, in which the GFDL MP, SA-SAS and part of the GWD are
+                                    !< within the remapping time step of FV3. If .false. disabling the GFDL MP, SA-SAS
                                     !< and part of the GWD in the intermediate physics.
    logical :: do_inline_mp = .false.!< Controls Inline GFDL cloud microphysics, in which the full microphysics is
                                     !< called entirely within FV3. If .true. disabling microphysics within the physics
@@ -814,8 +814,8 @@ module fv_arrays_mod
    logical :: do_diss_est  = .false.     !< compute and save dissipation estimate
    logical :: ecmwf_ic = .false.   !< If external_ic = .true., reads initial conditions from ECMWF analyses.
                                    !< The default is .false.
-   logical :: use_gfsO3 = .false.     ! only work when "ecmwf_ic = .T.". 
-                                      ! Need to be 'true', when the IFS IC does not include O3 data.  
+   logical :: use_gfsO3 = .false.     ! only work when "ecmwf_ic = .T.".
+                                      ! Need to be 'true', when the IFS IC does not include O3 data.
    logical :: gfs_phil = .false.      !< if .T., compute geopotential inside of GFS physics (not used?)
    logical :: agrid_vel_rst = .false.   !< Whether to write the unstaggered latitude-longitude winds
                                         !< (ua and va) to the restart files. This is useful for data
@@ -905,7 +905,7 @@ module fv_arrays_mod
   real(kind=R_GRID) :: deglat=15.   !< Latitude (in degrees) used to compute the uniform f-plane
                                     !< Coriolis parameter for doubly-periodic simulations
                                     !< (grid_type = 4). The default value is 15.
-  real(kind=R_GRID) :: domain_deg = 0. 
+  real(kind=R_GRID) :: domain_deg = 0.
 
   !The following deglat_*, deglon_* options are not used.
   real(kind=R_GRID) :: deglon_start = -30., deglon_stop = 30., &  !< boundaries of latlon patch

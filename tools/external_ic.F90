@@ -69,7 +69,7 @@ module external_ic_mod
    use boundary_mod,      only: nested_grid_BC, extrapolation_BC
    use mpp_domains_mod,       only: mpp_get_data_domain, mpp_get_global_domain, mpp_get_compute_domain
    use fv_grid_utils_mod, only: cubed_a2d
-   
+
    implicit none
    private
 
@@ -1897,7 +1897,7 @@ contains
           allocate (o3mr_gfs(is:ie,js:je,levp_gfs))
           allocate (ps_gfs(is:ie,js:je))
           allocate (zh_gfs(is:ie,js:je,levp_gfs+1))
-          
+
           if( open_file(GFS_restart, fn_gfs_ics, "read", Atm%domain_for_read, is_restart=.true., dont_add_res_to_filename=.true.) ) then
             call register_axis(GFS_restart, "lat", "y")
             call register_axis(GFS_restart, "lon", "x")
@@ -1909,7 +1909,7 @@ contains
             call read_restart(GFS_restart)
             call close_file(GFS_restart)
           endif
-          
+
           ! Get GFS ak, bk for o3mr vertical interpolation
           allocate (wk2(levp_gfs+1,2))
           allocate (ak_gfs(levp_gfs+1))
@@ -2891,11 +2891,11 @@ contains
          do k=1,npz
             do i=is,ie
 
-               if ( iq==o3mr ) then 
-                  if (.not. Atm%flagstruct%use_gfsO3) then  
+               if ( iq==o3mr ) then
+                  if (.not. Atm%flagstruct%use_gfsO3) then
                      Atm%q(i,j,k,iq) = qn1(i,k)
                   endif
-               else 
+               else
                   Atm%q(i,j,k,iq) = qn1(i,k)
                endif
 
