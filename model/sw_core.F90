@@ -914,13 +914,8 @@ module sw_core_mod
          enddo
       enddo
 
-      if (flagstruct%smag2d > 1.E-3 .and. bounded_domain) then
-         call smag_cell(abs(dt), u, v, ua, va, smag_q, bd, npx, npy, gridstruct, ng, flagstruct%smag2d > 1.E-3, dudz, dvdz, flagstruct%smag2d)
-      endif
-
       call fv_tp_2d(delp, crx_adv, cry_adv, npx, npy, hord_dp, fx, fy,  &
-                    xfx_adv,yfx_adv, gridstruct, bd, ra_x, ra_y, &
-                    flagstruct%lim_fac, nord=nord_v, damp_c=damp_v, damp_smag=flagstruct%smag2d, damp_Km=smag_q)
+                    xfx_adv,yfx_adv, gridstruct, bd, ra_x, ra_y, flagstruct%lim_fac, nord=nord_v, damp_c=damp_v)
 
 ! <<< Save the mass fluxes to the "Flux Capacitor" for tracer transport >>>
         do j=jsd,jed
@@ -951,30 +946,10 @@ module sw_core_mod
         enddo
 
         if ( .not. hydrostatic ) then
-           if ( damp_w>1.E-5 ) then
-              dd8 = kgb*abs(dt)
-              damp4 = (damp_w*gridstruct%da_min_c)**(nord_w+1)
-              call del6_vt_flux(nord_w, npx, npy, damp4, w, wk, fx2, fy2, gridstruct, bd)
-           endif
-           if ( flagstruct%smag2D > 1.E-3 ) then
-              damp4 = flagstruct%smag2D*gridstruct%da_min_c
-              if ( damp_w > 1.E-5) then
-                 call del6_vt_flux(0, npx, npy, damp4, w, wk, fx3, fy3, gridstruct, bd, damp_Km=smag_q)
-                 do j=js,je
-                    do i=is,ie+1
-                       fx2(i,j) = fx3(i,j) + fx2(i,j)
-                    enddo
-                 enddo
-                 do j=js,je+1
-                    do i=is,ie
-                       fy2(i,j) = fy3(i,j) + fy2(i,j)
-                    enddo
-                 enddo
-              else
-                 call del6_vt_flux(0, npx, npy, damp4, w, wk, fx2, fy2, gridstruct, bd, damp_Km=smag_q)
-              endif
-           endif
-           if ( damp_w>1.E-5 .or. ( flagstruct%smag2D > 1.E-3 ) ) then
+            if ( damp_w>1.E-5 ) then
+                 dd8 = kgb*abs(dt)
+                 damp4 = (damp_w*gridstruct%da_min_c)**(nord_w+1)
+                 call del6_vt_flux(nord_w, npx, npy, damp4, w, wk, fx2, fy2, gridstruct, bd)
                 do j=js,je
                    do i=is,ie
                       dw(i,j) = (fx2(i,j)-fx2(i+1,j)+fy2(i,j)-fy2(i,j+1))*rarea(i,j)
@@ -998,8 +973,7 @@ module sw_core_mod
 
 #ifdef USE_COND
            call fv_tp_2d(q_con, crx_adv,cry_adv, npx, npy, hord_dp, gx, gy,  &
-                xfx_adv,yfx_adv, gridstruct, bd, ra_x, ra_y, flagstruct%lim_fac, &
-                mfx=fx, mfy=fy, mass=delp, nord=nord_t, damp_c=damp_t, damp_smag=flagstruct%smag2D*smag_scalar, damp_Km=smag_q)
+                xfx_adv,yfx_adv, gridstruct, bd, ra_x, ra_y, flagstruct%lim_fac, mfx=fx, mfy=fy, mass=delp, nord=nord_t, damp_c=damp_t)
             do j=js,je
                do i=is,ie
                   q_con(i,j) = delp(i,j)*q_con(i,j) + (gx(i,j)-gx(i+1,j)+gy(i,j)-gy(i,j+1))*rarea(i,j)
@@ -1017,11 +991,11 @@ module sw_core_mod
 #if defined(GFS_PHYS) || defined(DCMIP)
         call fv_tp_2d(pt, crx_adv,cry_adv, npx, npy, hord_tm, gx, gy,  &
                       xfx_adv,yfx_adv, gridstruct, bd, ra_x, ra_y, flagstruct%lim_fac, &
-                      mfx=fx, mfy=fy, mass=delp, nord=nord_v, damp_c=damp_v, damp_smag=flagstruct%smag2D*smag_scalar, damp_Km=smag_q) !SHiELD
+                      mfx=fx, mfy=fy, mass=delp, nord=nord_v, damp_c=damp_v) !SHiELD
 #else
         call fv_tp_2d(pt, crx_adv,cry_adv, npx, npy, hord_tm, gx, gy,  &
                       xfx_adv,yfx_adv, gridstruct, bd, ra_x, ra_y, flagstruct%lim_fac, &
-                      mfx=fx, mfy=fy, mass=delp, nord=nord_t, damp_c=damp_t, damp_smag=flagstruct%smag2D*smag_scalar, damp_Km=smag_q) !AM4
+                      mfx=fx, mfy=fy, mass=delp, nord=nord_t, damp_c=damp_t) !AM4
 #endif
 #endif
 
@@ -1041,7 +1015,7 @@ module sw_core_mod
         do iq=1,nq
            call fv_tp_2d(q(isd,jsd,k,iq), crx_adv,cry_adv, npx, npy, hord_tr, gx, gy,  &
                          xfx_adv,yfx_adv, gridstruct, bd, ra_x, ra_y, flagstruct%lim_fac, &
-                         mfx=fx, mfy=fy, mass=delp, nord=nord_t, damp_c=damp_t, damp_smag=flagstruct%smag2D*smag_scalar, damp_Km=smag_q)
+                         mfx=fx, mfy=fy, mass=delp, nord=nord_t, damp_c=damp_t)
            do j=js,je
               do i=is,ie
                  q(i,j,k,iq) = (q(i,j,k,iq)*wk(i,j) +               &
@@ -1273,7 +1247,7 @@ module sw_core_mod
                enddo
             enddo
         endif
-        if ( damp_w>1.E-5 .or. d2_bg > 1.E-5 ) then
+        if ( damp_w>1.E-5 ) then
           do j=js,je
              do i=is,ie
                 w(i,j) = w(i,j) + dw(i,j)
@@ -1433,10 +1407,10 @@ module sw_core_mod
 
      enddo ! n-loop
 
-     if ( dddmp<1.E-5 .and. flagstruct%smag2d < 1.e-3) then
+     if ( dddmp<1.E-5) then
           vort(:,:) = 0.
      else
-      if ( flagstruct%grid_type < 3 .and. .not. (flagstruct%smag2d > 1.E-3 .and. bounded_domain)) then
+      if ( flagstruct%grid_type < 3 ) then
 ! Interpolate relative vort to cell corners
           call a2b_ord4(wk, vort, gridstruct, npx, npy, is, ie, js, je, ng, .false.)
           do j=js,je+1
@@ -1445,8 +1419,8 @@ module sw_core_mod
                 vort(i,j) = abs(dt)*sqrt(delpc(i,j)**2 + vort(i,j)**2)
              enddo
           enddo
-      else  ! Correct form: works only for limited-area domain
-          call smag_corner(abs(dt), u, v, ua, va, vort, bd, npx, npy, gridstruct, ng, flagstruct%smag2d > 1.E-3, dudz, dvdz, flagstruct%smag2d)
+      else  ! Correct form: works only for doubly preiodic domain
+          call smag_corner(abs(dt), u, v, ua, va, vort, bd, npx, npy, gridstruct, ng)
       endif
      endif
 
@@ -1459,7 +1433,7 @@ module sw_core_mod
 
      do j=js,je+1
         do i=is,ie+1
-           damp2 =  gridstruct%da_min_c*max(d2_bg, min(0.20, max(dddmp,flagstruct%smag2d)*vort(i,j)))  ! del-2
+           damp2 =  gridstruct%da_min_c*max(d2_bg, min(0.20, dddmp*vort(i,j)))  ! del-2
            vort(i,j) = damp2*delpc(i,j) + dd8*divg_d(i,j)
              ke(i,j) = ke(i,j) + vort(i,j)
         enddo
@@ -1518,30 +1492,10 @@ module sw_core_mod
 
 !--------------------------------------------------------
 ! damping applied to relative vorticity (wk):
-!! TODO add smag damping to vorticity
-    if ( damp_v>1.E-5 ) then
+   if ( damp_v>1.E-5 ) then
         damp4 = (damp_v*gridstruct%da_min_c)**(nord_v+1)
         call del6_vt_flux(nord_v, npx, npy, damp4, wk, vort, ut, vt, gridstruct, bd)
-    endif
-    if ( flagstruct%smag2d > 1.E-3  ) then
-       damp4 = flagstruct%smag2D*gridstruct%da_min_c
-       if ( damp_v > 1.E-5) then
-          call del6_vt_flux(0, npx, npy, damp4, wk, vort, fx2, fy2, gridstruct, bd, damp_Km=smag_q)
-          !add ut,vt in
-          do j=js,je
-             do i=is,ie+1
-                ut(i,j) = fx2(i,j) + ut(i,j)
-             enddo
-          enddo
-          do j=js,je+1
-             do i=is,ie
-                vt(i,j) = fy2(i,j) + vt(i,j)
-             enddo
-          enddo
-       else
-          call del6_vt_flux(0, npx, npy, damp4, wk, vort, ut, vt, gridstruct, bd, damp_Km=smag_q)
-       endif
-    endif
+   endif
 
    if ( d_con > 1.e-5 .or. flagstruct%do_diss_est ) then
       do j=js,je+1
@@ -1585,7 +1539,7 @@ module sw_core_mod
    endif
 
 ! Add diffusive fluxes to the momentum equation:
-   if ( damp_v>1.E-5 .or. d2_bg > 1.E-5) then
+   if ( damp_v>1.E-5 ) then
       do j=js,je+1
          do i=is,ie
             u(i,j) = u(i,j) + vt(i,j)
@@ -1933,23 +1887,17 @@ end subroutine divergence_corner_nest
 
 
 
- subroutine smag_corner(dt, u, v, ua, va, smag_c, bd, npx, npy, gridstruct, ng, do_smag, dudz, dvdz, smag2d)
+ subroutine smag_corner(dt, u, v, ua, va, smag_c, bd, npx, npy, gridstruct, ng)
 ! Compute the Tension_Shear strain at cell corners for Smagorinsky diffusion
-!!!  works only if (grid_type==4) (need to add corner handling on cubed sphere)
-!!! Next want to add in vertical shear terms
-   !!! To complete the calculation
+!!!  work only if (grid_type==4)
  type(fv_grid_bounds_type), intent(IN) :: bd
- real, intent(in):: dt, smag2d
+ real, intent(in):: dt
  integer, intent(IN) :: npx, npy, ng
  real, intent(in),  dimension(bd%isd:bd%ied,  bd%jsd:bd%jed+1):: u
  real, intent(in),  dimension(bd%isd:bd%ied+1,bd%jsd:bd%jed  ):: v
  real, intent(in),  dimension(bd%isd:bd%ied,bd%jsd:bd%jed):: ua, va
  real, intent(out), dimension(bd%isd:bd%ied,bd%jsd:bd%jed):: smag_c
  type(fv_grid_type), intent(IN), target :: gridstruct
- logical, intent(in) :: do_smag
- real , intent(IN) :: dudz(bd%isd:bd%ied,  bd%jsd:bd%jed+1)
- real , intent(IN) :: dvdz(bd%isd:bd%ied+1,bd%jsd:bd%jed)
-
 ! local
  real:: ut(bd%isd:bd%ied+1,bd%jsd:bd%jed)
  real:: vt(bd%isd:bd%ied,  bd%jsd:bd%jed+1)
@@ -1957,7 +1905,6 @@ end subroutine divergence_corner_nest
  real:: sh(bd%isd:bd%ied,bd%jsd:bd%jed)
  integer i,j
  integer is2, ie1
- real :: smag_limit
 
  real, pointer, dimension(:,:) :: dxc, dyc, dx, dy, rarea, rarea_c
 
@@ -1983,14 +1930,7 @@ end subroutine divergence_corner_nest
 
   is2 = max(2,is); ie1 = min(npx-1,ie+1)
 
-  if (smag2d > 1.e-3) then
-     smag_limit = 0.20/smag2d
-  elseif (do_smag) then
-     smag_c = 0.0
-     return
-  endif
-
-  ! Smag = sqrt [ T**2 + S**2 ]:  unit = 1/s
+! Smag = sqrt [ T**2 + S**2 ]:  unit = 1/s
 ! where T = du/dx - dv/dy;   S = du/dy + dv/dx
 ! Compute tension strain at corners:
        do j=js,je+1
@@ -2009,17 +1949,6 @@ end subroutine divergence_corner_nest
           enddo
        enddo
 ! Fix the corners?? if grid_type /= 4
-       if (do_smag) then
-          do j=js,je+1
-             do i=is,ie+1
-                smag_c(i,j) = smag_c(i,j) - 0.5*(dvdz(i,j-1)+dvdz(i,j))
-                smag_c(i,j) = smag_c(i,j) + 0.5*(dudz(i-1,j)+dudz(i,j))
-!!$                if (abs(smag_c(i,j) > 1.e5)) then
-!!$                   print*, i,j, smag_c(i,j), dudz(i,j:j+1), dvdz(i:i+1,j)
-!!$                endif
-             enddo
-          enddo
-       endif
 
 ! Compute shear strain:
        do j=jsd,jed+1
@@ -2039,36 +1968,11 @@ end subroutine divergence_corner_nest
           enddo
        enddo
        call a2b_ord4(wk, sh, gridstruct, npx, npy, is, ie, js, je, ng, .false.)
-       if (do_smag) then
-          do j=js,je+1
-             do i=is,ie+1
-                sh(i,j) = sh(i,j) - 0.5*(dvdz(i-1,j)+dvdz(i,j))
-                sh(i,j) = sh(i,j) - 0.5*(dudz(i,j-1)+dudz(i,j))
-                smag_c(i,j) = min(dt*sqrt( sh(i,j)**2 + smag_c(i,j)**2 ),smag_limit)
-             enddo
+       do j=js,je+1
+          do i=is,ie+1
+             smag_c(i,j) = dt*sqrt( sh(i,j)**2 + smag_c(i,j)**2 )
           enddo
-       else
-          do j=js,je+1
-             do i=is,ie+1
-                smag_c(i,j) = dt*sqrt( sh(i,j)**2 + smag_c(i,j)**2 )
-!!$             if (abs(smag_c(i,j) > 1.e5)) then
-!!$                print*, i,j, smag_c(i,j), sh(i,j), dudz(i,j:j+1), dvdz(i:i+1,j)
-!!$             endif
-             enddo
-          enddo
-       endif
-
-!!! DEBUG CODE
-!!$       if (do_smag) then
-!!$          write(mpp_pe()+1000,*) 'HERE', mpp_pe()
-!!$          write(mpp_pe()+1000,*) smag_c(is:is+2,js:js+2)
-!!$          write(mpp_pe()+1000,*)
-!!$          write(mpp_pe()+1000,*) dudz(is:is+2,js:js+2)
-!!$          write(mpp_pe()+1000,*) dvdz(is:is+2,js:js+2)
-!!$          write(mpp_pe()+1000,*)
-!!$       endif
-!!! DEBUG CODE
-
+       enddo
 
  end subroutine smag_corner
 
@@ -2154,12 +2058,6 @@ end subroutine divergence_corner_nest
              smag_q(i,j) = 0.25*(wk(i,j) + wk(i,j+1) + wk(i+1,j) + wk(i+1,j+1))
           enddo
        enddo
-!!! DEBUG CODE
-!!$       write(mpp_pe()+2000,*) u(is-2:is,js-1:js)
-!!$       write(mpp_pe()+2000,*) v(is-1:is,js-2:js)
-!!$       write(mpp_pe()+2000,*) wk(is:is+2,js:js+2)
-!!$       write(mpp_pe()+2000,*)
-!!! END DEBUG CODE
 
        if (do_smag) then
           do j=js-1,je+1
@@ -2202,16 +2100,6 @@ end subroutine divergence_corner_nest
              enddo
           enddo
        endif
-
-
-!!! DEBUG CODE
-!!$       write(mpp_pe()+2000,*) dudz(is:is+2,js:js+2)
-!!$       write(mpp_pe()+2000,*) dvdz(is:is+2,js:js+2)
-!!$       write(mpp_pe()+2000,*)
-!!$       write(mpp_pe()+2000,*) smag_q(is:is+2,js:js+2)
-!!$       write(mpp_pe()+2000,*)
-!!$       !flush(mpp_pe()+2000)
-!!! DEBUG CODE
 
  end subroutine smag_cell
 
