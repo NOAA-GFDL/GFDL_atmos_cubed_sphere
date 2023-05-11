@@ -497,7 +497,7 @@ module sw_core_mod
                    diss_est, zvir, sphum, nq, q, k, km, inline_q,  &
                    dt, hord_tr, hord_mt, hord_vt, hord_tm, hord_dp, nord,   &
                    nord_v, nord_w, nord_t, dddmp, d2_bg, d4_bg, damp_v, damp_w, &
-                   damp_t, d_con, dudz, dvdz, hydrostatic, gridstruct, flagstruct, bd)
+                   damp_t, d_con, hydrostatic, gridstruct, flagstruct, bd)
 
       integer, intent(IN):: hord_tr, hord_mt, hord_vt, hord_tm, hord_dp
       integer, intent(IN):: nord   ! nord=1 divergence damping; (del-4) or 3 (del-8)
@@ -529,8 +529,6 @@ module sw_core_mod
       logical, intent(IN):: inline_q
       real, intent(OUT), dimension(bd%is:bd%ie+1,bd%jsd:bd%jed):: crx_adv, xfx_adv
       real, intent(OUT), dimension(bd%isd:bd%ied,bd%js:bd%je+1):: cry_adv, yfx_adv
-      real, intent(IN) :: dudz(bd%isd:bd%ied,bd%jsd:bd%jed+1)
-      real, intent(IN) :: dvdz(bd%isd:bd%ied+1,bd%jsd:bd%jed)
       type(fv_grid_type), intent(IN), target :: gridstruct
       type(fv_flags_type), intent(IN), target :: flagstruct
 ! Local:

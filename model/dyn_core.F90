@@ -72,8 +72,7 @@ public :: dyn_core, del2_cubed, init_ijk_mem
   real :: ptk, peln1, rgrav
   real :: d3_damp
   real, allocatable, dimension(:,:,:) ::  ut, vt, crx, cry, xfx, yfx, divgd, &
-                                          zh, du, dv, pkc, delpc, pk3, ptc, gz, &
-                                          dudz, dvdz
+                                          zh, du, dv, pkc, delpc, pk3, ptc, gz
 ! real, parameter:: delt_max = 1.e-1   ! Max dissipative heating/cooling rate
                                        ! 6 deg per 10-min
   real(kind=R_GRID), parameter :: cnst_0p20=0.20d0
@@ -265,11 +264,6 @@ contains
 !                    call init_ijk_mem(isd,ied, jsd,jed, npz, ut, 0.)
            allocate( vt(isd:ied, jsd:jed, npz) )
 !                    call init_ijk_mem(isd,ied, jsd,jed, npz, vt, 0.)
-           if (flagstruct%smag2d > 1.e-3) then
-              allocate(dudz(isd:ied,  jsd:jed+1,npz))
-              allocate(dvdz(isd:ied+1,jsd:jed,  npz))
-           endif
-
 
           if ( .not. hydrostatic ) then
                allocate( zh(isd:ied, jsd:jed, npz+1) )
@@ -593,11 +587,6 @@ contains
 #endif
     call timing_off('COMM_TOTAL')
 
-    if (flagstruct%smag2d > 1.e-3) then
-       call compute_dudz(bd, npz, u, v, dudz, dvdz, zh, dp_ref)
-       !call mpp_update_domains(dudz, dvdz, domain, gridtype=DGRID_NE, complete=.true.)
-    endif
-
       if (gridstruct%nested) then
          !On a nested grid we have to do SOMETHING with uc and vc in
          ! the boundary halo, particularly at the corners of the
@@ -676,7 +665,7 @@ contains
 !$OMP                                  is,ie,js,je,isd,ied,jsd,jed,omga,delp,gridstruct,npx,npy,  &
 !$OMP                                  ng,zh,vt,ptc,pt,u,v,w,uc,vc,ua,va,divgd,mfx,mfy,cx,cy,     &
 !$OMP                                  crx,cry,xfx,yfx,q_con,zvir,sphum,nq,q,dt,bd,rdt,iep1,jep1, &
-!$OMP                                  heat_source,diss_est,radius,dudz,dvdz)                     &
+!$OMP                                  heat_source,diss_est,radius)                     &
 !$OMP                          private(nord_k, nord_w, nord_t, damp_w, damp_t, d2_divg,   &
 !$OMP                          d_con_k,kgb, hord_m, hord_v, hord_t, hord_p, wk, heat_s, diss_e, z_rat)
     do k=1,npz
@@ -783,7 +772,7 @@ contains
                   kgb, heat_s, diss_e, zvir, sphum, nq,  q,  k,  npz, flagstruct%inline_q,  dt,  &
                   flagstruct%hord_tr, hord_m, hord_v, hord_t, hord_p,    &
                   nord_k, nord_v(k), nord_w, nord_t, flagstruct%dddmp, d2_divg, flagstruct%d4_bg,  &
-                  damp_vt(k), damp_w, damp_t, d_con_k, dudz(isd,jsd,k), dvdz(isd,jsd,k), &
+                  damp_vt(k), damp_w, damp_t, d_con_k, &
                   hydrostatic, gridstruct, flagstruct, bd)
 
        if((.not.flagstruct%use_old_omega) .and. last_step ) then
@@ -1376,8 +1365,6 @@ contains
          deallocate( zh )
          if( allocated(pk3) )   deallocate ( pk3 )
     endif
-    if (allocated(dudz)) deallocate(dudz)
-    if (allocated(dvdz)) deallocate(dvdz)
 
   endif
   if( allocated(pem) )   deallocate ( pem )
