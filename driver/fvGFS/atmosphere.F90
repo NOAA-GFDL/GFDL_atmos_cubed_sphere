@@ -2429,11 +2429,12 @@ contains
 !! coupling variables from its parent grid
 !>@details Fill parent2nest_2d on the nested grid with values from its parent.
   subroutine fill_nested_grid_cpl(this_grid, proc_in)
+    use mpi
     integer, intent(in) :: this_grid
     logical, intent(in), optional :: proc_in
 
     real, allocatable :: g_dat(:,:,:)
-    integer :: p, sending_proc
+    integer :: p, ierr
     integer :: isd_p, ied_p, jsd_p, jed_p
     integer :: isg, ieg, jsg, jeg
     integer :: isc, iec, jsc, jec
@@ -2453,22 +2454,13 @@ contains
     allocate( g_dat(isg:ieg, jsg:jeg, 1) )
 
     call timing_on('COMM_TOTAL')
-    sending_proc = Atm(this_grid)%parent_grid%pelist(1) + &
-                   ( Atm(this_grid)%neststruct%parent_tile-tile_fine(Atm(this_grid)%parent_grid%grid_number)+ &
-                     Atm(this_grid)%parent_grid%flagstruct%ntiles-1 )*Atm(this_grid)%parent_grid%npes_per_tile
-   !if (Atm(this_grid)%neststruct%parent_proc .and. Atm(this_grid)%neststruct%parent_tile == Atm(this_grid)%parent_grid%global_tile) then
     if (Atm(this_grid)%neststruct%parent_tile == Atm(this_grid)%parent_grid%global_tile) then
       call mpp_global_field(Atm(this_grid)%parent_grid%domain, &
                             Atm(this_grid)%parent_grid%parent2nest_2d(isd_p:ied_p,jsd_p:jed_p), &
                             g_dat(isg:,jsg:,1), position=CENTER)
-      if (mpp_pe() == sending_proc) then
-        do p=1,size(Atm(this_grid)%pelist)
-          call mpp_send(g_dat, size(g_dat), Atm(this_grid)%pelist(p))
-        enddo
-      endif
     endif
-    if (any(Atm(this_grid)%pelist == mpp_pe())) then
-      call mpp_recv(g_dat, size(g_dat), sending_proc)
+    if(any(mpp_pe() == Atm(this_grid)%Bcast_ranks)) then
+      call MPI_Bcast(g_dat, size(g_dat), MPI_REAL, 0, Atm(this_grid)%Bcast_comm, ierr) ! root==0 because sending rank (Atm(this_grid)%sending) is rank zero in Bcast_comm
     endif
     call timing_off('COMM_TOTAL')
     if (process) then

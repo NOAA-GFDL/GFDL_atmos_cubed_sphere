@@ -1302,6 +1302,11 @@ module fv_arrays_mod
 
      integer, allocatable, dimension(:) :: pelist
 
+    ! These are set in fv_control_init() and used in fill_nested_grid_cpl()
+    ! to replace numerous p2p MPI transfers with a single MPI_Bcast
+    integer, allocatable :: Bcast_ranks(:)
+    integer :: Bcast_comm, sending_proc
+
      type(fv_grid_bounds_type) :: bd
 
     type(fv_regional_bc_bounds_type) :: regional_bc_bounds
