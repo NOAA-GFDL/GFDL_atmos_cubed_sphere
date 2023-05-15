@@ -456,9 +456,9 @@ module fv_control_mod
      allocate(global_pelist(npes))
      call mpp_get_current_pelist(global_pelist, commID=global_commID) ! for commID
 
+     ! Need the fcst_mpi_comm in order to construct the communicators used by MPI_Bcast in fill_nested_grid_cpl()
      call ESMF_VMGetCurrent(vm=vm,rc=rc)
      call ESMF_VMGet(vm=vm, mpiCommunicator=fcst_mpi_comm, rc=rc)
-
 
      allocate(grids_master_procs(ngrids))
      pecounter = 0
