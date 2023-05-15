@@ -1848,11 +1848,12 @@ contains
 
 !>@brief The subroutine 'deallocate_fv_atmos_type' deallocates the fv_atmos_type.
   subroutine deallocate_fv_atmos_type(Atm)
+    use mpi
 
     implicit none
     type(fv_atmos_type), intent(INOUT) :: Atm
 
-    integer :: n
+    integer :: n,ierr
 
     if (.not.Atm%allocated) return
     deallocate (    Atm%u )
@@ -2068,7 +2069,8 @@ contains
           call deallocate_fv_nest_BC_type(Atm%neststruct%delz_BC)
        endif
 #endif
-
+       if(allocated(Atm%Bcast_ranks)) deallocate(Atm%Bcast_ranks)
+       if(Atm%Bcast_comm /= MPI_COMM_NULL) call MPI_Comm_free(Atm%Bcast_comm,ierr)
     end if
 
     if (Atm%flagstruct%grid_type < 4) then
