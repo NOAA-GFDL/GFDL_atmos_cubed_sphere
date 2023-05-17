@@ -2469,7 +2469,6 @@ contains
                             0, 0, isg, ieg, jsg, jeg, Atm(this_grid)%bd)
     endif
 
-    call mpp_sync_self
     deallocate(g_dat)
 
   end subroutine fill_nested_grid_cpl
