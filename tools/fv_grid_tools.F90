@@ -585,7 +585,7 @@ contains
     if (Atm%flagstruct%grid_type>3) then
        if (Atm%flagstruct%grid_type == 4) then
           call setup_cartesian(npx, npy, Atm%flagstruct%dx_const, Atm%flagstruct%dy_const, &
-               Atm%flagstruct%deglat, Atm%flagstruct%domain_deg, Atm%bd)
+               Atm%flagstruct%deglat, Atm%flagstruct%domain_deg, Atm%bd, Atm)
        elseif (Atm%flagstruct%grid_type == 5) then
           call setup_orthogonal_grid(npx, npy, Atm%bd, grid_file)
        else
@@ -1153,8 +1153,9 @@ contains
 
   contains
 
-    subroutine setup_cartesian(npx, npy, dx_const, dy_const, deglat, domain_deg, bd)
+    subroutine setup_cartesian(npx, npy, dx_const, dy_const, deglat, domain_deg, bd, Atm)
 
+      type(fv_atmos_type), intent(INOUT), target :: Atm
       type(fv_grid_bounds_type), intent(IN) :: bd
        integer, intent(in):: npx, npy
        real(kind=R_GRID), intent(IN) :: deglat
@@ -1271,6 +1272,16 @@ contains
        e2(1,:,:) = 0.
        e2(2,:,:) = 1.
        e2(3,:,:) = 0.
+
+       call mpp_update_domains( area,   Atm%domain, complete=.true. )
+
+       !##############
+       !SETUP THE NEST
+       !##############
+
+       if (Atm%neststruct%nested) then
+         call setup_aligned_nest(Atm)
+       endif  !if nested
 
     end subroutine setup_cartesian
 
@@ -1890,19 +1901,21 @@ contains
 
          call mpp_update_domains( agrid, Atm%domain, position=CENTER, complete=.true. )
 
-      ! Compute dx
-      do j=jsd,jed+1
-         do i=isd,ied
-            dx(i,j) = great_circle_dist(grid_global(i,j,:,1), grid_global(i+1,j,:,1), radius)
-         enddo
-      enddo
+         if (Atm%flagstruct%grid_type /= 4) then !already computed for a cartesian grid
+          ! Compute dx
+          do j=jsd,jed+1
+             do i=isd,ied
+                dx(i,j) = great_circle_dist(grid_global(i,j,:,1), grid_global(i+1,j,:,1), radius)
+             enddo
+          enddo
 
-      ! Compute dy
-      do j=jsd,jed
-         do i=isd,ied+1
-            dy(i,j) = great_circle_dist(grid_global(i,j,:,1), grid_global(i,j+1,:,1), radius)
-         enddo
-      enddo
+          ! Compute dy
+          do j=jsd,jed
+             do i=isd,ied+1
+                dy(i,j) = great_circle_dist(grid_global(i,j,:,1), grid_global(i,j+1,:,1), radius)
+             enddo
+          enddo
+         endif
 
       !We will use Michael Herzog's algorithm for computing the weights.
 
@@ -1974,18 +1987,19 @@ contains
       end do
 
 
-      do j=jsd,jed
-         do i=isd,ied
-            dxa(i,j) = great_circle_dist(c_grid_u(i,j,:), c_grid_u(i+1,j,:), radius)
+      if (Atm%flagstruct%grid_type /= 4) then  !already computed for a cartesian grid
+         do j=jsd,jed
+            do i=isd,ied
+               dxa(i,j) = great_circle_dist(c_grid_u(i,j,:), c_grid_u(i+1,j,:), radius)
+            end do
          end do
-      end do
 
-      do j=jsd,jed
-         do i=isd,ied
-            dya(i,j) = great_circle_dist(c_grid_v(i,j,:), c_grid_v(i,j+1,:), radius)
+         do j=jsd,jed
+            do i=isd,ied
+               dya(i,j) = great_circle_dist(c_grid_v(i,j,:), c_grid_v(i,j+1,:), radius)
+            end do
          end do
-      end do
-
+      endif
 
       !Compute interpolation weights. (Recall that the weights are defined with respect to a d-grid)
 

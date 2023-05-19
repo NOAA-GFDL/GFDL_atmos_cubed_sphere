@@ -356,8 +356,17 @@ contains
             case (4)   ! Cartesian, double periodic
                type="Cartesian: double periodic"
                nregions = 1
-               num_contact = 2
-               npes_per_tile = npes/nregions
+               if (.not. nested) num_contact = 2
+
+               !accomodate a cartesian nest
+               if (nested) then
+                  num_contact = 0
+                  is_symmetry=.true.
+                  if ( npes_x==npes_y .and. (npx-1)==((npx-1)/npes_x)*npes_x )  square_domain = .true.
+               endif
+               !npes_per_tile = npes/nregions
+               !the previous line will crash if there is a nest, all "npes" will be distributed on the first grid only
+               npes_per_tile = npes_x*npes_y
                if(npes_x*npes_y == npes_per_tile) then
                   layout = (/npes_x,npes_y/)
                else
@@ -466,6 +475,7 @@ contains
                is_symmetry = .false.
             case (4)   ! Cartesian, double periodic
                !--- Contact line 1, between tile 1 (EAST) and tile 1 (WEST)
+              if (.not. nested) then
                tile1(1) = 1; tile2(1) = 1
                istart1(1) = nx; iend1(1) = nx; jstart1(1) = 1;  jend1(1) = ny
                istart2(1) = 1;  iend2(1) = 1;  jstart2(1) = 1;  jend2(1) = ny
@@ -473,6 +483,7 @@ contains
                tile1(2) = 1; tile2(2) = 1
                istart1(2) = 1;  iend1(2) = nx; jstart1(2) = 1;   jend1(2) = 1
                istart2(2) = 1;  iend2(2) = nx; jstart2(2) = ny;  jend2(2) = ny
+              endif
             case (5)   ! latlon patch
 
             case (6)   !latlon strip
