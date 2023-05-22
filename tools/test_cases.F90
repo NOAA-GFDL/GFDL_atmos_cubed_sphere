@@ -690,6 +690,7 @@
 
       integer :: is, ie, js, je
       integer :: isd, ied, jsd, jed
+      integer :: counter
 
       is  = bd%is
       ie  = bd%ie
@@ -3343,7 +3344,7 @@
                enddo
             enddo
          endif
-      else if (test_case == 55 .or. test_case == 56 .or. test_case == 57) then
+      else if (test_case == 55 .or. test_case == 56 .or. test_case == 57 .or. test_case == 58) then
 
          !Tropical cyclone test case: DCMIP 5X
 
@@ -3351,6 +3352,10 @@
          ! but no vortex
 
          !test_case 57 uses a globally-uniform f-plane
+
+         ! test_case 58 same as 57 with a second TC in the atlantic
+         ! to test mutiple moving nests
+         counter = 0
 
          ! Initialize surface Pressure
          !Vortex perturbation
@@ -3367,12 +3372,18 @@
          p00 = 101500.
 
          ps = p00
+         ps_u = p00
+         ps_v = p00
+
+         58 continue ! create second TC
+
+         if (is_master() .and. test_case == 58) print*, 'INITIALIZING TC at: ', p0(1), p0(2)
 
          do j=js,je
          do i=is,ie
             p2(:) = agrid(i,j,1:2)
             r = great_circle_dist( p0, p2, radius )
-            ps(i,j) = p00 - dp*exp(-(r/rp)**1.5)
+            ps(i,j) = ps(i,j) - dp*exp(-(r/rp)**1.5)
             phis(i,j) = 0.
          enddo
          enddo
@@ -3405,14 +3416,14 @@
          do i=is,ie+1
             p2(:) = 0.5*(grid(i,j,1:2)+grid(i,j+1,1:2))
             r = great_circle_dist( p0, p2, radius )
-            ps_v(i,j) = p00 - dp*exp(-(r/rp)**1.5)
+            ps_v(i,j) = ps_v(i,j) - dp*exp(-(r/rp)**1.5)
          enddo
          enddo
          do j=js,je+1
          do i=is,ie
             p2(:) = 0.5*(grid(i,j,1:2)+grid(i+1,j,1:2))
             r = great_circle_dist( p0, p2, radius )
-            ps_u(i,j) = p00 - dp*exp(-(r/rp)**1.5)
+            ps_u(i,j) = ps_u(i,j) - dp*exp(-(r/rp)**1.5)
          enddo
          enddo
 
@@ -3445,18 +3456,24 @@
             zvir = rvgas/rdgas - 1.
          !endif
 
-         p0 = (/ pi, pi/18. /)
+       !  p0 = (/ pi, pi/18. /)
 
-         exppr = 1.5
-         exppz = 2.
-         gamma = 0.007
-         Ts0 = 302.15
-         q00 = 0.021
-         t00 = Ts0*(1.+zvir*q00)
-         exponent = rdgas*gamma/grav
-         ztrop = 15000.
-         zp = 7000.
-         dp = 1115.
+         if (counter ==0) then
+           exppr = 1.5
+           exppz = 2.
+           gamma = 0.007
+           Ts0 = 302.15
+           q00 = 0.021
+           t00 = Ts0*(1.+zvir*q00)
+           exponent = rdgas*gamma/grav
+           ztrop = 15000.
+           zp = 7000.
+           dp = 1115.
+           u=0.
+           v=0.
+           pt=1.
+         endif
+
          cor = 2.*omega*sin(p0(2)) !Coriolis at vortex center
 
          !Initialize winds separately on the D-grid
@@ -3487,7 +3504,7 @@
                      vtmp = utmp*d2
                      utmp = utmp*d1
 
-                     v(i,j,k) = utmp*inner_prod(e2,ex) + vtmp*inner_prod(e2,ey)
+                     v(i,j,k) = v(i,j,k) + utmp*inner_prod(e2,ex) + vtmp*inner_prod(e2,ey)
 
                   endif
                enddo
@@ -3520,7 +3537,7 @@
                      vtmp = utmp*d2
                      utmp = utmp*d1
 
-                     u(i,j,k) = utmp*inner_prod(e1,ex) + vtmp*inner_prod(e1,ey)
+                     u(i,j,k) = u(i,j,k) + utmp*inner_prod(e1,ex) + vtmp*inner_prod(e1,ey)
                   endif
                enddo
 
@@ -3546,12 +3563,25 @@
                   q(i,j,k,1) = q00*exp(-height/zq1)*exp(-(height/zq2)**exppz)
                   p2(:) = agrid(i,j,1:2)
                   r = great_circle_dist( p0, p2, radius )
-                  pt(i,j,k) = (T00-gamma*height)/(1.d0+zvir*q(i,j,k,1))/(1.d0+exppz*Rdgas*(T00-gamma*height)*height &
-                       /(grav*zp**exppz*(1.d0-p00/dp*exp((r/rp)**exppr)*exp((height/zp)**exppz))))
+                  if (counter == 0) then
+                     pt(i,j,k) = (T00-gamma*height)/(1.d0+zvir*q(i,j,k,1))/(1.d0+exppz*Rdgas*(T00-gamma*height)*height &
+                          /(grav*zp**exppz*(1.d0-p00/dp*exp((r/rp)**exppr)*exp((height/zp)**exppz))))
+                  elseif (counter > 0 .and. r < 4*rp) then ! find a cleaner way
+                     pt(i,j,k) = (T00-gamma*height)/(1.d0+zvir*q(i,j,k,1))/(1.d0+exppz*Rdgas*(T00-gamma*height)*height &
+                          /(grav*zp**exppz*(1.d0-p00/dp*exp((r/rp)**exppr)*exp((height/zp)**exppz))))
+                  endif
                end if
          enddo
          enddo
          enddo
+
+         if (test_case == 58 .and. counter==0) then
+           p0(1) = -30. * pi / 180.
+           p0(2) = 10. * pi / 180.
+           counter=1
+           if (is_master()) print*, 'Initializing second TC'
+           goto 58
+         endif
 
          !Note that this is already the moist pressure
          do j=js,je
