@@ -165,7 +165,7 @@ use mpp_mod,                only: mpp_error, stdout, FATAL, WARNING, NOTE, &
                                   mpp_npes, mpp_pe, mpp_chksum,   &
                                   mpp_get_current_pelist,         &
                                   mpp_set_current_pelist,         &
-                                  mpp_sync, mpp_sync_self, mpp_send, mpp_recv
+                                  mpp_sync, mpp_sync_self, mpp_send, mpp_recv, mpp_broadcast
 use mpp_parameter_mod,      only: EUPDATE, WUPDATE, SUPDATE, NUPDATE
 use mpp_domains_mod,        only: CENTER, CORNER, NORTH, EAST, WEST, SOUTH
 use mpp_domains_mod,        only: domain2d, mpp_update_domains, mpp_global_field
@@ -2429,12 +2429,12 @@ contains
 !! coupling variables from its parent grid
 !>@details Fill parent2nest_2d on the nested grid with values from its parent.
   subroutine fill_nested_grid_cpl(this_grid, proc_in)
-    use mpi
     integer, intent(in) :: this_grid
     logical, intent(in), optional :: proc_in
 
     real, allocatable :: g_dat(:,:,:)
-    integer :: p, ierr
+    integer, allocatable :: global_pelist(:)
+    integer :: p
     integer :: isd_p, ied_p, jsd_p, jed_p
     integer :: isg, ieg, jsg, jeg
     integer :: isc, iec, jsc, jec
@@ -2459,17 +2459,23 @@ contains
                             Atm(this_grid)%parent_grid%parent2nest_2d(isd_p:ied_p,jsd_p:jed_p), &
                             g_dat(isg:,jsg:,1), position=CENTER)
     endif
+
+    allocate(global_pelist(mpp_npes()))
+    call mpp_get_current_pelist(global_pelist)
     if(any(mpp_pe() == Atm(this_grid)%Bcast_ranks)) then
-      call MPI_Bcast(g_dat, size(g_dat), MPI_REAL, 0, Atm(this_grid)%Bcast_comm, ierr) ! root==0 because sending rank (Atm(this_grid)%sending) is rank zero in Bcast_comm
+      call mpp_set_current_pelist(Atm(this_grid)%Bcast_ranks)
+      call mpp_broadcast(g_dat, size(g_dat),Atm(this_grid)%sending_proc, Atm(this_grid)%Bcast_ranks)
     endif
+    call mpp_set_current_pelist(global_pelist)
+
     call timing_off('COMM_TOTAL')
     if (process) then
       call fill_nested_grid(Atm(this_grid)%parent2nest_2d, g_dat(isg:,jsg:,1), &
                             Atm(this_grid)%neststruct%ind_h, Atm(this_grid)%neststruct%wt_h, &
                             0, 0, isg, ieg, jsg, jeg, Atm(this_grid)%bd)
     endif
-
     deallocate(g_dat)
+    deallocate(global_pelist)
 
   end subroutine fill_nested_grid_cpl
 

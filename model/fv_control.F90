@@ -188,10 +188,6 @@ module fv_control_mod
 
    subroutine fv_control_init(Atm, dt_atmos, this_grid, grids_on_this_pe, p_split, &
                               nml_filename_in, skip_nml_read_in)
-     use mpi
-     use esmf
-     integer :: fcst_mpi_comm, color, ierr, rc
-     type(ESMF_VM) :: vm
 
      type(fv_atmos_type), allocatable, intent(inout), target :: Atm(:)
      real,                intent(in)    :: dt_atmos
@@ -456,10 +452,6 @@ module fv_control_mod
      allocate(global_pelist(npes))
      call mpp_get_current_pelist(global_pelist, commID=global_commID) ! for commID
 
-     ! Need the fcst_mpi_comm in order to construct the communicators used by MPI_Bcast in fill_nested_grid_cpl()
-     call ESMF_VMGetCurrent(vm=vm,rc=rc)
-     call ESMF_VMGet(vm=vm, mpiCommunicator=fcst_mpi_comm, rc=rc)
-
      allocate(grids_master_procs(ngrids))
      pecounter = 0
      allocate(grids_on_this_pe(ngrids))
@@ -681,22 +673,6 @@ module fv_control_mod
         tile_id = mpp_get_tile_id(Atm(n)%domain)
         Atm(n)%global_tile = tile_id(1) ! only meaningful locally
         Atm(n)%npes_per_tile = size(Atm(n)%pelist)/Atm(n)%flagstruct%ntiles ! domain decomp doesn't set this globally
-
-        ! Construct the MPI communicators that are used in fill_nested_grid_cpl()
-        if(n>1) then
-          Atm(n)%sending_proc = Atm(n)%parent_grid%pelist(1) + &
-                     ( Atm(n)%neststruct%parent_tile-tile_fine(Atm(n)%parent_grid%grid_number)+ &
-                       Atm(n)%parent_grid%flagstruct%ntiles-1 )*Atm(n)%parent_grid%npes_per_tile
-          allocate(Atm(n)%Bcast_ranks(0:size(Atm(n)%pelist)))
-
-          Atm(n)%Bcast_ranks(0)=Atm(n)%sending_proc ! parent grid sending rank within the soon to be created Bcast_comm
-          Atm(n)%Bcast_ranks(1:size(Atm(n)%pelist))=Atm(n)%pelist ! Receivers
-
-          color=0
-          if(any(mpp_pe() == Atm(n)%Bcast_ranks)) color=1
-          call MPI_Comm_split(fcst_mpi_comm, color, mpp_pe(), Atm(n)%Bcast_comm, ierr)
-          if(ierr /= MPI_SUCCESS) print*,'fv_control_init: MPI_Comm_split',n,ierr
-        endif
      enddo
 
      ! 6. Set up domain and Atm structure
@@ -756,6 +732,22 @@ module fv_control_mod
      enddo
      Atm(this_grid)%neststruct%parent_proc = ANY(Atm(this_grid)%neststruct%child_grids) !ANY(tile_coarse == Atm(this_grid)%global_tile)
      Atm(this_grid)%neststruct%child_proc = ASSOCIATED(Atm(this_grid)%parent_grid) !this means a nested grid
+
+     call mpp_set_current_pelist( global_pelist )
+     do n=1,ngrids
+        ! Construct the MPI communicators that are used in fill_nested_grid_cpl()
+        if(n>1) then
+          Atm(n)%sending_proc = Atm(n)%parent_grid%pelist(1) + &
+                     ( Atm(n)%neststruct%parent_tile-tile_fine(Atm(n)%parent_grid%grid_number)+ &
+                       Atm(n)%parent_grid%flagstruct%ntiles-1 )*Atm(n)%parent_grid%npes_per_tile
+          allocate(Atm(n)%Bcast_ranks(0:size(Atm(n)%pelist)))
+
+          Atm(n)%Bcast_ranks(0)=Atm(n)%sending_proc ! parent grid sending rank within the soon to be created Bcast_comm
+          Atm(n)%Bcast_ranks(1:size(Atm(n)%pelist))=Atm(n)%pelist ! Receivers
+          call mpp_declare_pelist(Atm(n)%Bcast_ranks)
+        endif
+     enddo
+     call mpp_set_current_pelist(Atm(this_grid)%pelist)
 
      if (ngrids > 1) call setup_update_regions
      if (Atm(this_grid)%neststruct%nestbctype > 1) then

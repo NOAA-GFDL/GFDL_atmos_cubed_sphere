@@ -1303,7 +1303,7 @@ module fv_arrays_mod
      integer, allocatable, dimension(:) :: pelist
 
     ! These are set in fv_control_init() and used in fill_nested_grid_cpl()
-    ! to replace numerous p2p MPI transfers with a single MPI_Bcast
+    ! to replace numerous p2p MPI transfers with a single mpp_broadcast()
     integer, allocatable :: Bcast_ranks(:)
     integer :: Bcast_comm, sending_proc
 
@@ -2070,7 +2070,6 @@ contains
        endif
 #endif
        if(allocated(Atm%Bcast_ranks)) deallocate(Atm%Bcast_ranks)
-       if(Atm%Bcast_comm /= MPI_COMM_NULL) call MPI_Comm_free(Atm%Bcast_comm,ierr)
     end if
 
     if (Atm%flagstruct%grid_type < 4) then
