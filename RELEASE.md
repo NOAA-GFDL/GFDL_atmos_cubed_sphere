@@ -1,3 +1,45 @@
+# RELEASE NOTES for FV3 202305: Summary
+FV3-202305-public --- May 2023
+Lucas Harris, GFDL lucas.harris@noaa.gov
+
+This version has been tested with SHiELD physics release 202305
+and with FMS release 2023.01 from https://github.com/NOAA-GFDL/FMS
+
+This release includes the following:
+- Revised Vertical Remapping Operators (Lucas)
+  - kord=10 reverted back to AM4 version.
+  - Post-AM4 version of kord=10 is now kord=12.
+  - do_am4_remap no longer does anything and is deprecated.
+  - New strictly-monotone operators kord=14, 15 for improving tracer correlations, and kord=13 without subgrid limiting.
+  - kord <= 7 now deprecated; may be removed in a future release.
+- New Test Cases: (Joseph, Kun, Lucas)
+  - Idealized TC test case with SHiELD physics
+  - Zurita-Gotor et al. 2022 Held-Suarez variant
+  - New Stable Boundary Layer (Beale at al.) doubly-periodic test case
+- New nesting updates: (Joseph)
+  - Enable nesting in solo core and add a new idealized test case (58)
+  - Enable adding multiple nests in doubly-periodic test cases using absolute coordinates
+- Additional idealized capability (Linjiong, Kun, Lucas)
+  - Added namelist variable is_ideal_case, which must be used for runs starting (or re-starting) from idealized states.
+  - Begin saving the initial wind fields (u0 and v0) to the restart files
+- GFDL MP and Integrated Physics (Linjiong):
+  - Added options to sub-cycling condensation evaporation (nconds), control timescale or evaporation (do_evap_timescale), and delay condensation and evaporation (delay_cond_evap)
+  - Removed unused 3d microphysics diagnostics to save time and memory
+  - Optimized the mpp domain updates for fast physics
+  - Update gfdl_mp_nml reading code to avoid model crash for absent gfdl_mp_nml
+  - Added an option (do_intermediate_phys) to disable intermediate phys
+  - Removed grid size in GFDL MP energy and mass calculation
+  - Updates to use dry_cp instead of moist_cp in a hydrostatic case
+- Added a function to use O3 data from IFS ICs (Jan-Huey)
+  - Namelist parameter: “use_gfsO3” with the default value = “false”
+  - This function only works when ecmwf_ic = T
+  - If the IFS IC does not include O3 data, or the run would like to use GFS O3 with other IFS ICs, set use_gfsO3 = T
+- Solver Updates (Lucas)
+  - Revised semi-implicit solver to partially linearize vertical sound wave propagation about the hydrostatic state. This removes a specific instability causing deep “columnar” modes in the vertical velocity field due to the equation for the pressure perturbation being updated partially forward-in-time. This removes the spurious modes, reduces vertical velocities, and makes the solver slightly more stable.
+  - MPI bug fix for tracer diffusion
+  - Fast Rayleigh Damping on w controlled by fast_tau_w_sec.
+
+
 # RELEASE NOTES for FV3 202210: Summary
 FV3-202210-public --- October 2022
 Lucas Harris, GFDL lucas.harris@noaa.gov
