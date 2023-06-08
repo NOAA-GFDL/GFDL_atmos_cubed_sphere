@@ -276,6 +276,12 @@ contains
        call fv_io_register_axis(Atm%Fv_restart_tile, numx=numx_2d, numy=numy_2d, xpos=xpos_2d, ypos=ypos_2d, numz=numz, zsize=zsize)
 
        !--- optionally include D-grid winds even if restarting from A-grid winds
+       if (Atm%flagstruct%is_ideal_case) then
+          call register_restart_field(Atm%Fv_restart_tile, 'u0', Atm%u0, &
+               dim_names_4d, is_optional=.true.)
+          call register_restart_field(Atm%Fv_restart_tile, 'v0', Atm%v0, &
+               dim_names_4d2, is_optional=.true.)
+       endif
        if (Atm%flagstruct%write_optional_dgrid_vel_rst .and. Atm%flagstruct%restart_from_agrid_winds) then
           call register_restart_field(Atm%Fv_restart_tile, 'u', Atm%u, &
                dim_names_4d, is_optional=.true.)
@@ -318,6 +324,16 @@ contains
        call register_restart_field(Atm%Fv_restart_tile,  'phis', Atm%phis, dim_names_3d)
 
        if (.not. Atm%Fv_restart_tile%is_readonly) then !if writing file
+         if (Atm%flagstruct%is_ideal_case) then
+           if (variable_exists(Atm%Fv_restart_tile, 'u0')) then
+             call register_variable_attribute(Atm%Fv_restart_tile, 'u0', "long_name", "u0", str_len=len("u0"))
+             call register_variable_attribute(Atm%Fv_restart_tile, 'u0', "units", "none", str_len=len("none"))
+           endif
+           if (variable_exists(Atm%Fv_restart_tile, 'v0')) then
+             call register_variable_attribute(Atm%Fv_restart_tile, 'v0', "long_name", "v0", str_len=len("v0"))
+             call register_variable_attribute(Atm%Fv_restart_tile, 'v0', "units", "none", str_len=len("none"))
+           endif
+         endif
          if (variable_exists(Atm%Fv_restart_tile, 'u')) then
            call register_variable_attribute(Atm%Fv_restart_tile, 'u', "long_name", "u", str_len=len("u"))
            call register_variable_attribute(Atm%Fv_restart_tile, 'u', "units", "none", str_len=len("none"))
@@ -615,7 +631,7 @@ contains
 
 !
 !-------------------------------------------------------------------------
-    real, allocatable:: ak_r(:), bk_r(:)
+    real, allocatable:: ak_r(:), bk_r(:), u0_r(:,:,:), v0_r(:,:,:)
     real, allocatable:: u_r(:,:,:), v_r(:,:,:), pt_r(:,:,:), delp_r(:,:,:)
     real, allocatable:: w_r(:,:,:), delz_r(:,:,:), ze0_r(:,:,:)
     real, allocatable:: q_r(:,:,:,:), qdiag_r(:,:,:,:)
@@ -645,6 +661,8 @@ contains
     allocate ( ak_r(npz_rst+1) )
     allocate ( bk_r(npz_rst+1) )
 
+    allocate ( u0_r(isc:iec,  jsc:jec+1,npz_rst) )
+    allocate ( v0_r(isc:iec+1,jsc:jec  ,npz_rst) )
     allocate ( u_r(isc:iec,  jsc:jec+1,npz_rst) )
     allocate ( v_r(isc:iec+1,jsc:jec  ,npz_rst) )
 
@@ -684,6 +702,10 @@ contains
 
        fname = 'INPUT/fv_core.res'//trim(stile_name)//'.nc'
        if (open_file(Fv_tile_restart_r, fname, "read", fv_domain, is_restart=.true.)) then
+          if (Atm(1)%flagstruct%is_ideal_case) then
+             call read_data(Fv_tile_restart_r, 'u0', u0_r)
+             call read_data(Fv_tile_restart_r, 'v0', v0_r)
+          endif
           call read_data(Fv_tile_restart_r, 'u', u_r)
           call read_data(Fv_tile_restart_r, 'v', v_r)
           if (.not.Atm(1)%flagstruct%hydrostatic) then
@@ -766,15 +788,17 @@ contains
 !      ====== end PJP added DA functionailty======
 
        call rst_remap(npz_rst, npz, isc, iec, jsc, jec, isd, ied, jsd, jed, ntracers, ntprog,      &
-                      delp_r,      u_r,      v_r,      w_r,      delz_r,      pt_r,  q_r,  qdiag_r,&
-                      Atm(1)%delp, Atm(1)%u, Atm(1)%v, Atm(1)%w, Atm(1)%delz, Atm(1)%pt, Atm(1)%q, &
-                      Atm(1)%qdiag, ak_r,  bk_r, Atm(1)%ptop, Atm(1)%ak, Atm(1)%bk,                &
+                      delp_r, u0_r, v0_r, u_r, v_r, w_r, delz_r, pt_r, q_r, qdiag_r, Atm(1)%delp,  &
+                      Atm(1)%u0, Atm(1)%v0, Atm(1)%u, Atm(1)%v, Atm(1)%w, Atm(1)%delz, Atm(1)%pt,  &
+                      Atm(1)%q, Atm(1)%qdiag, ak_r,  bk_r, Atm(1)%ptop, Atm(1)%ak, Atm(1)%bk,      &
                       Atm(1)%flagstruct%hydrostatic, Atm(1)%flagstruct%make_nh, Atm(1)%domain,     &
-                      Atm(1)%gridstruct%square_domain)
+                      Atm(1)%gridstruct%square_domain, Atm(1)%flagstruct%is_ideal_case)
     !end do
 
     deallocate( ak_r )
     deallocate( bk_r )
+    deallocate( u0_r )
+    deallocate( v0_r )
     deallocate( u_r )
     deallocate( v_r )
     deallocate( pt_r )
@@ -1391,6 +1415,12 @@ contains
 #endif
 #endif
 #endif
+    if (Atm%flagstruct%is_ideal_case) then
+       call register_bcs_3d(Atm, Atm%neststruct%BCfile_ne, Atm%neststruct%BCfile_sw, &
+                            fname_ne, fname_sw, 'u0', Atm%u0, Atm%neststruct%u_BC, jstag=1)
+       call register_bcs_3d(Atm, Atm%neststruct%BCfile_ne, Atm%neststruct%BCfile_sw, &
+                            fname_ne, fname_sw, 'v0', Atm%v0, Atm%neststruct%v_BC, istag=1)
+    endif
     call register_bcs_3d(Atm, Atm%neststruct%BCfile_ne, Atm%neststruct%BCfile_sw, &
                          fname_ne, fname_sw, 'u', Atm%u, Atm%neststruct%u_BC, jstag=1)
     call register_bcs_3d(Atm, Atm%neststruct%BCfile_ne, Atm%neststruct%BCfile_sw, &

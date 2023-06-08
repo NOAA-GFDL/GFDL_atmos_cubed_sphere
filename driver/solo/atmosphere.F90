@@ -38,7 +38,9 @@ use fms2_io_mod,   only: file_exists
 use mpp_mod,       only: input_nml_file
 use time_manager_mod, only: time_type, get_time, set_time, operator(+)
 use mpp_domains_mod,  only: domain2d
-use mpp_mod,          only: input_nml_file
+use mpp_mod,          only: input_nml_file, mpp_sync_self, mpp_sync, &
+                                  mpp_set_current_pelist, mpp_npes, &
+                                  mpp_get_current_pelist
 !------------------
 ! FV specific codes:
 !------------------
@@ -46,7 +48,7 @@ use fv_arrays_mod,      only: fv_atmos_type
 use fv_control_mod,     only: fv_control_init, fv_end, ngrids
 use fv_phys_mod,        only: fv_phys, fv_nudge, fv_phys_init
 use fv_diagnostics_mod, only: fv_diag_init, fv_diag, fv_time, eqv_pot
-use fv_timing_mod,      only: timing_on, timing_off
+use fv_timing_mod,      only: timing_on, timing_off, timing_init, timing_prt
 use fv_restart_mod,     only: fv_restart
 use fv_dynamics_mod,    only: fv_dynamics
 use fv_nesting_mod,     only: twoway_nesting
@@ -60,6 +62,7 @@ implicit none
 private
 
 public   atmosphere_init, atmosphere,  atmosphere_end, atmosphere_domain
+public   mygrid
 
 !-----------------------------------------------------------------------
 !---- private data ----
@@ -77,7 +80,8 @@ real, allocatable:: lprec(:,:), fprec(:,:), f_land(:,:)
 type(fv_atmos_type), allocatable, target :: Atm(:)
 
 logical, allocatable :: grids_on_this_pe(:)
-integer :: this_grid !not used yet
+integer :: mygrid = 1 !not used yet
+integer, allocatable :: pelist(:)
 integer :: axes(4)
 integer:: isd, ied, jsd, jed, ngc
 !-----------------------------------------------------------------------
@@ -104,7 +108,12 @@ contains
     integer :: nlunit = 9999
     character (len = 64) :: fn_nml = 'input.nml'
 
-                                           call timing_on('ATMOS_INIT')
+   call timing_init
+   call timing_on('ATMOS_TOTAL')
+   call timing_on('ATMOS_INIT')
+
+    allocate(pelist(mpp_npes()))
+    call mpp_get_current_pelist(pelist)
   !----- write version and namelist to log file -----
 
     call write_version_number ( 'SOLO/ATMOSPHERE_MOD', version )
@@ -118,80 +127,65 @@ contains
   !----- initialize FV dynamical core -----
     cold_start = (.not.file_exists('INPUT/fv_core.res.nc') .and. .not.file_exists('INPUT/fv_core.res.tile1.nc'))
 
-    call fv_control_init(Atm, dt_atmos, this_grid, grids_on_this_pe, p_split)  ! allocates Atm components
+    call fv_control_init(Atm, dt_atmos, mygrid, grids_on_this_pe, p_split)  ! allocates Atm components
 
-    do n=1,ngrids
-       if (grids_on_this_pe(n)) mytile = n
-    enddo
+    call mpp_set_current_pelist(Atm(mygrid)%pelist, no_sync=.TRUE.)
 
-                   call timing_on('fv_restart')
-    call fv_restart(Atm(1)%domain, Atm, dt_atmos, seconds, days, cold_start, &
-         Atm(1)%flagstruct%grid_type, mytile)
-                   call timing_off('fv_restart')
+   call timing_on('FV_RESTART')
+    call fv_restart(Atm(mygrid)%domain, Atm, dt_atmos, seconds, days, cold_start, &
+         Atm(mygrid)%flagstruct%grid_type, mygrid)
+   call timing_off('FV_RESTART')
 
      fv_time = time
 
-     do n=1,ngrids
+     isc = Atm(mygrid)%bd%isc
+     iec = Atm(mygrid)%bd%iec
+     jsc = Atm(mygrid)%bd%jsc
+     jec = Atm(mygrid)%bd%jec
+     isd = Atm(mygrid)%bd%isd
+     ied = Atm(mygrid)%bd%ied
+     jsd = Atm(mygrid)%bd%jsd
+     jed = Atm(mygrid)%bd%jed
 
-        isc = Atm(n)%bd%isc
-        iec = Atm(n)%bd%iec
-        jsc = Atm(n)%bd%jsc
-        jec = Atm(n)%bd%jec
-        isd = Atm(n)%bd%isd
-        ied = Atm(n)%bd%ied
-        jsd = Atm(n)%bd%jsd
-        jed = Atm(n)%bd%jed
+     Atm(mygrid)%flagstruct%moist_phys = .false. ! need this for fv_diag calendar
+     call fv_diag_init(Atm(mygrid:mygrid), axes, Time, Atm(mygrid)%npx, Atm(mygrid)%npy, Atm(mygrid)%npz, Atm(mygrid)%flagstruct%p_ref)
+
+     !   if ( Atm(n)%flagstruct%adiabatic .or. Atm(n)%flagstruct%do_Held_Suarez ) then
+     zvir = 0.
+     if ( Atm(mygrid)%flagstruct%adiabatic ) then
+        Atm(mygrid)%flagstruct%moist_phys = .false.
+     else
+        zvir = rvgas/rdgas - 1.
+        Atm(mygrid)%flagstruct%moist_phys = .true.
+        call fv_phys_init(isc,iec,jsc,jec,Atm(mygrid)%npz,Atm(mygrid)%flagstruct%nwat, Atm(mygrid)%ts, Atm(mygrid)%pt(isc:iec,jsc:jec,:),   &
+                          Time, axes, Atm(mygrid)%gridstruct%agrid(isc:iec,jsc:jec,2))
+     endif
+
+     if (.not. Atm(mygrid)%flagstruct%adiabatic) call gfdl_mp_init (input_nml_file, stdlog(), Atm(mygrid)%flagstruct%hydrostatic)
 
 
-        if ( grids_on_this_pe(n)) then
+        if ( Atm(mygrid)%flagstruct%nudge )    &
+             call fv_nwp_nudge_init( Time, axes, Atm(mygrid)%npz, zvir, Atm(mygrid)%ak, Atm(mygrid)%bk, Atm(mygrid)%ts, &
+             Atm(mygrid)%phis, Atm(mygrid)%gridstruct, Atm(mygrid)%ks, Atm(mygrid)%npx, Atm(mygrid)%neststruct, Atm(mygrid)%bd)
 
-           Atm(N)%flagstruct%moist_phys = .false. ! need this for fv_diag calendar
-           call fv_diag_init(Atm(n:n), axes, Time, Atm(n)%npx, Atm(n)%npy, Atm(n)%npz, Atm(n)%flagstruct%p_ref)
-
+        if ( Atm(mygrid)%flagstruct%make_nh ) then
+           Atm(mygrid)%w(:,:,:) = 0.
         endif
 
-        !   if ( Atm(n)%flagstruct%adiabatic .or. Atm(n)%flagstruct%do_Held_Suarez ) then
-        zvir = 0.
-        if ( Atm(n)%flagstruct%adiabatic ) then
-           Atm(n)%flagstruct%moist_phys = .false.
-        else
-           zvir = rvgas/rdgas - 1.
-           Atm(n)%flagstruct%moist_phys = .true.
-           if ( grids_on_this_pe(n) ) then
-                call fv_phys_init(isc,iec,jsc,jec,Atm(n)%npz,Atm(n)%flagstruct%nwat, Atm(n)%ts, Atm(n)%pt(isc:iec,jsc:jec,:),   &
-                             Time, axes, Atm(n)%gridstruct%agrid(isc:iec,jsc:jec,2))
-           endif
-        endif
-        if (.not. Atm(n)%flagstruct%adiabatic) call gfdl_mp_init (input_nml_file, stdlog(), Atm(n)%flagstruct%hydrostatic)
-
-
-
-        if ( grids_on_this_pe(n) ) then
-
-           if ( Atm(n)%flagstruct%nudge )    &
-                call fv_nwp_nudge_init( Time, axes, Atm(n)%npz, zvir, Atm(n)%ak, Atm(n)%bk, Atm(n)%ts, &
-                Atm(n)%phis, Atm(n)%gridstruct, Atm(n)%ks, Atm(n)%npx, Atm(n)%neststruct, Atm(n)%bd)
-
-           if ( Atm(n)%flagstruct%make_nh ) then
-              Atm(n)%w(:,:,:) = 0.
-           endif
-
-           if ( Atm(n)%flagstruct%na_init>0 ) then
-              call adiabatic_init(zvir,n)
-           endif
-
-           theta_d = get_tracer_index (MODEL_ATMOS, 'theta_d')
-           if ( theta_d > 0 ) then
-              call eqv_pot(Atm(n)%q(isc:iec,jsc:jec,:,theta_d), Atm(n)%pt, Atm(n)%delp,    &
-                   Atm(n)%delz, Atm(n)%peln, Atm(n)%pkz, Atm(n)%q(isd,jsd,1,1), isc, iec, jsc, jec, Atm(n)%ng,   &
-                   Atm(n)%npz,  Atm(n)%flagstruct%hydrostatic, Atm(n)%flagstruct%moist_phys)
-           endif
-
+        if ( Atm(mygrid)%flagstruct%na_init>0 ) then
+           call adiabatic_init(zvir,mygrid)
         endif
 
-     enddo
+        theta_d = get_tracer_index (MODEL_ATMOS, 'theta_d')
+        if ( theta_d > 0 ) then
+           call eqv_pot(Atm(mygrid)%q(isc:iec,jsc:jec,:,theta_d), Atm(mygrid)%pt, Atm(mygrid)%delp,    &
+                Atm(mygrid)%delz, Atm(mygrid)%peln, Atm(mygrid)%pkz, Atm(mygrid)%q(isd,jsd,1,1), isc, iec, jsc, jec, Atm(mygrid)%ng,   &
+                Atm(mygrid)%npz,  Atm(mygrid)%flagstruct%hydrostatic, Atm(mygrid)%flagstruct%moist_phys)
+        endif
 
-                                           call timing_off('ATMOS_INIT')
+
+   call timing_off('ATMOS_INIT')
+
   end subroutine atmosphere_init
 
  subroutine adiabatic_init(zvir, n)
@@ -228,7 +222,6 @@ contains
     jsd = jsc - ngc
     jed = jec + ngc
 
-     call timing_on('adiabatic_init')
      do_adiabatic_init = .true.
 
      allocate ( u0(isc:iec,  jsc:jec+1, npz) )
@@ -265,8 +258,8 @@ contains
     call fv_dynamics(Atm(n)%npx, Atm(n)%npy, npz,  Atm(n)%ncnst, Atm(n)%ng, dt_atmos, 0.,      &
                      Atm(n)%flagstruct%fill, Atm(n)%flagstruct%reproduce_sum, kappa, cp_air, zvir,  &
                      Atm(n)%ptop, Atm(n)%ks, Atm(n)%ncnst, Atm(n)%flagstruct%n_split,        &
-                     Atm(n)%flagstruct%q_split, Atm(n)%u, Atm(n)%v, Atm(n)%w,         &
-                     Atm(n)%delz, Atm(n)%flagstruct%hydrostatic,                      &
+                     Atm(n)%flagstruct%q_split, Atm(n)%u0, Atm(n)%v0, Atm(n)%u,       &
+                     Atm(n)%v, Atm(n)%w, Atm(n)%delz, Atm(n)%flagstruct%hydrostatic,  &
                      Atm(n)%pt, Atm(n)%delp, Atm(n)%q, Atm(n)%ps,                     &
                      Atm(n)%pe, Atm(n)%pk, Atm(n)%peln, Atm(n)%pkz, Atm(n)%phis,      &
                      Atm(n)%q_con, Atm(n)%omga, Atm(n)%ua, Atm(n)%va, Atm(n)%uc, Atm(n)%vc, &
@@ -279,8 +272,8 @@ contains
     call fv_dynamics(Atm(n)%npx, Atm(n)%npy, npz,  Atm(n)%ncnst, Atm(n)%ng, -dt_atmos, 0.,      &
                      Atm(n)%flagstruct%fill, Atm(n)%flagstruct%reproduce_sum, kappa, cp_air, zvir,  &
                      Atm(n)%ptop, Atm(n)%ks, Atm(n)%ncnst, Atm(n)%flagstruct%n_split,        &
-                     Atm(n)%flagstruct%q_split, Atm(n)%u, Atm(n)%v, Atm(n)%w,         &
-                     Atm(n)%delz, Atm(n)%flagstruct%hydrostatic,                      &
+                     Atm(n)%flagstruct%q_split, Atm(n)%u0, Atm(n)%v0, Atm(n)%u,       &
+                     Atm(n)%v, Atm(n)%w, Atm(n)%delz, Atm(n)%flagstruct%hydrostatic,  &
                      Atm(n)%pt, Atm(n)%delp, Atm(n)%q, Atm(n)%ps,                     &
                      Atm(n)%pe, Atm(n)%pk, Atm(n)%peln, Atm(n)%pkz, Atm(n)%phis,      &
                      Atm(n)%q_con, Atm(n)%omga, Atm(n)%ua, Atm(n)%va, Atm(n)%uc, Atm(n)%vc, &
@@ -326,8 +319,8 @@ contains
     call fv_dynamics(Atm(n)%npx, Atm(n)%npy, npz,  Atm(n)%ncnst, Atm(n)%ng, -dt_atmos, 0.,      &
                      Atm(n)%flagstruct%fill, Atm(n)%flagstruct%reproduce_sum, kappa, cp_air, zvir,  &
                      Atm(n)%ptop, Atm(n)%ks, Atm(n)%ncnst, Atm(n)%flagstruct%n_split,        &
-                     Atm(n)%flagstruct%q_split, Atm(n)%u, Atm(n)%v, Atm(n)%w,         &
-                     Atm(n)%delz, Atm(n)%flagstruct%hydrostatic,                      &
+                     Atm(n)%flagstruct%q_split, Atm(n)%u0, Atm(n)%v0, Atm(n)%u,       &
+                     Atm(n)%v, Atm(n)%w, Atm(n)%delz, Atm(n)%flagstruct%hydrostatic,  &
                      Atm(n)%pt, Atm(n)%delp, Atm(n)%q, Atm(n)%ps,                     &
                      Atm(n)%pe, Atm(n)%pk, Atm(n)%peln, Atm(n)%pkz, Atm(n)%phis,      &
                      Atm(n)%q_con, Atm(n)%omga, Atm(n)%ua, Atm(n)%va, Atm(n)%uc, Atm(n)%vc, &
@@ -340,8 +333,8 @@ contains
     call fv_dynamics(Atm(n)%npx, Atm(n)%npy, npz,  Atm(n)%ncnst, Atm(n)%ng, dt_atmos, 0.,      &
                      Atm(n)%flagstruct%fill, Atm(n)%flagstruct%reproduce_sum, kappa, cp_air, zvir,  &
                      Atm(n)%ptop, Atm(n)%ks, Atm(n)%ncnst, Atm(n)%flagstruct%n_split,        &
-                     Atm(n)%flagstruct%q_split, Atm(n)%u, Atm(n)%v, Atm(n)%w,         &
-                     Atm(n)%delz, Atm(n)%flagstruct%hydrostatic,                      &
+                     Atm(n)%flagstruct%q_split, Atm(n)%u0, Atm(n)%v0, Atm(n)%u,       &
+                     Atm(n)%v, Atm(n)%w, Atm(n)%delz, Atm(n)%flagstruct%hydrostatic,  &
                      Atm(n)%pt, Atm(n)%delp, Atm(n)%q, Atm(n)%ps,                     &
                      Atm(n)%pe, Atm(n)%pk, Atm(n)%peln, Atm(n)%pkz, Atm(n)%phis,      &
                      Atm(n)%q_con, Atm(n)%omga, Atm(n)%ua, Atm(n)%va, Atm(n)%uc, Atm(n)%vc, &
@@ -391,7 +384,6 @@ contains
      deallocate (dp0 )
 
      do_adiabatic_init = .false.
-     call timing_off('adiabatic_init')
 
  end subroutine adiabatic_init
 
@@ -405,8 +397,8 @@ contains
     integer :: n, sphum, p, nc
     integer :: psc ! p_split counter
 
+    call timing_on('ATMOS_DYNAMICS')
 
-                                           call timing_on('ATMOSPHERE')
     fv_time = Time + Time_step_atmos
     call get_time (fv_time, seconds,  days)
 
@@ -414,105 +406,89 @@ contains
 
     do psc=1,abs(p_split)
 
-    do n=1,ngrids
+    n=mygrid
 
-       if (.not. grids_on_this_pe(n)) then
-          cycle
-       endif
+    call mpp_set_current_pelist(Atm(n)%pelist, no_sync=.TRUE.)
 
        if ( Atm(n)%flagstruct%nudge_ic )     &
             call  fv_nudge(Atm(n)%npz, Atm(n)%bd%isc, Atm(n)%bd%iec, Atm(n)%bd%jsc, Atm(n)%bd%jec, Atm(n)%ng, &
             Atm(n)%u, Atm(n)%v, Atm(n)%w, Atm(n)%delz, Atm(n)%delp, Atm(n)%pt, dt_atmos/real(abs(p_split)), Atm(n)%flagstruct%hydrostatic )
 
-       !---- call fv dynamics -----
-!      if ( Atm(n)%flagstruct%adiabatic .or. Atm(n)%flagstruct%do_Held_Suarez ) then
-       if ( Atm(n)%flagstruct%adiabatic ) then
-          zvir = 0.         ! no virtual effect
-       else
-          zvir = rvgas/rdgas - 1.
-       endif
+    !---- call fv dynamics -----
+    !if ( Atm(n)%flagstruct%adiabatic .or. Atm(n)%flagstruct%do_Held_Suarez ) then
+    if ( Atm(n)%flagstruct%adiabatic ) then
+       zvir = 0.         ! no virtual effect
+    else
+       zvir = rvgas/rdgas - 1.
+    endif
 
-                                              call timing_on('fv_dynamics')
-       call fv_dynamics(Atm(n)%npx, Atm(n)%npy, Atm(n)%npz, Atm(n)%ncnst, Atm(n)%ng,   &
-            dt_atmos/real(abs(p_split)), Atm(n)%flagstruct%consv_te, Atm(n)%flagstruct%fill, &
-            Atm(n)%flagstruct%reproduce_sum, kappa,   &
-            cp_air, zvir, Atm(n)%ptop, Atm(n)%ks, Atm(n)%ncnst, &
-            Atm(n)%flagstruct%n_split, Atm(n)%flagstruct%q_split, &
-            Atm(n)%u, Atm(n)%v, Atm(n)%w, Atm(n)%delz,       &
-            Atm(n)%flagstruct%hydrostatic, Atm(n)%pt, Atm(n)%delp, Atm(n)%q, Atm(n)%ps, &
-            Atm(n)%pe, Atm(n)%pk, Atm(n)%peln, Atm(n)%pkz,             &
-            Atm(n)%phis, Atm(n)%q_con, Atm(n)%omga, Atm(n)%ua, Atm(n)%va, Atm(n)%uc, Atm(n)%vc,  &
-            Atm(n)%ak, Atm(n)%bk, Atm(n)%mfx, Atm(n)%mfy, Atm(n)%cx, Atm(n)%cy,    &
-            Atm(n)%ze0, Atm(n)%flagstruct%hybrid_z, Atm(n)%gridstruct, Atm(n)%flagstruct, &
-            Atm(n)%neststruct, Atm(n)%idiag, Atm(n)%bd, Atm(n)%parent_grid, Atm(n)%domain, &
-            Atm(n)%inline_mp, Atm(n)%diss_est, time_total=time_total)
-                                              call timing_off('fv_dynamics')
-    end do
+       call timing_on('FV_DYNAMICS')
+    call fv_dynamics(Atm(n)%npx, Atm(n)%npy, Atm(n)%npz, Atm(n)%ncnst, Atm(n)%ng,   &
+         dt_atmos/real(abs(p_split)), Atm(n)%flagstruct%consv_te, Atm(n)%flagstruct%fill, &
+         Atm(n)%flagstruct%reproduce_sum, kappa,   &
+         cp_air, zvir, Atm(n)%ptop, Atm(n)%ks, Atm(n)%ncnst, &
+         Atm(n)%flagstruct%n_split, Atm(n)%flagstruct%q_split, &
+         Atm(n)%u0, Atm(n)%v0, Atm(n)%u, Atm(n)%v, Atm(n)%w, Atm(n)%delz, &
+         Atm(n)%flagstruct%hydrostatic, Atm(n)%pt, Atm(n)%delp, Atm(n)%q, Atm(n)%ps, &
+         Atm(n)%pe, Atm(n)%pk, Atm(n)%peln, Atm(n)%pkz,             &
+         Atm(n)%phis, Atm(n)%q_con, Atm(n)%omga, Atm(n)%ua, Atm(n)%va, Atm(n)%uc, Atm(n)%vc,  &
+         Atm(n)%ak, Atm(n)%bk, Atm(n)%mfx, Atm(n)%mfy, Atm(n)%cx, Atm(n)%cy,    &
+         Atm(n)%ze0, Atm(n)%flagstruct%hybrid_z, Atm(n)%gridstruct, Atm(n)%flagstruct, &
+         Atm(n)%neststruct, Atm(n)%idiag, Atm(n)%bd, Atm(n)%parent_grid, Atm(n)%domain, &
+         Atm(n)%inline_mp, Atm(n)%diss_est, time_total=time_total)
+       call timing_off('FV_DYNAMICS')
 
     if (ngrids > 1 .and. (psc < p_split .or. p_split < 0)) then
        call timing_on('TWOWAY_UPDATE')
-       call twoway_nesting(Atm, ngrids, grids_on_this_pe, zvir, fv_time, mytile)
+       call twoway_nesting(Atm, ngrids, grids_on_this_pe, zvir, fv_time, mygrid)
        call timing_off('TWOWAY_UPDATE')
     endif
 
     end do !p_split
 
-    do n=1,ngrids
+    if(Atm(n)%npz /=1 .and. .not. Atm(n)%flagstruct%adiabatic)then
 
-       if (.not. grids_on_this_pe(n)) then
-          cycle
+           call timing_on('FV_PHYS')
+    call fv_phys(Atm(n)%npx, Atm(n)%npy, Atm(n)%npz, Atm(n)%bd%isc, Atm(n)%bd%iec, &
+            Atm(n)%bd%jsc, Atm(n)%bd%jec, Atm(n)%ng, Atm(n)%ncnst,                &
+            Atm(n)%u, Atm(n)%v, Atm(n)%w, Atm(n)%pt, Atm(n)%q, Atm(n)%pe,   &
+            Atm(n)%delp, Atm(n)%peln, Atm(n)%pkz, dt_atmos,                 &
+            Atm(n)%ua, Atm(n)%va, Atm(n)%phis, Atm(n)%gridstruct%agrid,     &
+            Atm(n)%ptop, Atm(n)%ak, Atm(n)%bk, Atm(n)%ks, Atm(n)%ps, Atm(n)%pk, &
+            Atm(n)%u_srf, Atm(n)%v_srf,  Atm(n)%ts, Atm(n)%delz,            &
+            Atm(n)%flagstruct%hydrostatic, Atm(n)%oro, .false.,             &
+            Atm(n)%flagstruct%p_ref,                                        &
+            Atm(n)%flagstruct%fv_sg_adj, Atm(n)%flagstruct%do_Held_Suarez,  &
+            Atm(n)%gridstruct, Atm(n)%flagstruct, Atm(n)%neststruct,        &
+            Atm(n)%flagstruct%nwat, Atm(n)%bd,                              &
+            Atm(n)%domain, fv_time, Atm(n)%phys_diag, Atm(n)%nudge_diag, time_total)
+           call timing_off('FV_PHYS')
        endif
-
-       if(Atm(n)%npz /=1 .and. .not. Atm(n)%flagstruct%adiabatic)then
-
-                                                         call timing_on('FV_PHYS')
-           call fv_phys(Atm(n)%npx, Atm(n)%npy, Atm(n)%npz, Atm(n)%bd%isc, Atm(n)%bd%iec, &
-                    Atm(n)%bd%jsc, Atm(n)%bd%jec, Atm(n)%ng, Atm(n)%ncnst,                &
-                    Atm(n)%u, Atm(n)%v, Atm(n)%w, Atm(n)%pt, Atm(n)%q, Atm(n)%pe,   &
-                    Atm(n)%delp, Atm(n)%peln, Atm(n)%pkz, dt_atmos,                 &
-                    Atm(n)%ua, Atm(n)%va, Atm(n)%phis, Atm(n)%gridstruct%agrid,     &
-                    Atm(n)%ptop, Atm(n)%ak, Atm(n)%bk, Atm(n)%ks, Atm(n)%ps, Atm(n)%pk, &
-                    Atm(n)%u_srf, Atm(n)%v_srf,  Atm(n)%ts, Atm(n)%delz,            &
-                    Atm(n)%flagstruct%hydrostatic, Atm(n)%oro, .false.,             &
-                    Atm(n)%flagstruct%p_ref,                                        &
-                    Atm(n)%flagstruct%fv_sg_adj, Atm(n)%flagstruct%do_Held_Suarez,  &
-                    Atm(n)%gridstruct, Atm(n)%flagstruct, Atm(n)%neststruct,        &
-                    Atm(n)%flagstruct%nwat, Atm(n)%bd,                              &
-                    Atm(n)%domain, fv_time, Atm(n)%phys_diag, Atm(n)%nudge_diag, time_total)
-                                                        call timing_off('FV_PHYS')
-       endif
-
-    end do
 
     if (ngrids > 1 .and. p_split > 0) then
        call timing_on('TWOWAY_UPDATE')
-       call twoway_nesting(Atm, ngrids, grids_on_this_pe, zvir, fv_time, mytile)
+       call twoway_nesting(Atm, ngrids, grids_on_this_pe, zvir, fv_time, mygrid)
        call timing_off('TWOWAY_UPDATE')
     endif
 
 
   !---- diagnostics for FV dynamics -----
 
-    do n=1,ngrids
 
-       if (.not. grids_on_this_pe(n)) then
-          cycle
-       endif
+   !For correct diagnostics (may need to be changed for moist Held-Suarez)
+   if ( Atm(n)%flagstruct%adiabatic .or. Atm(n)%flagstruct%do_Held_Suarez ) then
+       zvir = 0.         ! no virtual effect
+    else
+       zvir = rvgas/rdgas - 1.
+    endif
 
-      !For correct diagnostics (may need to be changed for moist Held-Suarez)
-      if ( Atm(n)%flagstruct%adiabatic .or. Atm(n)%flagstruct%do_Held_Suarez ) then
-          zvir = 0.         ! no virtual effect
-       else
-          zvir = rvgas/rdgas - 1.
-       endif
+    call timing_on('FV_DIAG')
+    call fv_diag(Atm(n:n), zvir, fv_time, Atm(n)%flagstruct%print_freq)
+    call timing_off('FV_DIAG')
 
-       call timing_on('FV_DIAG')
-       call fv_diag(Atm(n:n), zvir, fv_time, Atm(n)%flagstruct%print_freq)
+    call timing_off('ATMOS_DYNAMICS')
+    call mpp_set_current_pelist()
 
-       call timing_off('FV_DIAG')
-    end do
-
-                                           call timing_off('ATMOSPHERE')
  end subroutine atmosphere
 
 
@@ -520,14 +496,19 @@ contains
 
    integer n
 
+    call timing_on('ATMOS_END')
+
     call get_time (fv_time, seconds,  days)
 
-    do n=1,ngrids
-       if ( Atm(n)%flagstruct%moist_phys .and. Atm(n)%flagstruct%nwat==6 .and. grids_on_this_pe(N)) call gfdl_mp_end
-    enddo
+    if ( Atm(mygrid)%flagstruct%moist_phys .and. Atm(mygrid)%flagstruct%nwat==6 ) call gfdl_mp_end
 
-    call fv_end(Atm, mytile)
+    call fv_end(Atm, mygrid)
     deallocate(Atm)
+
+    call timing_off('ATMOS_END')
+    call timing_off('ATMOS_TOTAL')
+    call timing_prt( mpp_pe() )
+    call mpp_set_current_pelist()
 
   end subroutine atmosphere_end
 
@@ -537,7 +518,7 @@ contains
 !  returns the domain2d variable associated with the coupling grid
 !  note: coupling is done using the mass/temperature grid with no halos
 
-   fv_domain = Atm(mytile)%domain
+   fv_domain = Atm(mygrid)%domain
 
  end subroutine atmosphere_domain
 

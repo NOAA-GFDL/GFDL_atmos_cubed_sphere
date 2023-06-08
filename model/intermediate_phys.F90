@@ -31,7 +31,6 @@ module intermediate_phys_mod
     use fv_grid_utils_mod, only: cubed_to_latlon, update_dwinds_phys
     use fv_arrays_mod, only: fv_grid_type, fv_grid_bounds_type, inline_mp_type
     use mpp_domains_mod, only: domain2d, mpp_update_domains
-    use fv_timing_mod, only: timing_on, timing_off
     use tracer_manager_mod, only: get_tracer_index, get_tracer_names
     use field_manager_mod, only: model_atmos
     use gfdl_mp_mod, only: gfdl_mp_driver, fast_sat_adj, mtetw
@@ -177,8 +176,6 @@ subroutine intermediate_phys (is, ie, js, je, isd, ied, jsd, jed, km, npx, npy, 
     ! Note: pt at this stage is T_v
     if ((do_adiabatic_init .or. (.not. do_inline_mp) .or. do_sat_adj) .and. nwat .eq. 6) then
 
-        call timing_on ('fast_sat_adj')
-
         allocate (dz (is:ie, kmp:km))
 
         allocate (tz (kmp:km))
@@ -189,9 +186,8 @@ subroutine intermediate_phys (is, ie, js, je, isd, ied, jsd, jed, km, npx, npy, 
 !$OMP                                    liq_wat, ice_wat, snowwat, graupel, q_con, r_vir, &
 !$OMP                                    sphum, pkz, last_step, consv, te0_2d, gridstruct, &
 !$OMP                                    q, mdt, cld_amt, cappa, rrg, akap, ccn_cm3, &
-!$OMP                                    cin_cm3, aerosol, inline_mp, do_sat_adj, &
-!$OMP                                    adj_mass_vmr, conv_vmr_mmr, nq, consv_checker, &
-!$OMP                                    te_err, tw_err) &
+!$OMP                                    cin_cm3, aerosol, do_sat_adj, adj_mass_vmr, &
+!$OMP                                    conv_vmr_mmr, nq, consv_checker, te_err, tw_err) &
 !$OMP                           private (q2, q3, gsize, dz, pe, peln, adj_vmr, qliq, qsol, &
 !$OMP                                    tz, wz, dte, te_beg, tw_beg, te_b_beg, tw_b_beg, &
 !$OMP                                    te_end, tw_end, te_b_end, tw_b_end, te_loss)
@@ -232,7 +228,7 @@ subroutine intermediate_phys (is, ie, js, je, isd, ied, jsd, jed, km, npx, npy, 
                     call mtetw (kmp, km, q (i, j, kmp:km, sphum), q (i, j, kmp:km, liq_wat), &
                         q (i, j, kmp:km, rainwat), q (i, j, kmp:km, ice_wat), q (i, j, kmp:km, snowwat), &
                         q (i, j, kmp:km, graupel), tz (kmp:km), ua (i, j, kmp:km), va (i, j, kmp:km), wz (kmp:km), &
-                        delp (i, j, kmp:km), gsize (i), dte (i), 0.0, 0.0, 0.0, 0.0, 0.0, &
+                        delp (i, j, kmp:km), dte (i), 0.0, 0.0, 0.0, 0.0, 0.0, &
                         0.0, 0.0, 0.0, abs (mdt), te_beg (i, kmp:km), tw_beg (i, kmp:km), &
                         te_b_beg (i), tw_b_beg (i), .true., hydrostatic)
                 enddo
@@ -272,8 +268,7 @@ subroutine intermediate_phys (is, ie, js, je, isd, ied, jsd, jed, km, npx, npy, 
 #else
                      cappa (isd:, jsd, 1:), &
 #endif
-                     gsize, last_step, inline_mp%cond (is:ie, j), inline_mp%reevap (is:ie, j), &
-                     inline_mp%dep (is:ie, j), inline_mp%sub (is:ie, j), do_sat_adj)
+                     gsize, last_step, do_sat_adj)
 
             ! update non-microphyiscs tracers due to mass change
             if (adj_mass_vmr .gt. 0) then
@@ -312,7 +307,7 @@ subroutine intermediate_phys (is, ie, js, je, isd, ied, jsd, jed, km, npx, npy, 
                     call mtetw (kmp, km, q (i, j, kmp:km, sphum), q (i, j, kmp:km, liq_wat), &
                         q (i, j, kmp:km, rainwat), q (i, j, kmp:km, ice_wat), q (i, j, kmp:km, snowwat), &
                         q (i, j, kmp:km, graupel), tz (kmp:km), ua (i, j, kmp:km), va (i, j, kmp:km), wz (kmp:km), &
-                        delp (i, j, kmp:km), gsize (i), dte (i), 0.0, 0.0, 0.0, 0.0, 0.0, &
+                        delp (i, j, kmp:km), dte (i), 0.0, 0.0, 0.0, 0.0, 0.0, &
                         0.0, 0.0, 0.0, abs (mdt), te_end (i, kmp:km), tw_end (i, kmp:km), &
                         te_b_end (i), tw_b_end (i), .true., hydrostatic, te_loss (i))
                 enddo
@@ -333,16 +328,16 @@ subroutine intermediate_phys (is, ie, js, je, isd, ied, jsd, jed, km, npx, npy, 
                     if (abs (sum (te_end (i, kmp:km)) + te_b_end (i) - sum (te_beg (i, kmp:km)) - te_b_beg (i)) / &
                          (sum (te_beg (i, kmp:km)) + te_b_beg (i)) .gt. te_err) then
                         print*, "FAST_SAT_ADJ TE: ", &
-                            !(sum (te_beg (i, kmp:km)) + te_b_beg (i)) / (gsize (i) ** 2), &
-                            !(sum (te_end (i, kmp:km)) + te_b_end (i)) / (gsize (i) ** 2), &
+                            !(sum (te_beg (i, kmp:km)) + te_b_beg (i)), &
+                            !(sum (te_end (i, kmp:km)) + te_b_end (i)), &
                             (sum (te_end (i, kmp:km)) + te_b_end (i) - sum (te_beg (i, kmp:km)) - te_b_beg (i)) / &
                             (sum (te_beg (i, kmp:km)) + te_b_beg (i))
                     endif
                     if (abs (sum (tw_end (i, kmp:km)) + tw_b_end (i) - sum (tw_beg (i, kmp:km)) - tw_b_beg (i)) / &
                          (sum (tw_beg (i, kmp:km)) + tw_b_beg (i)) .gt. tw_err) then
                         print*, "FAST_SAT_ADJ TW: ", &
-                            !(sum (tw_beg (i, kmp:km)) + tw_b_beg (i)) / (gsize (i) ** 2), &
-                            !(sum (tw_end (i, kmp:km)) + tw_b_end (i)) / (gsize (i) ** 2), &
+                            !(sum (tw_beg (i, kmp:km)) + tw_b_beg (i)), &
+                            !(sum (tw_end (i, kmp:km)) + tw_b_end (i)), &
                             (sum (tw_end (i, kmp:km)) + tw_b_end (i) - sum (tw_beg (i, kmp:km)) - tw_b_beg (i)) / &
                             (sum (tw_beg (i, kmp:km)) + tw_b_beg (i))
                     endif
@@ -357,8 +352,6 @@ subroutine intermediate_phys (is, ie, js, je, isd, ied, jsd, jed, km, npx, npy, 
         deallocate (tz)
         deallocate (wz)
 
-        call timing_off ('fast_sat_adj')
-
     endif
 
     !-----------------------------------------------------------------------
@@ -370,8 +363,6 @@ subroutine intermediate_phys (is, ie, js, je, isd, ied, jsd, jed, km, npx, npy, 
     !-----------------------------------------------------------------------
 
     if ((.not. do_adiabatic_init) .and. do_inline_mp .and. nwat .eq. 6) then
-
-        call timing_on ('gfdl_mp')
 
         allocate (u_dt (isd:ied, jsd:jed, km))
         allocate (v_dt (isd:ied, jsd:jed, km))
@@ -450,7 +441,6 @@ subroutine intermediate_phys (is, ie, js, je, isd, ied, jsd, jed, km, npx, npy, 
             ! note: the unit of area is m^2
             ! note: the unit of prew, prer, prei, pres, preg is mm/day
             ! note: the unit of prefluxw, prefluxr, prefluxi, prefluxs, prefluxg is mm/day
-            ! note: the unit of cond, dep, reevap, sub is mm/day
 
             ! save ua, va for wind tendency calculation
             u_dt (is:ie, j, kmp:km) = ua (is:ie, j, kmp:km)
@@ -501,7 +491,7 @@ subroutine intermediate_phys (is, ie, js, je, isd, ied, jsd, jed, km, npx, npy, 
                     call mtetw (kmp, km, q (i, j, kmp:km, sphum), q (i, j, kmp:km, liq_wat), &
                         q (i, j, kmp:km, rainwat), q (i, j, kmp:km, ice_wat), q (i, j, kmp:km, snowwat), &
                         q (i, j, kmp:km, graupel), tz (kmp:km), ua (i, j, kmp:km), va (i, j, kmp:km), wz (kmp:km), &
-                        delp (i, j, kmp:km), gsize (i), dte (i), 0.0, inline_mp%prew (i, j), &
+                        delp (i, j, kmp:km), dte (i), 0.0, inline_mp%prew (i, j), &
                         inline_mp%prer (i, j), inline_mp%prei (i, j), inline_mp%pres (i, j), &
                         inline_mp%preg (i, j), 0.0, 0.0, abs (mdt), te_beg (i, kmp:km), tw_beg (i, kmp:km), &
                         te_b_beg (i), tw_b_beg (i), .true., hydrostatic)
@@ -547,26 +537,10 @@ subroutine intermediate_phys (is, ie, js, je, isd, ied, jsd, jed, km, npx, npy, 
                      cappa (isd:, jsd, 1:), &
 #endif
                      consv .gt. consv_min, adj_vmr (is:ie, kmp:km), te (is:ie, j, kmp:km), dte (is:ie), &
-                     inline_mp%pcw (is:ie, j, kmp:km), inline_mp%edw (is:ie, j, kmp:km), &
-                     inline_mp%oew (is:ie, j, kmp:km), &
-                     inline_mp%rrw (is:ie, j, kmp:km), inline_mp%tvw (is:ie, j, kmp:km), &
-                     inline_mp%pci (is:ie, j, kmp:km), inline_mp%edi (is:ie, j, kmp:km), &
-                     inline_mp%oei (is:ie, j, kmp:km), &
-                     inline_mp%rri (is:ie, j, kmp:km), inline_mp%tvi (is:ie, j, kmp:km), &
-                     inline_mp%pcr (is:ie, j, kmp:km), inline_mp%edr (is:ie, j, kmp:km), &
-                     inline_mp%oer (is:ie, j, kmp:km), &
-                     inline_mp%rrr (is:ie, j, kmp:km), inline_mp%tvr (is:ie, j, kmp:km), &
-                     inline_mp%pcs (is:ie, j, kmp:km), inline_mp%eds (is:ie, j, kmp:km), &
-                     inline_mp%oes (is:ie, j, kmp:km), &
-                     inline_mp%rrs (is:ie, j, kmp:km), inline_mp%tvs (is:ie, j, kmp:km), &
-                     inline_mp%pcg (is:ie, j, kmp:km), inline_mp%edg (is:ie, j, kmp:km), &
-                     inline_mp%oeg (is:ie, j, kmp:km), &
-                     inline_mp%rrg (is:ie, j, kmp:km), inline_mp%tvg (is:ie, j, kmp:km), &
                      inline_mp%prefluxw(is:ie, j, kmp:km), &
                      inline_mp%prefluxr(is:ie, j, kmp:km), inline_mp%prefluxi(is:ie, j, kmp:km), &
                      inline_mp%prefluxs(is:ie, j, kmp:km), inline_mp%prefluxg(is:ie, j, kmp:km), &
-                     inline_mp%cond (is:ie, j), inline_mp%dep (is:ie, j), inline_mp%reevap (is:ie, j), &
-                     inline_mp%sub (is:ie, j), last_step, do_inline_mp)
+                     last_step, do_inline_mp)
 
             ! update non-microphyiscs tracers due to mass change
             if (adj_mass_vmr .gt. 0) then
@@ -647,7 +621,7 @@ subroutine intermediate_phys (is, ie, js, je, isd, ied, jsd, jed, km, npx, npy, 
                     call mtetw (kmp, km, q (i, j, kmp:km, sphum), q (i, j, kmp:km, liq_wat), &
                         q (i, j, kmp:km, rainwat), q (i, j, kmp:km, ice_wat), q (i, j, kmp:km, snowwat), &
                         q (i, j, kmp:km, graupel), tz (kmp:km), ua (i, j, kmp:km), va (i, j, kmp:km), wz (kmp:km), &
-                        delp (i, j, kmp:km), gsize (i), dte (i), 0.0, inline_mp%prew (i, j), &
+                        delp (i, j, kmp:km), dte (i), 0.0, inline_mp%prew (i, j), &
                         inline_mp%prer (i, j), inline_mp%prei (i, j), inline_mp%pres (i, j), &
                         inline_mp%preg (i, j), 0.0, 0.0, abs (mdt), te_end (i, kmp:km), tw_end (i, kmp:km), &
                         te_b_end (i), tw_b_end (i), .true., hydrostatic, te_loss (i))
@@ -669,16 +643,16 @@ subroutine intermediate_phys (is, ie, js, je, isd, ied, jsd, jed, km, npx, npy, 
                     if (abs (sum (te_end (i, kmp:km)) + te_b_end (i) - sum (te_beg (i, kmp:km)) - te_b_beg (i)) / &
                          (sum (te_beg (i, kmp:km)) + te_b_beg (i)) .gt. te_err) then
                         print*, "GFDL-MP-INTM TE: ", &
-                            !(sum (te_beg (i, kmp:km)) + te_b_beg (i)) / (gsize (i) ** 2), &
-                            !(sum (te_end (i, kmp:km)) + te_b_end (i)) / (gsize (i) ** 2), &
+                            !(sum (te_beg (i, kmp:km)) + te_b_beg (i)), &
+                            !(sum (te_end (i, kmp:km)) + te_b_end (i)), &
                             (sum (te_end (i, kmp:km)) + te_b_end (i) - sum (te_beg (i, kmp:km)) - te_b_beg (i)) / &
                             (sum (te_beg (i, kmp:km)) + te_b_beg (i))
                     endif
                     if (abs (sum (tw_end (i, kmp:km)) + tw_b_end (i) - sum (tw_beg (i, kmp:km)) - tw_b_beg (i)) / &
                          (sum (tw_beg (i, kmp:km)) + tw_b_beg (i)) .gt. tw_err) then
                         print*, "GFDL-MP-INTM TW: ", &
-                            !(sum (tw_beg (i, kmp:km)) + tw_b_beg (i)) / (gsize (i) ** 2), &
-                            !(sum (tw_end (i, kmp:km)) + tw_b_end (i)) / (gsize (i) ** 2), &
+                            !(sum (tw_beg (i, kmp:km)) + tw_b_beg (i)), &
+                            !(sum (tw_end (i, kmp:km)) + tw_b_end (i)), &
                             (sum (tw_end (i, kmp:km)) + tw_b_end (i) - sum (tw_beg (i, kmp:km)) - tw_b_beg (i)) / &
                             (sum (tw_beg (i, kmp:km)) + tw_b_beg (i))
                     endif
@@ -765,8 +739,6 @@ subroutine intermediate_phys (is, ie, js, je, isd, ied, jsd, jed, km, npx, npy, 
             deallocate (v0)
             deallocate (dp0)
         endif
-
-        call timing_off ('gfdl_mp')
 
     endif
 

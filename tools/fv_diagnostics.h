@@ -52,6 +52,8 @@
  integer:: id_ql_plev, id_qi_plev, id_qr_plev, id_qs_plev, id_qg_plev, id_cf_plev
  integer:: id_t_plev_ave, id_q_plev_ave, id_qv_dt_gfdlmp_plev_ave, id_t_dt_gfdlmp_plev_ave, id_qv_dt_phys_plev_ave, id_t_dt_phys_plev_ave
 
+ integer :: id_theta_e100, id_theta_e200, id_theta_e250, id_theta_e300, &
+            id_theta_e500, id_theta_e700, id_theta_e850, id_theta_e925,  id_theta_e1000
  ! IPCC diag
  integer :: id_rh10,  id_rh50,  id_rh100, id_rh200,  id_rh250, id_rh300, &
             id_rh500, id_rh700, id_rh850, id_rh925,  id_rh1000
@@ -83,13 +85,8 @@
      real, allocatable :: zsurf(:,:)
      real, allocatable :: pt1(:)
 
-     integer :: id_pret, id_prew, id_prer, id_prei, id_pres, id_preg, id_cond, id_dep, id_reevap, id_sub
+     integer :: id_pret, id_prew, id_prer, id_prei, id_pres, id_preg
      integer :: id_prefluxw, id_prefluxr, id_prefluxi, id_prefluxs, id_prefluxg
-     integer :: id_pcw, id_edw, id_oew, id_rrw, id_tvw
-     integer :: id_pci, id_edi, id_oei, id_rri, id_tvi
-     integer :: id_pcr, id_edr, id_oer, id_rrr, id_tvr
-     integer :: id_pcs, id_eds, id_oes, id_rrs, id_tvs
-     integer :: id_pcg, id_edg, id_oeg, id_rrg, id_tvg
      integer :: id_qv_dt_gfdlmp, id_T_dt_gfdlmp, id_ql_dt_gfdlmp, id_qi_dt_gfdlmp
      integer :: id_qr_dt_gfdlmp, id_qg_dt_gfdlmp, id_qs_dt_gfdlmp
      integer :: id_liq_wat_dt_gfdlmp, id_ice_wat_dt_gfdlmp

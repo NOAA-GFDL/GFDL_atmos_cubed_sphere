@@ -28,7 +28,7 @@ module fv_mapz_mod
 
   use constants_mod,     only: pi=>pi_8, rvgas, rdgas, grav, hlv, hlf, cp_air, cp_vapor
   use fv_arrays_mod,     only: radius ! scaled for small earth
-  use tracer_manager_mod,only: get_tracer_index
+  use tracer_manager_mod,only: get_tracer_index, adjust_mass
   use field_manager_mod, only: MODEL_ATMOS
   use fv_grid_utils_mod, only: g_sum, ptop_min, cubed_to_latlon
   use fv_fill_mod,       only: fillz
@@ -68,12 +68,13 @@ contains
                       ptop, ak, bk, pfull, gridstruct, domain, do_sat_adj, &
                       hydrostatic, hybrid_z, adiabatic, do_adiabatic_init, &
                       do_inline_mp, inline_mp, c2l_ord, bd, fv_debug, &
-                      w_limiter, do_am4_remap, do_fast_phys, consv_checker, adj_mass_vmr)
+                      w_limiter, do_fast_phys, do_intermediate_phys, consv_checker, adj_mass_vmr)
+
   logical, intent(in):: last_step
   logical, intent(in):: fv_debug
   logical, intent(in):: w_limiter
-  logical, intent(in):: do_am4_remap
   logical, intent(in):: do_fast_phys
+  logical, intent(in):: do_intermediate_phys
   logical, intent(in):: consv_checker
   integer, intent(in):: adj_mass_vmr
   real,    intent(in):: mdt                   ! remap time step
@@ -159,7 +160,7 @@ contains
 
   real rcp, rg, rrg, bkh, dtmp, k1k, dlnp, tpe
   integer:: i,j,k
-  integer:: nt, liq_wat, ice_wat, rainwat, snowwat, cld_amt, graupel, iq, n, kmp, kp, k_next
+  integer:: nt, liq_wat, ice_wat, rainwat, snowwat, cld_amt, graupel, w_diff, iq, n, kmp, kp, k_next
   integer:: ccn_cm3, cin_cm3, aerosol
 
   k1k = rdgas/cv_air   ! akap / (1.-akap) = rg/Cv=0.4
@@ -173,6 +174,7 @@ contains
   snowwat = get_tracer_index (MODEL_ATMOS, 'snowwat')
   graupel = get_tracer_index (MODEL_ATMOS, 'graupel')
   cld_amt = get_tracer_index (MODEL_ATMOS, 'cld_amt')
+  w_diff  = get_tracer_index (MODEL_ATMOS, 'w_diff')
   ccn_cm3 = get_tracer_index (MODEL_ATMOS, 'ccn_cm3')
   cin_cm3 = get_tracer_index (MODEL_ATMOS, 'cin_cm3')
   aerosol = get_tracer_index (MODEL_ATMOS, 'aerosol')
@@ -182,7 +184,7 @@ contains
 !$OMP                                  graupel,q_con,sphum,cappa,r_vir,k1k,delp, &
 !$OMP                                  delz,akap,pkz,te,u,v,ps, gridstruct, last_step, &
 !$OMP                                  ak,bk,nq,isd,ied,jsd,jed,kord_tr,fill, adiabatic, &
-!$OMP                                  hs,w,ws,kord_wz,omga,rrg,kord_mt,pe4,w_limiter,cp,remap_te,do_am4_remap)    &
+!$OMP                                  hs,w,ws,kord_wz,omga,rrg,kord_mt,pe4,w_limiter,cp,remap_te)    &
 !$OMP                          private(gz,cvm,kp,k_next,bkh,dp2,dlnp,tpe,   &
 !$OMP                                  pe0,pe1,pe2,pe3,pk1,pk2,pn2,phis,q2,w2)
 
@@ -366,7 +368,7 @@ contains
          else
             call map_scalar(km,  peln(is,1,j),  te, gz,   &
                  km,  pn2,           te,              &
-                 is, ie, j, isd, ied, jsd, jed, 1, abs(kord_tm), cp_air*t_min, do_am4_remap)
+                 is, ie, j, isd, ied, jsd, jed, 1, abs(kord_tm), cp_air*t_min)
          endif
 
       else
@@ -375,13 +377,13 @@ contains
             call map_scalar(km,  peln(is,1,j),  pt, gz,   &
                  km,  pn2,           pt,              &
                  is, ie, j, isd, ied, jsd, jed, &
-                 1, abs(kord_tm), t_min, do_am4_remap)
+                 1, abs(kord_tm), t_min)
          else
             ! Map pt using pe
             call map1_ppm (km,  pe1,  pt,  gz,       &
                  km,  pe2,  pt,                  &
                  is, ie, j, isd, ied, jsd, jed, &
-                 1, abs(kord_tm), do_am4_remap)
+                 1, abs(kord_tm))
          endif
       endif
 
@@ -389,14 +391,14 @@ contains
 
       if( nq > 5 ) then
            call mapn_tracer(nq, km, pe1, pe2, q, dp2, kord_tr, j,     &
-                            is, ie, isd, ied, jsd, jed, 0., fill, do_am4_remap)
+                            is, ie, isd, ied, jsd, jed, 0., fill)
       elseif ( nq > 0 ) then
          ! Remap one tracer at a time
          do iq=1,nq
              call map1_q2(km, pe1, q(isd,jsd,1,iq),     &
                           km, pe2, q2, dp2,             &
                           is, ie, 0, kord_tr(iq), j, &
-                          isd, ied, jsd, jed, 0., do_am4_remap)
+                          isd, ied, jsd, jed, 0.)
             if (fill) call fillz(ie-is+1, km, 1, q2, dp2)
             do k=1,km
                do i=is,ie
@@ -413,18 +415,18 @@ contains
             call map1_ppm (km,   pe1,  w,  ws(is,j),   &
                  km,   pe2,  w,              &
                  is, ie, j, isd, ied, jsd, jed, &
-                 -3, abs(kord_wz), do_am4_remap)
+                 -3, abs(kord_wz))
          else
             call map1_ppm (km,   pe1,  w,  ws(is,j),   &
                  km,   pe2,  w,              &
                  is, ie, j, isd, ied, jsd, jed, &
-                 -2, abs(kord_wz), do_am4_remap)
+                 -2, abs(kord_wz))
          endif
          ! Remap delz for hybrid sigma-p coordinate
          call map1_ppm (km,   pe1, delz,  gz,   & ! works
               km,   pe2, delz,              &
               is, ie, j, is,  ie,  js,  je,  &
-              1, abs(kord_tm), do_am4_remap)
+              1, abs(kord_tm))
          do k=1,km
             do i=is,ie
                delz(i,j,k) = -delz(i,j,k)*dp2(i,k)
@@ -614,7 +616,7 @@ contains
    call map1_ppm( km, pe0(is:ie,:),   u,   gz,   &
                   km, pe3(is:ie,:),   u,               &
                   is, ie, j, isd, ied, jsd, jed+1, &
-                  -1, kord_mt, do_am4_remap)
+                  -1, kord_mt)
 
    if (j < je+1) then
 
@@ -634,7 +636,7 @@ contains
 
       call map1_ppm (km, pe0,  v, gz,    &
                      km, pe3,  v, is, ie+1,    &
-                     j, isd, ied+1, jsd, jed, -1, kord_mt, do_am4_remap)
+                     j, isd, ied+1, jsd, jed, -1, kord_mt)
 
       ! 4a) update Tv and pkz from total energy (if remapping total energy)
       if ( remap_te ) then
@@ -836,13 +838,17 @@ contains
 
 !-----------------------------------------------------------------------
 ! Intermediate Physics >>>
+! Note: if intemediate physics is disable, cloud fraction will be zero at the first time step.
 !-----------------------------------------------------------------------
-
-    call intermediate_phys (is, ie, js, je, isd, ied, jsd, jed, km, npx, npy, nq, nwat, &
-             c2l_ord, mdt, consv, akap, ptop, pfull, hs, te0_2d, u, &
-             v, w, pt, delp, delz, q_con, cappa, q, pkz, r_vir, te_err, tw_err, &
-             inline_mp, gridstruct, domain, bd, hydrostatic, do_adiabatic_init, &
-             do_inline_mp, do_sat_adj, last_step, do_fast_phys, consv_checker, adj_mass_vmr)
+    if (do_intermediate_phys) then
+        call timing_on('INTERMEDIATE_PHYS')
+        call intermediate_phys (is, ie, js, je, isd, ied, jsd, jed, km, npx, npy, nq, nwat, &
+                 c2l_ord, mdt, consv, akap, ptop, pfull, hs, te0_2d, u, &
+                 v, w, pt, delp, delz, q_con, cappa, q, pkz, r_vir, te_err, tw_err, &
+                 inline_mp, gridstruct, domain, bd, hydrostatic, do_adiabatic_init, &
+                 do_inline_mp, do_sat_adj, last_step, do_fast_phys, consv_checker, adj_mass_vmr)
+        call timing_off('INTERMEDIATE_PHYS')
+    endif
 
 !-----------------------------------------------------------------------
 ! <<< Intermediate Physics
@@ -1088,7 +1094,7 @@ contains
  subroutine map_scalar( km,   pe1,    q1,   qs,           &
                         kn,   pe2,    q2,   i1, i2,       &
                         j,  ibeg, iend, jbeg, jend,      &
-                        iv,  kord, q_min, do_am4_remap)
+                        iv,  kord, q_min)
 ! iv=1
  integer, intent(in) :: i1                ! Starting longitude
  integer, intent(in) :: i2                ! Finishing longitude
@@ -1108,7 +1114,6 @@ contains
                                        ! (from model top to bottom surface)
                                        ! in the new vertical coordinate
  real, intent(in) ::    q1(ibeg:iend,jbeg:jend,km) ! Field input
- logical, intent(in) :: do_am4_remap
 ! !INPUT/OUTPUT PARAMETERS:
  real, intent(inout)::  q2(ibeg:iend,jbeg:jend,kn) ! Field output
  real, intent(in):: q_min
@@ -1134,11 +1139,7 @@ contains
 
      ! Compute vertical subgrid distribution
    if ( kord >7 ) then
-      if (do_am4_remap) then
-         call  scalar_profile_am4( qs, q4, dp1, km, i1, i2, iv, kord, q_min )
-      else
-         call  scalar_profile( qs, q4, dp1, km, i1, i2, iv, kord, q_min )
-      endif
+      call  scalar_profile( qs, q4, dp1, km, i1, i2, iv, kord, q_min )
    else
         call ppm_profile( q4, dp1, km, i1, i2, iv, kord )
    endif
@@ -1190,7 +1191,7 @@ contains
  subroutine map1_ppm( km,   pe1,    q1,   qs,           &
                       kn,   pe2,    q2,   i1, i2,       &
                       j,    ibeg, iend, jbeg, jend,     &
-                      iv, kord, do_am4_remap)
+                      iv, kord)
  integer, intent(in) :: i1                ! Starting longitude
  integer, intent(in) :: i2                ! Finishing longitude
  integer, intent(in) :: iv                ! Mode: 0 == constituents  1 == ???
@@ -1209,7 +1210,6 @@ contains
                                        ! (from model top to bottom surface)
                                        ! in the new vertical coordinate
  real, intent(in) ::    q1(ibeg:iend,jbeg:jend,km) ! Field input
- logical, intent(in) :: do_am4_remap
 ! !INPUT/OUTPUT PARAMETERS:
  real, intent(inout)::  q2(ibeg:iend,jbeg:jend,kn) ! Field output
 
@@ -1234,11 +1234,7 @@ contains
 
 ! Compute vertical subgrid distribution
    if ( kord >7 ) then
-      if (do_am4_remap) then
-         call  cs_profile_am4( qs, q4, dp1, km, i1, i2, iv, kord )
-      else
-         call  cs_profile( qs, q4, dp1, km, i1, i2, iv, kord )
-      endif
+      call  cs_profile( qs, q4, dp1, km, i1, i2, iv, kord )
    else
         call ppm_profile( q4, dp1, km, i1, i2, iv, kord )
    endif
@@ -1291,7 +1287,7 @@ contains
 !ONLY supports cubic-spline remapping
  subroutine mapn_tracer(nq, km, pe1, pe2, q1, dp2, kord, j,     &
                         i1, i2, isd, ied, jsd, jed,             &
-                        q_min, fill, do_am4_remap)
+                        q_min, fill)
 ! !INPUT PARAMETERS:
       integer, intent(in):: km                ! vertical dimension
       integer, intent(in):: j, nq, i1, i2
@@ -1307,7 +1303,6 @@ contains
       real, intent(in)::  q_min
       logical, intent(in):: fill
       real, intent(inout):: q1(isd:ied,jsd:jed,km,nq) ! Field input
-      logical, intent(in) :: do_am4_remap
 ! !LOCAL VARIABLES:
       real:: q4(4,i1:i2,km,nq)
       real:: q2(i1:i2,km,nq) ! Field output
@@ -1329,11 +1324,7 @@ contains
                q4(1,i,k,iq) = q1(i,j,k,iq)
             enddo
          enddo
-         if (do_am4_remap) then
-            call  scalar_profile_am4( qs, q4(1,i1,1,iq), dp1, km, i1, i2, 0, kord(iq), q_min )
-         else
-            call  scalar_profile( qs, q4(1,i1,1,iq), dp1, km, i1, i2, 0, kord(iq), q_min )
-         endif
+         call  scalar_profile( qs, q4(1,i1,1,iq), dp1, km, i1, i2, 0, kord(iq), q_min )
       enddo
 
 ! Mapping
@@ -1416,7 +1407,7 @@ contains
                     kn,   pe2,   q2,   dp2,     &
                     i1,   i2,    iv,   kord, j, &
                     ibeg, iend, jbeg, jend,     &
-                    q_min, do_am4_remap )
+                    q_min )
 
 
 ! !INPUT PARAMETERS:
@@ -1437,7 +1428,6 @@ contains
       real, intent(in) ::  q1(ibeg:iend,jbeg:jend,km) ! Field input
       real, intent(in) ::  dp2(i1:i2,kn)
       real, intent(in) ::  q_min
-      logical, intent(in) :: do_am4_remap
 ! !INPUT/OUTPUT PARAMETERS:
       real, intent(inout):: q2(i1:i2,kn) ! Field output
 ! !LOCAL VARIABLES:
@@ -1457,11 +1447,7 @@ contains
 
 ! Compute vertical subgrid distribution
    if ( kord >7 ) then
-      if (do_am4_remap) then
-         call  scalar_profile_am4( qs, q4, dp1, km, i1, i2, iv, kord, q_min )
-      else
-         call  scalar_profile( qs, q4, dp1, km, i1, i2, iv, kord, q_min )
-      endif
+      call  scalar_profile( qs, q4, dp1, km, i1, i2, iv, kord, q_min )
    else
         call ppm_profile( q4, dp1, km, i1, i2, iv, kord )
    endif
@@ -1512,7 +1498,7 @@ contains
 
 
  !Currently this routine is only called with kord = 4,
- ! so do_am4_remap is unnecessary --- lmh 9 june 21
+ ! --- lmh 9 june 21
  subroutine remap_2d(km,   pe1,   q1,        &
                      kn,   pe2,   q2,        &
                      i1,   i2,               &
@@ -1608,9 +1594,9 @@ contains
 
  end subroutine remap_2d
 
- !Scalar profile and cs_profile differ ONLY in that scalar_profile
+ !scalar_profile and cs_profile differ ONLY in that scalar_profile
  ! accepts a qmin argument. (Unfortunately I was not able to make
- ! qmin an optional argument in scalar_profile.)
+ ! qmin an optional argument in scalar_profile.) --- lmh summer 2020
  subroutine scalar_profile(qs, a4, delp, km, i1, i2, iv, kord, qmin)
 ! Optimized vertical profile reconstruction:
 ! Latest: Apr 2008 S.-J. Lin, NOAA/GFDL
@@ -1692,7 +1678,7 @@ contains
  endif
 
 !Perfectly linear scheme
- if ( abs(kord) > 16 ) then
+ if ( abs(kord) == 17 ) then
   do k=1,km
      do i=i1,i2
         a4(2,i,k) = q(i,k  )
@@ -1722,7 +1708,7 @@ contains
 ! Interior:
   do k=3,km-1
      do i=i1,i2
-        if ( gam(i,k-1)*gam(i,k+1)>0. ) then
+        if ( abs(kord) >= 14 .or. gam(i,k-1)*gam(i,k+1)>0. ) then
 ! Apply large-scale constraint to ALL fields if not local max/min
 !  first guess interface values cannot exceeed values
 !  of adjacent cells
@@ -1783,21 +1769,23 @@ contains
 ! f(s) = AL + s*[(AR-AL) + A6*(1-s)]         ( 0 <= s  <= 1 )
 ! Top 2 and bottom 2 layers always use monotonic mapping
 
-  if ( iv==0 ) then
+  select case (iv)
+
+  case (0)
      do i=i1,i2
         a4(2,i,1) = max(0., a4(2,i,1))
      enddo
-  elseif ( iv==-1 ) then
+  case (-1)
       do i=i1,i2
          if ( a4(2,i,1)*a4(1,i,1) <= 0. ) a4(2,i,1) = 0.
       enddo
-  elseif ( iv==2 ) then
+  case (2)
      do i=i1,i2
         a4(2,i,1) = a4(1,i,1)
         a4(3,i,1) = a4(1,i,1)
         a4(4,i,1) = 0.
      enddo
-  endif
+  end select !iv
 
   if ( iv/=2 ) then
      do i=i1,i2
@@ -1815,8 +1803,10 @@ contains
 !-------------------------------------
 ! Huynh's 2nd constraint for interior:
 !-------------------------------------
-  do k=3,km-2
-     if ( abs(kord)<9 ) then
+   do k=3,km-2
+      select case (abs(kord))
+
+      case (0:8)
        do i=i1,i2
 ! Left  edges
           pmp_1 = a4(1,i,k) - 2.*gam(i,k+1)
@@ -1832,7 +1822,7 @@ contains
           a4(4,i,k) = 3.*(2.*a4(1,i,k) - (a4(2,i,k)+a4(3,i,k)))
        enddo
 
-     elseif ( abs(kord)==9 ) then
+     case (9)
        do i=i1,i2
           if ( extm(i,k) .and. extm(i,k-1) ) then
 ! grid-scale 2-delta-z wave detected
@@ -1865,7 +1855,46 @@ contains
             endif
           endif
        enddo
-     elseif ( abs(kord)==10 ) then
+     case(10) !restored AM4 case 10
+       do i=i1,i2
+          if( extm(i,k) ) then
+              if( a4(1,i,k)<qmin .or. extm(i,k-1) .or. extm(i,k+1) ) then
+! grid-scale 2-delta-z wave detected; or q is too small -> ehance vertical mixing
+                   a4(2,i,k) = a4(1,i,k)
+                   a4(3,i,k) = a4(1,i,k)
+                   a4(4,i,k) = 0.
+              else
+! True local extremum
+                a4(4,i,k) = 6.*a4(1,i,k) - 3.*(a4(2,i,k)+a4(3,i,k))
+              endif
+          else        ! not a local extremum
+            a4(4,i,k) = 6.*a4(1,i,k) - 3.*(a4(2,i,k)+a4(3,i,k))
+! Check within the smooth region if subgrid profile is non-monotonic
+            if( abs(a4(4,i,k)) > abs(a4(2,i,k)-a4(3,i,k)) ) then
+                  pmp_1 = a4(1,i,k) - 2.*gam(i,k+1)
+                  lac_1 = pmp_1 + 1.5*gam(i,k+2)
+              a4(2,i,k) = min(max(a4(2,i,k), min(a4(1,i,k), pmp_1, lac_1)),  &
+                                             max(a4(1,i,k), pmp_1, lac_1) )
+                  pmp_2 = a4(1,i,k) + 2.*gam(i,k)
+                  lac_2 = pmp_2 - 1.5*gam(i,k-1)
+              a4(3,i,k) = min(max(a4(3,i,k), min(a4(1,i,k), pmp_2, lac_2)),  &
+                                             max(a4(1,i,k), pmp_2, lac_2) )
+              a4(4,i,k) = 6.*a4(1,i,k) - 3.*(a4(2,i,k)+a4(3,i,k))
+            endif
+          endif
+       enddo
+    case(11)
+       do i=i1,i2
+         if ( ext5(i,k) .and. (ext5(i,k-1).or.ext5(i,k+1).or.a4(1,i,k)<qmin) ) then
+! Noisy region:
+              a4(2,i,k) = a4(1,i,k)
+              a4(3,i,k) = a4(1,i,k)
+              a4(4,i,k) = 0.
+         else
+              a4(4,i,k) = 3.*(2.*a4(1,i,k) - (a4(2,i,k)+a4(3,i,k)))
+         endif
+       enddo
+    case(12) !post-AM4 case 10
        do i=i1,i2
           if( ext5(i,k) ) then
               if( ext5(i,k-1) .or. ext5(i,k+1) ) then
@@ -1897,125 +1926,38 @@ contains
        do i=i1,i2
           a4(4,i,k) = 3.*(2.*a4(1,i,k) - (a4(2,i,k)+a4(3,i,k)))
        enddo
-     elseif ( abs(kord)==12 ) then
-       do i=i1,i2
-          if( extm(i,k) ) then
-              a4(2,i,k) = a4(1,i,k)
-              a4(3,i,k) = a4(1,i,k)
-              a4(4,i,k) = 0.
-          else        ! not a local extremum
-            a4(4,i,k) = 6.*a4(1,i,k) - 3.*(a4(2,i,k)+a4(3,i,k))
-! Check within the smooth region if subgrid profile is non-monotonic
-            if( abs(a4(4,i,k)) > abs(a4(2,i,k)-a4(3,i,k)) ) then
-                  pmp_1 = a4(1,i,k) - 2.*gam(i,k+1)
-                  lac_1 = pmp_1 + 1.5*gam(i,k+2)
-              a4(2,i,k) = min(max(a4(2,i,k), min(a4(1,i,k), pmp_1, lac_1)),  &
-                                             max(a4(1,i,k), pmp_1, lac_1) )
-                  pmp_2 = a4(1,i,k) + 2.*gam(i,k)
-                  lac_2 = pmp_2 - 1.5*gam(i,k-1)
-              a4(3,i,k) = min(max(a4(3,i,k), min(a4(1,i,k), pmp_2, lac_2)),  &
-                                             max(a4(1,i,k), pmp_2, lac_2) )
-              a4(4,i,k) = 6.*a4(1,i,k) - 3.*(a4(2,i,k)+a4(3,i,k))
-            endif
-          endif
-       enddo
-     elseif ( abs(kord)==13 ) then
-       do i=i1,i2
-          if( ext6(i,k) ) then
-             if ( ext6(i,k-1) .and. ext6(i,k+1) ) then
-! grid-scale 2-delta-z wave detected
-                 a4(2,i,k) = a4(1,i,k)
-                 a4(3,i,k) = a4(1,i,k)
-             endif
-          endif
-       enddo
-       do i=i1,i2
-          a4(4,i,k) = 3.*(2.*a4(1,i,k) - (a4(2,i,k)+a4(3,i,k)))
-       enddo
-     elseif ( abs(kord)==14 ) then
+    case(13) !former 14: no subgrid limiter
 
        do i=i1,i2
           a4(4,i,k) = 3.*(2.*a4(1,i,k) - (a4(2,i,k)+a4(3,i,k)))
        enddo
 
-     elseif ( abs(kord)==15 ) then   ! Revised abs(kord)=9 scheme
-       do i=i1,i2
-          if ( ext5(i,k) .and. ext5(i,k-1) ) then
-               a4(2,i,k) = a4(1,i,k)
-               a4(3,i,k) = a4(1,i,k)
-          else if ( ext5(i,k) .and. ext5(i,k+1) ) then
-               a4(2,i,k) = a4(1,i,k)
-               a4(3,i,k) = a4(1,i,k)
-          else if ( ext5(i,k) .and. a4(1,i,k)<qmin ) then
-               a4(2,i,k) = a4(1,i,k)
-               a4(3,i,k) = a4(1,i,k)
-          elseif( ext6(i,k) ) then
-                  pmp_1 = a4(1,i,k) - 2.*gam(i,k+1)
-                  lac_1 = pmp_1 + 1.5*gam(i,k+2)
-              a4(2,i,k) = min(max(a4(2,i,k), min(a4(1,i,k), pmp_1, lac_1)),  &
-                                             max(a4(1,i,k), pmp_1, lac_1) )
-                  pmp_2 = a4(1,i,k) + 2.*gam(i,k)
-                  lac_2 = pmp_2 - 1.5*gam(i,k-1)
-              a4(3,i,k) = min(max(a4(3,i,k), min(a4(1,i,k), pmp_2, lac_2)),  &
-                                             max(a4(1,i,k), pmp_2, lac_2) )
-          endif
-       enddo
-       do i=i1,i2
-          a4(4,i,k) = 3.*(2.*a4(1,i,k) - (a4(2,i,k)+a4(3,i,k)))
-       enddo
-     elseif ( abs(kord)==16 ) then
-       do i=i1,i2
-          if( ext5(i,k) ) then
-             if ( ext5(i,k-1) .or. ext5(i,k+1) ) then
-                 a4(2,i,k) = a4(1,i,k)
-                 a4(3,i,k) = a4(1,i,k)
-             elseif ( ext6(i,k-1) .or. ext6(i,k+1) ) then
-                 ! Left  edges
-                 pmp_1 = a4(1,i,k) - 2.*gam(i,k+1)
-                 lac_1 = pmp_1 + 1.5*gam(i,k+2)
-                 a4(2,i,k) = min(max(a4(2,i,k), min(a4(1,i,k), pmp_1, lac_1)),   &
-                                     max(a4(1,i,k), pmp_1, lac_1) )
-                 ! Right edges
-                 pmp_2 = a4(1,i,k) + 2.*gam(i,k)
-                 lac_2 = pmp_2 - 1.5*gam(i,k-1)
-                 a4(3,i,k) = min(max(a4(3,i,k), min(a4(1,i,k), pmp_2, lac_2)),    &
-                                     max(a4(1,i,k), pmp_2, lac_2) )
-             endif
-          endif
-       enddo
-       do i=i1,i2
-          a4(4,i,k) = 3.*(2.*a4(1,i,k) - (a4(2,i,k)+a4(3,i,k)))
-       enddo
-     else      ! kord = 11, 13
-       do i=i1,i2
-         if ( ext5(i,k) .and. (ext5(i,k-1).or.ext5(i,k+1).or.a4(1,i,k)<qmin) ) then
-! Noisy region:
-              a4(2,i,k) = a4(1,i,k)
-              a4(3,i,k) = a4(1,i,k)
-              a4(4,i,k) = 0.
-         else
-              a4(4,i,k) = 3.*(2.*a4(1,i,k) - (a4(2,i,k)+a4(3,i,k)))
-         endif
-       enddo
-     endif
+    case (14) !strict monotonicity constraint
+       call cs_limiters(im, extm(i1,k), a4(1,i1,k), 2)
+    case (15)
+       call cs_limiters(im, extm(i1,k), a4(1,i1,k), 1)
+    case default
+       call mpp_error(FATAL, " kord not implemented")
+    end select
 
 ! Additional constraint to ensure positivity
-     if ( iv==0 ) call cs_limiters(im, extm(i1,k), a4(1,i1,k), 0)
+     if ( iv==0 .and. abs(kord) <= 13 ) call cs_limiters(im, extm(i1,k), a4(1,i1,k), 0)
 
   enddo      ! k-loop
 
 !----------------------------------
 ! Bottom layer subgrid constraints:
 !----------------------------------
-  if ( iv==0 ) then
+  select case (iv)
+  case(0)
      do i=i1,i2
         a4(3,i,km) = max(0., a4(3,i,km))
      enddo
-  elseif ( iv .eq. -1 ) then
-      do i=i1,i2
-         if ( a4(3,i,km)*a4(1,i,km) <= 0. )  a4(3,i,km) = 0.
-      enddo
-  endif
+  case(-1)
+     do i=i1,i2
+        if ( a4(3,i,km)*a4(1,i,km) <= 0. )  a4(3,i,km) = 0.
+     enddo
+  end select
 
   do k=km-1,km
      do i=i1,i2
@@ -2128,7 +2070,7 @@ else ! all others
   enddo
  endif
 !----- Perfectly linear scheme --------------------------------
- if ( abs(kord) > 16 ) then
+ if ( abs(kord) == 17 ) then
   do k=1,km
      do i=i1,i2
         a4(2,i,k) = q(i,k  )
@@ -2160,8 +2102,9 @@ else ! all others
 ! Interior:
   do k=3,km-1
      do i=i1,i2
-        if ( gam(i,k-1)*gam(i,k+1)>0. ) then
+        if ( abs(kord) >= 14 .or. gam(i,k-1)*gam(i,k+1)>0. ) then
 ! Apply large-scale constraint to ALL fields if not local max/min
+! OR for the strictly monotone schemes
              q(i,k) = min( q(i,k), max(a4(1,i,k-1),a4(1,i,k)) )
              q(i,k) = max( q(i,k), min(a4(1,i,k-1),a4(1,i,k)) )
         else
@@ -2217,21 +2160,22 @@ else ! all others
 ! f(s) = AL + s*[(AR-AL) + A6*(1-s)]         ( 0 <= s  <= 1 )
 ! Top 2 and bottom 2 layers always use monotonic mapping
 
-  if ( iv==0 ) then
+  select case (iv)
+  case (0)
      do i=i1,i2
         a4(2,i,1) = max(0., a4(2,i,1))
      enddo
-  elseif ( iv==-1 ) then
+  case(-1)
       do i=i1,i2
          if ( a4(2,i,1)*a4(1,i,1) <= 0. ) a4(2,i,1) = 0.
       enddo
-  elseif ( iv==2 ) then
+   case(2)
      do i=i1,i2
         a4(2,i,1) = a4(1,i,1)
         a4(3,i,1) = a4(1,i,1)
         a4(4,i,1) = 0.
      enddo
-  endif
+  end select !iv
 
   if ( iv/=2 ) then
      do i=i1,i2
@@ -2250,7 +2194,8 @@ else ! all others
 ! Huynh's 2nd constraint for interior:
 !-------------------------------------
   do k=3,km-2
-     if ( abs(kord)<9 ) then
+     select case (abs(kord))
+     case (0:8)
        do i=i1,i2
 ! Left  edges
           pmp_1 = a4(1,i,k) - 2.*gam(i,k+1)
@@ -2266,7 +2211,7 @@ else ! all others
           a4(4,i,k) = 3.*(2.*a4(1,i,k) - (a4(2,i,k)+a4(3,i,k)))
        enddo
 
-     elseif ( abs(kord)==9 ) then
+    case (9)
        do i=i1,i2
           if ( extm(i,k) .and. extm(i,k-1) ) then  ! c90_mp122
 ! grid-scale 2-delta-z wave detected
@@ -2294,7 +2239,46 @@ else ! all others
             endif
           endif
        enddo
-     elseif ( abs(kord)==10 ) then
+     case(10) !restored AM4 case 10
+       do i=i1,i2
+          if( extm(i,k) ) then
+              if( extm(i,k-1) .or. extm(i,k+1) ) then
+! grid-scale 2-delta-z wave detected
+                   a4(2,i,k) = a4(1,i,k)
+                   a4(3,i,k) = a4(1,i,k)
+                   a4(4,i,k) = 0.
+              else
+! True local extremum
+                a4(4,i,k) = 6.*a4(1,i,k) - 3.*(a4(2,i,k)+a4(3,i,k))
+              endif
+          else        ! not a local extremum
+            a4(4,i,k) = 6.*a4(1,i,k) - 3.*(a4(2,i,k)+a4(3,i,k))
+! Check within the smooth region if subgrid profile is non-monotonic
+            if( abs(a4(4,i,k)) > abs(a4(2,i,k)-a4(3,i,k)) ) then
+                  pmp_1 = a4(1,i,k) - 2.*gam(i,k+1)
+                  lac_1 = pmp_1 + 1.5*gam(i,k+2)
+              a4(2,i,k) = min(max(a4(2,i,k), min(a4(1,i,k), pmp_1, lac_1)),  &
+                                             max(a4(1,i,k), pmp_1, lac_1) )
+                  pmp_2 = a4(1,i,k) + 2.*gam(i,k)
+                  lac_2 = pmp_2 - 1.5*gam(i,k-1)
+              a4(3,i,k) = min(max(a4(3,i,k), min(a4(1,i,k), pmp_2, lac_2)),  &
+                                             max(a4(1,i,k), pmp_2, lac_2) )
+              a4(4,i,k) = 6.*a4(1,i,k) - 3.*(a4(2,i,k)+a4(3,i,k))
+            endif
+          endif
+       enddo
+    case (11)
+       do i=i1,i2
+         if ( ext5(i,k) .and. (ext5(i,k-1) .or. ext5(i,k+1)) ) then
+! Noisy region:
+              a4(2,i,k) = a4(1,i,k)
+              a4(3,i,k) = a4(1,i,k)
+              a4(4,i,k) = 0.
+         else
+              a4(4,i,k) = 3.*(2.*a4(1,i,k) - (a4(2,i,k)+a4(3,i,k)))
+         endif
+       enddo
+    case (12) !post-AM4 case 10
        do i=i1,i2
           if( ext5(i,k) ) then
               if( ext5(i,k-1) .or. ext5(i,k+1) ) then
@@ -2326,124 +2310,38 @@ else ! all others
        do i=i1,i2
           a4(4,i,k) = 3.*(2.*a4(1,i,k) - (a4(2,i,k)+a4(3,i,k)))
        enddo
-     elseif ( abs(kord)==12 ) then
-       do i=i1,i2
-          if( extm(i,k) ) then
-! grid-scale 2-delta-z wave detected
-              a4(2,i,k) = a4(1,i,k)
-              a4(3,i,k) = a4(1,i,k)
-              a4(4,i,k) = 0.
-          else        ! not a local extremum
-            a4(4,i,k) = 6.*a4(1,i,k) - 3.*(a4(2,i,k)+a4(3,i,k))
-! Check within the smooth region if subgrid profile is non-monotonic
-            if( abs(a4(4,i,k)) > abs(a4(2,i,k)-a4(3,i,k)) ) then
-                  pmp_1 = a4(1,i,k) - 2.*gam(i,k+1)
-                  lac_1 = pmp_1 + 1.5*gam(i,k+2)
-              a4(2,i,k) = min(max(a4(2,i,k), min(a4(1,i,k), pmp_1, lac_1)),  &
-                                             max(a4(1,i,k), pmp_1, lac_1) )
-                  pmp_2 = a4(1,i,k) + 2.*gam(i,k)
-                  lac_2 = pmp_2 - 1.5*gam(i,k-1)
-              a4(3,i,k) = min(max(a4(3,i,k), min(a4(1,i,k), pmp_2, lac_2)),  &
-                                             max(a4(1,i,k), pmp_2, lac_2) )
-              a4(4,i,k) = 6.*a4(1,i,k) - 3.*(a4(2,i,k)+a4(3,i,k))
-            endif
-          endif
-       enddo
-     elseif ( abs(kord)==13 ) then
-       do i=i1,i2
-          if( ext6(i,k) ) then
-             if ( ext6(i,k-1) .and. ext6(i,k+1) ) then
-! grid-scale 2-delta-z wave detected
-                 a4(2,i,k) = a4(1,i,k)
-                 a4(3,i,k) = a4(1,i,k)
-             endif
-          endif
-       enddo
-       do i=i1,i2
-          a4(4,i,k) = 3.*(2.*a4(1,i,k) - (a4(2,i,k)+a4(3,i,k)))
-       enddo
-     elseif ( abs(kord)==14 ) then
+    case (13)  !former 14: no subgrid limiter
 
        do i=i1,i2
           a4(4,i,k) = 3.*(2.*a4(1,i,k) - (a4(2,i,k)+a4(3,i,k)))
        enddo
 
-     elseif ( abs(kord)==15 ) then   ! revised kord=9 scehem
-       do i=i1,i2
-          if ( ext5(i,k) ) then  ! c90_mp122
-             if ( ext5(i,k-1) .or. ext5(i,k+1) ) then  ! c90_mp122
-! grid-scale 2-delta-z wave detected
-                  a4(2,i,k) = a4(1,i,k)
-                  a4(3,i,k) = a4(1,i,k)
-             endif
-          elseif( ext6(i,k) ) then
-! Check within the smooth region if subgrid profile is non-monotonic
-                  pmp_1 = a4(1,i,k) - 2.*gam(i,k+1)
-                  lac_1 = pmp_1 + 1.5*gam(i,k+2)
-              a4(2,i,k) = min(max(a4(2,i,k), min(a4(1,i,k), pmp_1, lac_1)),  &
-                                             max(a4(1,i,k), pmp_1, lac_1) )
-                  pmp_2 = a4(1,i,k) + 2.*gam(i,k)
-                  lac_2 = pmp_2 - 1.5*gam(i,k-1)
-              a4(3,i,k) = min(max(a4(3,i,k), min(a4(1,i,k), pmp_2, lac_2)),  &
-                                             max(a4(1,i,k), pmp_2, lac_2) )
-          endif
-       enddo
-       do i=i1,i2
-          a4(4,i,k) = 3.*(2.*a4(1,i,k) - (a4(2,i,k)+a4(3,i,k)))
-       enddo
-     elseif ( abs(kord)==16 ) then
-       do i=i1,i2
-          if( ext5(i,k) ) then
-             if ( ext5(i,k-1) .or. ext5(i,k+1) ) then
-                 a4(2,i,k) = a4(1,i,k)
-                 a4(3,i,k) = a4(1,i,k)
-             elseif ( ext6(i,k-1) .or. ext6(i,k+1) ) then
-                 ! Left  edges
-                 pmp_1 = a4(1,i,k) - 2.*gam(i,k+1)
-                 lac_1 = pmp_1 + 1.5*gam(i,k+2)
-                 a4(2,i,k) = min(max(a4(2,i,k), min(a4(1,i,k), pmp_1, lac_1)),   &
-                                     max(a4(1,i,k), pmp_1, lac_1) )
-                 ! Right edges
-                 pmp_2 = a4(1,i,k) + 2.*gam(i,k)
-                 lac_2 = pmp_2 - 1.5*gam(i,k-1)
-                 a4(3,i,k) = min(max(a4(3,i,k), min(a4(1,i,k), pmp_2, lac_2)),    &
-                                     max(a4(1,i,k), pmp_2, lac_2) )
-             endif
-          endif
-       enddo
-       do i=i1,i2
-          a4(4,i,k) = 3.*(2.*a4(1,i,k) - (a4(2,i,k)+a4(3,i,k)))
-       enddo
-     else      ! kord = 11
-       do i=i1,i2
-         if ( ext5(i,k) .and. (ext5(i,k-1) .or. ext5(i,k+1)) ) then
-! Noisy region:
-              a4(2,i,k) = a4(1,i,k)
-              a4(3,i,k) = a4(1,i,k)
-              a4(4,i,k) = 0.
-         else
-              a4(4,i,k) = 3.*(2.*a4(1,i,k) - (a4(2,i,k)+a4(3,i,k)))
-         endif
-       enddo
-     endif
+    case (14) !strict monotonicity constraint
+       call cs_limiters(im, extm(i1,k), a4(1,i1,k), 2)
+    case (15)
+       call cs_limiters(im, extm(i1,k), a4(1,i1,k), 1)
+    case default
+       call mpp_error(FATAL, 'kord not implemented')
+    end select
 
 ! Additional constraint to ensure positivity
-     if ( iv==0 ) call cs_limiters(im, extm(i1,k), a4(1,i1,k), 0)
+     if ( iv==0 .and. abs(kord) <= 13 ) call cs_limiters(im, extm(i1,k), a4(1,i1,k), 0)
 
   enddo      ! k-loop
 
 !----------------------------------
 ! Bottom layer subgrid constraints:
 !----------------------------------
-  if ( iv==0 ) then
+  select case (iv)
+  case (0)
      do i=i1,i2
         a4(3,i,km) = max(0., a4(3,i,km))
      enddo
-  elseif ( iv .eq. -1 ) then
+  case (-1)
       do i=i1,i2
          if ( a4(3,i,km)*a4(1,i,km) <= 0. )  a4(3,i,km) = 0.
       enddo
-  endif
+   end select
 
   do k=km-1,km
      do i=i1,i2
@@ -2532,744 +2430,6 @@ else ! all others
     enddo
  endif
  end subroutine cs_limiters
-
-
- subroutine scalar_profile_am4(qs, a4, delp, km, i1, i2, iv, kord, qmin)
-! Optimized vertical profile reconstruction:
-! Latest: Apr 2008 S.-J. Lin, NOAA/GFDL
- integer, intent(in):: i1, i2
- integer, intent(in):: km      ! vertical dimension
- integer, intent(in):: iv      ! iv =-1: winds
-                               ! iv = 0: positive definite scalars
-                               ! iv = 1: others
- integer, intent(in):: kord
- real, intent(in)   ::   qs(i1:i2)
- real, intent(in)   :: delp(i1:i2,km)     ! layer pressure thickness
- real, intent(inout):: a4(4,i1:i2,km)     ! Interpolated values
- real, intent(in):: qmin
-!-----------------------------------------------------------------------
- logical, dimension(i1:i2,km):: extm, ext6
- real  gam(i1:i2,km)
- real    q(i1:i2,km+1)
- real   d4(i1:i2)
- real   bet, a_bot, grat
- real   pmp_1, lac_1, pmp_2, lac_2
- integer i, k, im
-
- if ( iv .eq. -2 ) then
-      do i=i1,i2
-         gam(i,2) = 0.5
-           q(i,1) = 1.5*a4(1,i,1)
-      enddo
-      do k=2,km-1
-         do i=i1, i2
-                  grat = delp(i,k-1) / delp(i,k)
-                   bet =  2. + grat + grat - gam(i,k)
-                q(i,k) = (3.*(a4(1,i,k-1)+a4(1,i,k)) - q(i,k-1))/bet
-            gam(i,k+1) = grat / bet
-         enddo
-      enddo
-      do i=i1,i2
-            grat = delp(i,km-1) / delp(i,km)
-         q(i,km) = (3.*(a4(1,i,km-1)+a4(1,i,km)) - grat*qs(i) - q(i,km-1)) /  &
-                   (2. + grat + grat - gam(i,km))
-         q(i,km+1) = qs(i)
-      enddo
-      do k=km-1,1,-1
-        do i=i1,i2
-           q(i,k) = q(i,k) - gam(i,k+1)*q(i,k+1)
-        enddo
-      enddo
- else
-  do i=i1,i2
-         grat = delp(i,2) / delp(i,1)   ! grid ratio
-          bet = grat*(grat+0.5)
-       q(i,1) = ( (grat+grat)*(grat+1.)*a4(1,i,1) + a4(1,i,2) ) / bet
-     gam(i,1) = ( 1. + grat*(grat+1.5) ) / bet
-  enddo
-
-  do k=2,km
-     do i=i1,i2
-           d4(i) = delp(i,k-1) / delp(i,k)
-             bet =  2. + d4(i) + d4(i) - gam(i,k-1)
-          q(i,k) = ( 3.*(a4(1,i,k-1)+d4(i)*a4(1,i,k)) - q(i,k-1) )/bet
-        gam(i,k) = d4(i) / bet
-     enddo
-  enddo
-
-  do i=i1,i2
-         a_bot = 1. + d4(i)*(d4(i)+1.5)
-     q(i,km+1) = (2.*d4(i)*(d4(i)+1.)*a4(1,i,km)+a4(1,i,km-1)-a_bot*q(i,km))  &
-               / ( d4(i)*(d4(i)+0.5) - a_bot*gam(i,km) )
-  enddo
-
-  do k=km,1,-1
-     do i=i1,i2
-        q(i,k) = q(i,k) - gam(i,k)*q(i,k+1)
-     enddo
-  enddo
- endif
-
-!----- Perfectly linear scheme --------------------------------
- if ( abs(kord) > 16 ) then
-  do k=1,km
-     do i=i1,i2
-        a4(2,i,k) = q(i,k  )
-        a4(3,i,k) = q(i,k+1)
-        a4(4,i,k) = 3.*(2.*a4(1,i,k) - (a4(2,i,k)+a4(3,i,k)))
-     enddo
-  enddo
-  return
- endif
-!----- Perfectly linear scheme --------------------------------
-!------------------
-! Apply constraints
-!------------------
-  im = i2 - i1 + 1
-
-! Apply *large-scale* constraints
-  do i=i1,i2
-     q(i,2) = min( q(i,2), max(a4(1,i,1), a4(1,i,2)) )
-     q(i,2) = max( q(i,2), min(a4(1,i,1), a4(1,i,2)) )
-  enddo
-
-  do k=2,km
-     do i=i1,i2
-        gam(i,k) = a4(1,i,k) - a4(1,i,k-1)
-     enddo
-  enddo
-
-! Interior:
-  do k=3,km-1
-     do i=i1,i2
-        if ( gam(i,k-1)*gam(i,k+1)>0. ) then
-! Apply large-scale constraint to ALL fields if not local max/min
-             q(i,k) = min( q(i,k), max(a4(1,i,k-1),a4(1,i,k)) )
-             q(i,k) = max( q(i,k), min(a4(1,i,k-1),a4(1,i,k)) )
-        else
-          if ( gam(i,k-1) > 0. ) then
-! There exists a local max
-               q(i,k) = max(q(i,k), min(a4(1,i,k-1),a4(1,i,k)))
-          else
-! There exists a local min
-               q(i,k) = min(q(i,k), max(a4(1,i,k-1),a4(1,i,k)))
-               if ( iv==0 ) q(i,k) = max(0., q(i,k))
-          endif
-        endif
-     enddo
-  enddo
-
-! Bottom:
-  do i=i1,i2
-     q(i,km) = min( q(i,km), max(a4(1,i,km-1), a4(1,i,km)) )
-     q(i,km) = max( q(i,km), min(a4(1,i,km-1), a4(1,i,km)) )
-  enddo
-
-  do k=1,km
-     do i=i1,i2
-        a4(2,i,k) = q(i,k  )
-        a4(3,i,k) = q(i,k+1)
-     enddo
-  enddo
-
-  do k=1,km
-     if ( k==1 .or. k==km ) then
-       do i=i1,i2
-          extm(i,k) = (a4(2,i,k)-a4(1,i,k)) * (a4(3,i,k)-a4(1,i,k)) > 0.
-       enddo
-     else
-       do i=i1,i2
-          extm(i,k) = gam(i,k)*gam(i,k+1) < 0.
-       enddo
-     endif
-     if ( abs(kord)==16 ) then
-       do i=i1,i2
-          a4(4,i,k) = 3.*(2.*a4(1,i,k) - (a4(2,i,k)+a4(3,i,k)))
-          ext6(i,k) = abs(a4(4,i,k)) > abs(a4(2,i,k)-a4(3,i,k))
-       enddo
-     endif
-  enddo
-
-!---------------------------
-! Apply subgrid constraints:
-!---------------------------
-! f(s) = AL + s*[(AR-AL) + A6*(1-s)]         ( 0 <= s  <= 1 )
-! Top 2 and bottom 2 layers always use monotonic mapping
-
-  if ( iv==0 ) then
-     do i=i1,i2
-        a4(2,i,1) = max(0., a4(2,i,1))
-     enddo
-  elseif ( iv==-1 ) then
-      do i=i1,i2
-         if ( a4(2,i,1)*a4(1,i,1) <= 0. ) a4(2,i,1) = 0.
-      enddo
-  elseif ( iv==2 ) then
-     do i=i1,i2
-        a4(2,i,1) = a4(1,i,1)
-        a4(3,i,1) = a4(1,i,1)
-        a4(4,i,1) = 0.
-     enddo
-  endif
-
-  if ( iv/=2 ) then
-     do i=i1,i2
-        a4(4,i,1) = 3.*(2.*a4(1,i,1) - (a4(2,i,1)+a4(3,i,1)))
-     enddo
-     call cs_limiters(im, extm(i1,1), a4(1,i1,1), 1)
-  endif
-
-! k=2
-   do i=i1,i2
-      a4(4,i,2) = 3.*(2.*a4(1,i,2) - (a4(2,i,2)+a4(3,i,2)))
-   enddo
-   call cs_limiters(im, extm(i1,2), a4(1,i1,2), 2)
-
-!-------------------------------------
-! Huynh's 2nd constraint for interior:
-!-------------------------------------
-  do k=3,km-2
-     if ( abs(kord)<9 ) then
-       do i=i1,i2
-! Left  edges
-          pmp_1 = a4(1,i,k) - 2.*gam(i,k+1)
-          lac_1 = pmp_1 + 1.5*gam(i,k+2)
-          a4(2,i,k) = min(max(a4(2,i,k), min(a4(1,i,k), pmp_1, lac_1)),   &
-                                         max(a4(1,i,k), pmp_1, lac_1) )
-! Right edges
-          pmp_2 = a4(1,i,k) + 2.*gam(i,k)
-          lac_2 = pmp_2 - 1.5*gam(i,k-1)
-          a4(3,i,k) = min(max(a4(3,i,k), min(a4(1,i,k), pmp_2, lac_2)),    &
-                                         max(a4(1,i,k), pmp_2, lac_2) )
-
-          a4(4,i,k) = 3.*(2.*a4(1,i,k) - (a4(2,i,k)+a4(3,i,k)))
-       enddo
-
-     elseif ( abs(kord)==9 ) then
-       do i=i1,i2
-          if ( extm(i,k) .and. extm(i,k-1) ) then
-! grid-scale 2-delta-z wave detected
-               a4(2,i,k) = a4(1,i,k)
-               a4(3,i,k) = a4(1,i,k)
-               a4(4,i,k) = 0.
-          else if ( extm(i,k) .and. extm(i,k+1) ) then
-! grid-scale 2-delta-z wave detected
-               a4(2,i,k) = a4(1,i,k)
-               a4(3,i,k) = a4(1,i,k)
-               a4(4,i,k) = 0.
-          else if ( extm(i,k) .and. a4(1,i,k)<qmin ) then
-! grid-scale 2-delta-z wave detected
-               a4(2,i,k) = a4(1,i,k)
-               a4(3,i,k) = a4(1,i,k)
-               a4(4,i,k) = 0.
-          else
-            a4(4,i,k) = 3.*(2.*a4(1,i,k) - (a4(2,i,k)+a4(3,i,k)))
-! Check within the smooth region if subgrid profile is non-monotonic
-            if( abs(a4(4,i,k)) > abs(a4(2,i,k)-a4(3,i,k)) ) then
-                  pmp_1 = a4(1,i,k) - 2.*gam(i,k+1)
-                  lac_1 = pmp_1 + 1.5*gam(i,k+2)
-              a4(2,i,k) = min(max(a4(2,i,k), min(a4(1,i,k), pmp_1, lac_1)),  &
-                                             max(a4(1,i,k), pmp_1, lac_1) )
-                  pmp_2 = a4(1,i,k) + 2.*gam(i,k)
-                  lac_2 = pmp_2 - 1.5*gam(i,k-1)
-              a4(3,i,k) = min(max(a4(3,i,k), min(a4(1,i,k), pmp_2, lac_2)),  &
-                                             max(a4(1,i,k), pmp_2, lac_2) )
-              a4(4,i,k) = 3.*(2.*a4(1,i,k) - (a4(2,i,k)+a4(3,i,k)))
-            endif
-          endif
-       enddo
-     elseif ( abs(kord)==10 ) then
-       do i=i1,i2
-          if( extm(i,k) ) then
-              if( a4(1,i,k)<qmin .or. extm(i,k-1) .or. extm(i,k+1) ) then
-! grid-scale 2-delta-z wave detected; or q is too small -> ehance vertical mixing
-                   a4(2,i,k) = a4(1,i,k)
-                   a4(3,i,k) = a4(1,i,k)
-                   a4(4,i,k) = 0.
-              else
-! True local extremum
-                a4(4,i,k) = 6.*a4(1,i,k) - 3.*(a4(2,i,k)+a4(3,i,k))
-              endif
-          else        ! not a local extremum
-            a4(4,i,k) = 6.*a4(1,i,k) - 3.*(a4(2,i,k)+a4(3,i,k))
-! Check within the smooth region if subgrid profile is non-monotonic
-            if( abs(a4(4,i,k)) > abs(a4(2,i,k)-a4(3,i,k)) ) then
-                  pmp_1 = a4(1,i,k) - 2.*gam(i,k+1)
-                  lac_1 = pmp_1 + 1.5*gam(i,k+2)
-              a4(2,i,k) = min(max(a4(2,i,k), min(a4(1,i,k), pmp_1, lac_1)),  &
-                                             max(a4(1,i,k), pmp_1, lac_1) )
-                  pmp_2 = a4(1,i,k) + 2.*gam(i,k)
-                  lac_2 = pmp_2 - 1.5*gam(i,k-1)
-              a4(3,i,k) = min(max(a4(3,i,k), min(a4(1,i,k), pmp_2, lac_2)),  &
-                                             max(a4(1,i,k), pmp_2, lac_2) )
-              a4(4,i,k) = 6.*a4(1,i,k) - 3.*(a4(2,i,k)+a4(3,i,k))
-            endif
-          endif
-       enddo
-     elseif ( abs(kord)==12 ) then
-       do i=i1,i2
-          if( extm(i,k) ) then
-              a4(2,i,k) = a4(1,i,k)
-              a4(3,i,k) = a4(1,i,k)
-              a4(4,i,k) = 0.
-          else        ! not a local extremum
-            a4(4,i,k) = 6.*a4(1,i,k) - 3.*(a4(2,i,k)+a4(3,i,k))
-! Check within the smooth region if subgrid profile is non-monotonic
-            if( abs(a4(4,i,k)) > abs(a4(2,i,k)-a4(3,i,k)) ) then
-                  pmp_1 = a4(1,i,k) - 2.*gam(i,k+1)
-                  lac_1 = pmp_1 + 1.5*gam(i,k+2)
-              a4(2,i,k) = min(max(a4(2,i,k), min(a4(1,i,k), pmp_1, lac_1)),  &
-                                             max(a4(1,i,k), pmp_1, lac_1) )
-                  pmp_2 = a4(1,i,k) + 2.*gam(i,k)
-                  lac_2 = pmp_2 - 1.5*gam(i,k-1)
-              a4(3,i,k) = min(max(a4(3,i,k), min(a4(1,i,k), pmp_2, lac_2)),  &
-                                             max(a4(1,i,k), pmp_2, lac_2) )
-              a4(4,i,k) = 6.*a4(1,i,k) - 3.*(a4(2,i,k)+a4(3,i,k))
-            endif
-          endif
-       enddo
-     elseif ( abs(kord)==13 ) then
-       do i=i1,i2
-          if( extm(i,k) ) then
-             if ( extm(i,k-1) .and. extm(i,k+1) ) then
-! grid-scale 2-delta-z wave detected
-                 a4(2,i,k) = a4(1,i,k)
-                 a4(3,i,k) = a4(1,i,k)
-                 a4(4,i,k) = 0.
-             else
-                 ! Left  edges
-                 pmp_1 = a4(1,i,k) - 2.*gam(i,k+1)
-                 lac_1 = pmp_1 + 1.5*gam(i,k+2)
-                 a4(2,i,k) = min(max(a4(2,i,k), min(a4(1,i,k), pmp_1, lac_1)),   &
-                                     max(a4(1,i,k), pmp_1, lac_1) )
-                 ! Right edges
-                 pmp_2 = a4(1,i,k) + 2.*gam(i,k)
-                 lac_2 = pmp_2 - 1.5*gam(i,k-1)
-                 a4(3,i,k) = min(max(a4(3,i,k), min(a4(1,i,k), pmp_2, lac_2)),    &
-                                     max(a4(1,i,k), pmp_2, lac_2) )
-                 a4(4,i,k) = 3.*(2.*a4(1,i,k) - (a4(2,i,k)+a4(3,i,k)))
-             endif
-          else
-             a4(4,i,k) = 3.*(2.*a4(1,i,k) - (a4(2,i,k)+a4(3,i,k)))
-          endif
-       enddo
-     elseif ( abs(kord)==14 ) then
-
-       do i=i1,i2
-          a4(4,i,k) = 3.*(2.*a4(1,i,k) - (a4(2,i,k)+a4(3,i,k)))
-       enddo
-     elseif ( abs(kord)==16 ) then
-       do i=i1,i2
-          if( ext6(i,k) ) then
-             if ( extm(i,k-1) .or. extm(i,k+1) ) then
-                 ! Left  edges
-                 pmp_1 = a4(1,i,k) - 2.*gam(i,k+1)
-                 lac_1 = pmp_1 + 1.5*gam(i,k+2)
-                 a4(2,i,k) = min(max(a4(2,i,k), min(a4(1,i,k), pmp_1, lac_1)),   &
-                                     max(a4(1,i,k), pmp_1, lac_1) )
-                 ! Right edges
-                 pmp_2 = a4(1,i,k) + 2.*gam(i,k)
-                 lac_2 = pmp_2 - 1.5*gam(i,k-1)
-                 a4(3,i,k) = min(max(a4(3,i,k), min(a4(1,i,k), pmp_2, lac_2)),    &
-                                     max(a4(1,i,k), pmp_2, lac_2) )
-                 a4(4,i,k) = 3.*(2.*a4(1,i,k) - (a4(2,i,k)+a4(3,i,k)))
-             endif
-          endif
-       enddo
-     else      ! kord = 11, 13
-       do i=i1,i2
-         if ( extm(i,k) .and. (extm(i,k-1).or.extm(i,k+1).or.a4(1,i,k)<qmin) ) then
-! Noisy region:
-              a4(2,i,k) = a4(1,i,k)
-              a4(3,i,k) = a4(1,i,k)
-              a4(4,i,k) = 0.
-         else
-              a4(4,i,k) = 3.*(2.*a4(1,i,k) - (a4(2,i,k)+a4(3,i,k)))
-         endif
-       enddo
-     endif
-
-! Additional constraint to ensure positivity
-     if ( iv==0 ) call cs_limiters(im, extm(i1,k), a4(1,i1,k), 0)
-
-  enddo      ! k-loop
-
-!----------------------------------
-! Bottom layer subgrid constraints:
-!----------------------------------
-  if ( iv==0 ) then
-     do i=i1,i2
-        a4(3,i,km) = max(0., a4(3,i,km))
-     enddo
-  elseif ( iv .eq. -1 ) then
-      do i=i1,i2
-         if ( a4(3,i,km)*a4(1,i,km) <= 0. )  a4(3,i,km) = 0.
-      enddo
-  endif
-
-  do k=km-1,km
-     do i=i1,i2
-        a4(4,i,k) = 3.*(2.*a4(1,i,k) - (a4(2,i,k)+a4(3,i,k)))
-     enddo
-     if(k==(km-1)) call cs_limiters(im, extm(i1,k), a4(1,i1,k), 2)
-     if(k== km   ) call cs_limiters(im, extm(i1,k), a4(1,i1,k), 1)
-  enddo
-
- end subroutine scalar_profile_am4
-
-
- subroutine cs_profile_am4(qs, a4, delp, km, i1, i2, iv, kord)
-! Optimized vertical profile reconstruction:
-! Latest: Apr 2008 S.-J. Lin, NOAA/GFDL
- integer, intent(in):: i1, i2
- integer, intent(in):: km      ! vertical dimension
- integer, intent(in):: iv      ! iv =-1: winds
-                               ! iv = 0: positive definite scalars
-                               ! iv = 1: others
- integer, intent(in):: kord
- real, intent(in)   ::   qs(i1:i2)
- real, intent(in)   :: delp(i1:i2,km)     ! layer pressure thickness
- real, intent(inout):: a4(4,i1:i2,km)     ! Interpolated values
-!-----------------------------------------------------------------------
- logical:: extm(i1:i2,km)
- real  gam(i1:i2,km)
- real    q(i1:i2,km+1)
- real   d4(i1:i2)
- real   bet, a_bot, grat
- real   pmp_1, lac_1, pmp_2, lac_2
- integer i, k, im
-
- if ( iv .eq. -2 ) then
-      do i=i1,i2
-         gam(i,2) = 0.5
-           q(i,1) = 1.5*a4(1,i,1)
-      enddo
-      do k=2,km-1
-         do i=i1, i2
-                  grat = delp(i,k-1) / delp(i,k)
-                   bet =  2. + grat + grat - gam(i,k)
-                q(i,k) = (3.*(a4(1,i,k-1)+a4(1,i,k)) - q(i,k-1))/bet
-            gam(i,k+1) = grat / bet
-         enddo
-      enddo
-      do i=i1,i2
-            grat = delp(i,km-1) / delp(i,km)
-         q(i,km) = (3.*(a4(1,i,km-1)+a4(1,i,km)) - grat*qs(i) - q(i,km-1)) /  &
-                   (2. + grat + grat - gam(i,km))
-         q(i,km+1) = qs(i)
-      enddo
-      do k=km-1,1,-1
-        do i=i1,i2
-           q(i,k) = q(i,k) - gam(i,k+1)*q(i,k+1)
-        enddo
-      enddo
- else
-  do i=i1,i2
-         grat = delp(i,2) / delp(i,1)   ! grid ratio
-          bet = grat*(grat+0.5)
-       q(i,1) = ( (grat+grat)*(grat+1.)*a4(1,i,1) + a4(1,i,2) ) / bet
-     gam(i,1) = ( 1. + grat*(grat+1.5) ) / bet
-  enddo
-
-  do k=2,km
-     do i=i1,i2
-           d4(i) = delp(i,k-1) / delp(i,k)
-             bet =  2. + d4(i) + d4(i) - gam(i,k-1)
-          q(i,k) = ( 3.*(a4(1,i,k-1)+d4(i)*a4(1,i,k)) - q(i,k-1) )/bet
-        gam(i,k) = d4(i) / bet
-     enddo
-  enddo
-
-  do i=i1,i2
-         a_bot = 1. + d4(i)*(d4(i)+1.5)
-     q(i,km+1) = (2.*d4(i)*(d4(i)+1.)*a4(1,i,km)+a4(1,i,km-1)-a_bot*q(i,km))  &
-               / ( d4(i)*(d4(i)+0.5) - a_bot*gam(i,km) )
-  enddo
-
-  do k=km,1,-1
-     do i=i1,i2
-        q(i,k) = q(i,k) - gam(i,k)*q(i,k+1)
-     enddo
-  enddo
- endif
-!----- Perfectly linear scheme --------------------------------
- if ( abs(kord) > 16 ) then
-  do k=1,km
-     do i=i1,i2
-        a4(2,i,k) = q(i,k  )
-        a4(3,i,k) = q(i,k+1)
-        a4(4,i,k) = 3.*(2.*a4(1,i,k) - (a4(2,i,k)+a4(3,i,k)))
-     enddo
-  enddo
-  return
- endif
-!----- Perfectly linear scheme --------------------------------
-
-!------------------
-! Apply constraints
-!------------------
-  im = i2 - i1 + 1
-
-! Apply *large-scale* constraints
-  do i=i1,i2
-     q(i,2) = min( q(i,2), max(a4(1,i,1), a4(1,i,2)) )
-     q(i,2) = max( q(i,2), min(a4(1,i,1), a4(1,i,2)) )
-  enddo
-
-  do k=2,km
-     do i=i1,i2
-        gam(i,k) = a4(1,i,k) - a4(1,i,k-1)
-     enddo
-  enddo
-
-! Interior:
-  do k=3,km-1
-     do i=i1,i2
-        if ( gam(i,k-1)*gam(i,k+1)>0. ) then
-! Apply large-scale constraint to ALL fields if not local max/min
-             q(i,k) = min( q(i,k), max(a4(1,i,k-1),a4(1,i,k)) )
-             q(i,k) = max( q(i,k), min(a4(1,i,k-1),a4(1,i,k)) )
-        else
-          if ( gam(i,k-1) > 0. ) then
-! There exists a local max
-               q(i,k) = max(q(i,k), min(a4(1,i,k-1),a4(1,i,k)))
-          else
-! There exists a local min
-                 q(i,k) = min(q(i,k), max(a4(1,i,k-1),a4(1,i,k)))
-               if ( iv==0 ) q(i,k) = max(0., q(i,k))
-          endif
-        endif
-     enddo
-  enddo
-
-! Bottom:
-  do i=i1,i2
-     q(i,km) = min( q(i,km), max(a4(1,i,km-1), a4(1,i,km)) )
-     q(i,km) = max( q(i,km), min(a4(1,i,km-1), a4(1,i,km)) )
-  enddo
-
-  do k=1,km
-     do i=i1,i2
-        a4(2,i,k) = q(i,k  )
-        a4(3,i,k) = q(i,k+1)
-     enddo
-  enddo
-
-  do k=1,km
-     if ( k==1 .or. k==km ) then
-       do i=i1,i2
-          extm(i,k) = (a4(2,i,k)-a4(1,i,k)) * (a4(3,i,k)-a4(1,i,k)) > 0.
-       enddo
-     else
-       do i=i1,i2
-          extm(i,k) = gam(i,k)*gam(i,k+1) < 0.
-       enddo
-     endif
-  enddo
-
-!---------------------------
-! Apply subgrid constraints:
-!---------------------------
-! f(s) = AL + s*[(AR-AL) + A6*(1-s)]         ( 0 <= s  <= 1 )
-! Top 2 and bottom 2 layers always use monotonic mapping
-
-  if ( iv==0 ) then
-     do i=i1,i2
-        a4(2,i,1) = max(0., a4(2,i,1))
-     enddo
-  elseif ( iv==-1 ) then
-      do i=i1,i2
-         if ( a4(2,i,1)*a4(1,i,1) <= 0. ) a4(2,i,1) = 0.
-      enddo
-  elseif ( iv==2 ) then
-     do i=i1,i2
-        a4(2,i,1) = a4(1,i,1)
-        a4(3,i,1) = a4(1,i,1)
-        a4(4,i,1) = 0.
-     enddo
-  endif
-
-  if ( iv/=2 ) then
-     do i=i1,i2
-        a4(4,i,1) = 3.*(2.*a4(1,i,1) - (a4(2,i,1)+a4(3,i,1)))
-     enddo
-     call cs_limiters(im, extm(i1,1), a4(1,i1,1), 1)
-  endif
-
-! k=2
-   do i=i1,i2
-      a4(4,i,2) = 3.*(2.*a4(1,i,2) - (a4(2,i,2)+a4(3,i,2)))
-   enddo
-   call cs_limiters(im, extm(i1,2), a4(1,i1,2), 2)
-
-!-------------------------------------
-! Huynh's 2nd constraint for interior:
-!-------------------------------------
-  do k=3,km-2
-     if ( abs(kord)<9 ) then
-       do i=i1,i2
-! Left  edges
-          pmp_1 = a4(1,i,k) - 2.*gam(i,k+1)
-          lac_1 = pmp_1 + 1.5*gam(i,k+2)
-          a4(2,i,k) = min(max(a4(2,i,k), min(a4(1,i,k), pmp_1, lac_1)),   &
-                                         max(a4(1,i,k), pmp_1, lac_1) )
-! Right edges
-          pmp_2 = a4(1,i,k) + 2.*gam(i,k)
-          lac_2 = pmp_2 - 1.5*gam(i,k-1)
-          a4(3,i,k) = min(max(a4(3,i,k), min(a4(1,i,k), pmp_2, lac_2)),    &
-                                         max(a4(1,i,k), pmp_2, lac_2) )
-
-          a4(4,i,k) = 3.*(2.*a4(1,i,k) - (a4(2,i,k)+a4(3,i,k)))
-       enddo
-
-     elseif ( abs(kord)==9 ) then
-       do i=i1,i2
-          if ( extm(i,k) .and. extm(i,k-1) ) then  ! c90_mp122
-! grid-scale 2-delta-z wave detected
-               a4(2,i,k) = a4(1,i,k)
-               a4(3,i,k) = a4(1,i,k)
-               a4(4,i,k) = 0.
-          else if ( extm(i,k) .and. extm(i,k+1) ) then  ! c90_mp122
-! grid-scale 2-delta-z wave detected
-               a4(2,i,k) = a4(1,i,k)
-               a4(3,i,k) = a4(1,i,k)
-               a4(4,i,k) = 0.
-          else
-            a4(4,i,k) = 6.*a4(1,i,k) - 3.*(a4(2,i,k)+a4(3,i,k))
-! Check within the smooth region if subgrid profile is non-monotonic
-            if( abs(a4(4,i,k)) > abs(a4(2,i,k)-a4(3,i,k)) ) then
-                  pmp_1 = a4(1,i,k) - 2.*gam(i,k+1)
-                  lac_1 = pmp_1 + 1.5*gam(i,k+2)
-              a4(2,i,k) = min(max(a4(2,i,k), min(a4(1,i,k), pmp_1, lac_1)),  &
-                                             max(a4(1,i,k), pmp_1, lac_1) )
-                  pmp_2 = a4(1,i,k) + 2.*gam(i,k)
-                  lac_2 = pmp_2 - 1.5*gam(i,k-1)
-              a4(3,i,k) = min(max(a4(3,i,k), min(a4(1,i,k), pmp_2, lac_2)),  &
-                                             max(a4(1,i,k), pmp_2, lac_2) )
-              a4(4,i,k) = 6.*a4(1,i,k) - 3.*(a4(2,i,k)+a4(3,i,k))
-            endif
-          endif
-       enddo
-     elseif ( abs(kord)==10 ) then
-       do i=i1,i2
-          if( extm(i,k) ) then
-              if( extm(i,k-1) .or. extm(i,k+1) ) then
-! grid-scale 2-delta-z wave detected
-                   a4(2,i,k) = a4(1,i,k)
-                   a4(3,i,k) = a4(1,i,k)
-                   a4(4,i,k) = 0.
-              else
-! True local extremum
-                a4(4,i,k) = 6.*a4(1,i,k) - 3.*(a4(2,i,k)+a4(3,i,k))
-              endif
-          else        ! not a local extremum
-            a4(4,i,k) = 6.*a4(1,i,k) - 3.*(a4(2,i,k)+a4(3,i,k))
-! Check within the smooth region if subgrid profile is non-monotonic
-            if( abs(a4(4,i,k)) > abs(a4(2,i,k)-a4(3,i,k)) ) then
-                  pmp_1 = a4(1,i,k) - 2.*gam(i,k+1)
-                  lac_1 = pmp_1 + 1.5*gam(i,k+2)
-              a4(2,i,k) = min(max(a4(2,i,k), min(a4(1,i,k), pmp_1, lac_1)),  &
-                                             max(a4(1,i,k), pmp_1, lac_1) )
-                  pmp_2 = a4(1,i,k) + 2.*gam(i,k)
-                  lac_2 = pmp_2 - 1.5*gam(i,k-1)
-              a4(3,i,k) = min(max(a4(3,i,k), min(a4(1,i,k), pmp_2, lac_2)),  &
-                                             max(a4(1,i,k), pmp_2, lac_2) )
-              a4(4,i,k) = 6.*a4(1,i,k) - 3.*(a4(2,i,k)+a4(3,i,k))
-            endif
-          endif
-       enddo
-     elseif ( abs(kord)==12 ) then
-       do i=i1,i2
-          if( extm(i,k) ) then
-! grid-scale 2-delta-z wave detected
-              a4(2,i,k) = a4(1,i,k)
-              a4(3,i,k) = a4(1,i,k)
-              a4(4,i,k) = 0.
-          else        ! not a local extremum
-            a4(4,i,k) = 6.*a4(1,i,k) - 3.*(a4(2,i,k)+a4(3,i,k))
-! Check within the smooth region if subgrid profile is non-monotonic
-            if( abs(a4(4,i,k)) > abs(a4(2,i,k)-a4(3,i,k)) ) then
-                  pmp_1 = a4(1,i,k) - 2.*gam(i,k+1)
-                  lac_1 = pmp_1 + 1.5*gam(i,k+2)
-              a4(2,i,k) = min(max(a4(2,i,k), min(a4(1,i,k), pmp_1, lac_1)),  &
-                                             max(a4(1,i,k), pmp_1, lac_1) )
-                  pmp_2 = a4(1,i,k) + 2.*gam(i,k)
-                  lac_2 = pmp_2 - 1.5*gam(i,k-1)
-              a4(3,i,k) = min(max(a4(3,i,k), min(a4(1,i,k), pmp_2, lac_2)),  &
-                                             max(a4(1,i,k), pmp_2, lac_2) )
-              a4(4,i,k) = 6.*a4(1,i,k) - 3.*(a4(2,i,k)+a4(3,i,k))
-            endif
-          endif
-       enddo
-     elseif ( abs(kord)==13 ) then
-       do i=i1,i2
-          if( extm(i,k) ) then
-             if ( extm(i,k-1) .and. extm(i,k+1) ) then
-! grid-scale 2-delta-z wave detected
-                 a4(2,i,k) = a4(1,i,k)
-                 a4(3,i,k) = a4(1,i,k)
-                 a4(4,i,k) = 0.
-             else
-                 ! Left  edges
-                 pmp_1 = a4(1,i,k) - 2.*gam(i,k+1)
-                 lac_1 = pmp_1 + 1.5*gam(i,k+2)
-                 a4(2,i,k) = min(max(a4(2,i,k), min(a4(1,i,k), pmp_1, lac_1)),   &
-                                     max(a4(1,i,k), pmp_1, lac_1) )
-                 ! Right edges
-                 pmp_2 = a4(1,i,k) + 2.*gam(i,k)
-                 lac_2 = pmp_2 - 1.5*gam(i,k-1)
-                 a4(3,i,k) = min(max(a4(3,i,k), min(a4(1,i,k), pmp_2, lac_2)),    &
-                                     max(a4(1,i,k), pmp_2, lac_2) )
-                 a4(4,i,k) = 3.*(2.*a4(1,i,k) - (a4(2,i,k)+a4(3,i,k)))
-             endif
-          else
-             a4(4,i,k) = 3.*(2.*a4(1,i,k) - (a4(2,i,k)+a4(3,i,k)))
-          endif
-       enddo
-     elseif ( abs(kord)==14 ) then
-       do i=i1,i2
-          a4(4,i,k) = 3.*(2.*a4(1,i,k) - (a4(2,i,k)+a4(3,i,k)))
-       enddo
-     else      ! kord = 11
-       do i=i1,i2
-         if ( extm(i,k) .and. (extm(i,k-1) .or. extm(i,k+1)) ) then
-! Noisy region:
-              a4(2,i,k) = a4(1,i,k)
-              a4(3,i,k) = a4(1,i,k)
-              a4(4,i,k) = 0.
-         else
-              a4(4,i,k) = 3.*(2.*a4(1,i,k) - (a4(2,i,k)+a4(3,i,k)))
-         endif
-       enddo
-     endif
-
-! Additional constraint to ensure positivity
-     if ( iv==0 ) call cs_limiters(im, extm(i1,k), a4(1,i1,k), 0)
-
-  enddo      ! k-loop
-
-!----------------------------------
-! Bottom layer subgrid constraints:
-!----------------------------------
-  if ( iv==0 ) then
-     do i=i1,i2
-        a4(3,i,km) = max(0., a4(3,i,km))
-     enddo
-  elseif ( iv .eq. -1 ) then
-      do i=i1,i2
-         if ( a4(3,i,km)*a4(1,i,km) <= 0. )  a4(3,i,km) = 0.
-      enddo
-  endif
-
-  do k=km-1,km
-     do i=i1,i2
-        a4(4,i,k) = 3.*(2.*a4(1,i,k) - (a4(2,i,k)+a4(3,i,k)))
-     enddo
-     if(k==(km-1)) call cs_limiters(im, extm(i1,k), a4(1,i1,k), 2)
-     if(k== km   ) call cs_limiters(im, extm(i1,k), a4(1,i1,k), 1)
-  enddo
-
- end subroutine cs_profile_am4
 
 
 
@@ -3674,10 +2834,10 @@ else ! all others
 
 !This routine should be moved to fv_io.F90.
  subroutine rst_remap(km, kn, is,ie,js,je, isd,ied,jsd,jed, nq, ntp, &
-                      delp_r, u_r, v_r, w_r, delz_r, pt_r, q_r, qdiag_r, &
-                      delp,   u,   v,   w,   delz,   pt,   q,   qdiag,   &
+                      delp_r, u0_r, v0_r, u_r, v_r, w_r, delz_r, pt_r, q_r, qdiag_r, &
+                      delp,   u0,   v0,   u,   v,   w,   delz,   pt,   q,   qdiag,   &
                       ak_r, bk_r, ptop, ak, bk, hydrostatic, make_nh, &
-                      domain, square_domain)
+                      domain, square_domain, is_ideal_case)
 !------------------------------------
 ! Assuming hybrid sigma-P coordinate:
 !------------------------------------
@@ -3687,13 +2847,15 @@ else ! all others
   integer, intent(in):: nq, ntp               ! number of tracers (including h2o)
   integer, intent(in):: is,ie,isd,ied         ! starting & ending X-Dir index
   integer, intent(in):: js,je,jsd,jed         ! starting & ending Y-Dir index
-  logical, intent(in):: hydrostatic, make_nh, square_domain
+  logical, intent(in):: hydrostatic, make_nh, square_domain, is_ideal_case
   real, intent(IN) :: ptop
   real, intent(in) :: ak_r(km+1)
   real, intent(in) :: bk_r(km+1)
   real, intent(in) :: ak(kn+1)
   real, intent(in) :: bk(kn+1)
   real, intent(in):: delp_r(is:ie,js:je,km) ! pressure thickness
+  real, intent(in)::   u0_r(is:ie,  js:je+1,km)   ! initial (t=0) u-wind (m/s)
+  real, intent(in)::   v0_r(is:ie+1,js:je  ,km)   ! initial (t=0) v-wind (m/s)
   real, intent(in)::   u_r(is:ie,  js:je+1,km)   ! u-wind (m/s)
   real, intent(in)::   v_r(is:ie+1,js:je  ,km)   ! v-wind (m/s)
   real, intent(inout)::  pt_r(is:ie,js:je,km)
@@ -3704,6 +2866,8 @@ else ! all others
   type(domain2d), intent(INOUT) :: domain
 ! Output:
   real, intent(out):: delp(isd:ied,jsd:jed,kn) ! pressure thickness
+  real, intent(out):: u0(isd:,jsd:,1:)   ! initial (t=0) u-wind (m/s)
+  real, intent(out):: v0(isd:,jsd:,1:)   ! initial (t=0) v-wind (m/s)
   real, intent(out)::  u(isd:ied  ,jsd:jed+1,kn)   ! u-wind (m/s)
   real, intent(out)::  v(isd:ied+1,jsd:jed  ,kn)   ! v-wind (m/s)
   real, intent(out)::  w(isd:     ,jsd:     ,1:)   ! vertical velocity (m/s)
@@ -3720,7 +2884,8 @@ else ! all others
   real  pv2(is:ie+1,kn+1)
 
   integer i,j,k , iq
-  integer, parameter:: kord=4
+  !CS operator replaces original mono PPM 4 --- lmh 19apr23
+  integer, parameter:: kord=4 ! 13
 
 #ifdef HYDRO_DELZ_REMAP
   if (is_master() .and. .not. hydrostatic) then
@@ -3783,9 +2948,9 @@ else ! all others
      enddo
   enddo
 
-!$OMP parallel do default(none) shared(is,ie,js,je,km,ak_r,bk_r,ps,kn,ak,bk,u_r,u,delp, &
+!$OMP parallel do default(none) shared(is,ie,js,je,km,ak_r,bk_r,ps,kn,ak,bk,u0_r,u_r,u0,u,delp, &
 !$OMP                                  ntp,nq,hydrostatic,make_nh,w_r,w,delz_r,delp_r,delz, &
-!$OMP                                  pt_r,pt,v_r,v,q,q_r,qdiag,qdiag_r) &
+!$OMP                                  pt_r,pt,v0_r,v_r,v0,v,q,q_r,qdiag,qdiag_r,is_ideal_case) &
 !$OMP                          private(pe1,  pe2, pv1, pv2)
   do 1000 j=js,je+1
 !------
@@ -3802,6 +2967,12 @@ else ! all others
            pe2(i,k) = ak(k) + 0.5*bk(k)*(ps(i,j-1)+ps(i,j))
         enddo
      enddo
+
+     if (is_ideal_case) then
+        call remap_2d(km, pe1, u0_r(is:ie,j:j,1:km),      &
+                      kn, pe2,   u0(is:ie,j:j,1:kn),      &
+                      is, ie, -1, kord)
+     endif
 
      call remap_2d(km, pe1, u_r(is:ie,j:j,1:km),       &
                    kn, pe2,   u(is:ie,j:j,1:kn),       &
@@ -3930,6 +3101,12 @@ else ! all others
              pv2(i,k) = ak(k) + 0.5*bk(k)*(ps(i-1,j)+ps(i,j))
           enddo
        enddo
+
+       if (is_ideal_case) then
+          call remap_2d(km, pv1, v0_r(is:ie+1,j:j,1:km),      &
+                        kn, pv2,   v0(is:ie+1,j:j,1:kn),      &
+                        is, ie+1, -1, kord)
+       endif
 
        call remap_2d(km, pv1, v_r(is:ie+1,j:j,1:km),       &
                      kn, pv2,   v(is:ie+1,j:j,1:kn),       &

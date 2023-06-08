@@ -1,6 +1,6 @@
 # GFDL_atmos_cubed_sphere
 
-The source contained herein reflects the 202210 release of the Finite Volume Cubed-Sphere Dynamical Core (FV3) from GFDL
+The source contained herein reflects the 202305 release of the Finite Volume Cubed-Sphere Dynamical Core (FV3) from GFDL
 
 The GFDL Microphysics is also available within this repository.
 

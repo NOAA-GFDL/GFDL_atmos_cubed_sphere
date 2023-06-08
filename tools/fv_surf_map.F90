@@ -72,7 +72,6 @@
       character(len=6)  ::  surf_format = 'netcdf'
       logical :: namelist_read = .false.
 
-      real(kind=R_GRID) da_min
       real cos_grid
       character(len=3) :: grid_string = ''
 
@@ -123,7 +122,7 @@
       real(kind=4), allocatable ::  ft(:,:), zs(:,:)
       real, allocatable :: lon1(:),  lat1(:)
       real dx1, dx2, dy1, dy2, lats, latn, r2d
-      real(kind=R_GRID) da_max
+      real(kind=R_GRID) da_max, da_min
       real zmean, z2mean, delg, rgrav
 !     real z_sp, f_sp, z_np, f_np
       integer i, j, n, mdim
@@ -331,11 +330,11 @@
 
       allocate ( oro_g(isd:ied, jsd:jed) )
       allocate ( sgh_g(isd:ied, jsd:jed) )
-                                                     call timing_on('map_to_cubed')
+      call timing_on('map_to_cubed')
       call map_to_cubed_raw(igh, nlon, jt, lat1(jstart:jend+1), lon1, zs, ft, grid, agrid,  &
                             phis, oro_g, sgh_g, npx, npy, jstart, jend, stretch_fac, bounded_domain, npx_global, bd)
       if (is_master()) write(*,*) 'map_to_cubed_raw: master PE done'
-                                                     call timing_off('map_to_cubed')
+      call timing_off('map_to_cubed')
 
       deallocate ( zs )
       deallocate ( ft )
@@ -386,7 +385,7 @@
       if ( is_master() ) write(*,*) 'ORO', trim(grid_string), ' min=', da_min, ' Max=', da_max
 
       call global_mx(area, ng, da_min, da_max, bd)
-                                                    call timing_on('Terrain_filter')
+      call timing_on('Terrain_filter')
 ! Del-2: high resolution only
       if ( zs_filter ) then
          if(is_master()) then
@@ -449,9 +448,9 @@
       if ( is_master() ) write(*,*) 'Before filter SGH', trim(grid_string), ' min=', da_min, ' Max=', da_max
 
 
-!-----------------------------------------------
-! Filter the standard deviation of mean terrain:
-!-----------------------------------------------
+      !-----------------------------------------------
+      ! Filter the standard deviation of mean terrain:
+      !-----------------------------------------------
       call global_mx(area, ng, da_min, da_max, bd)
 
       if(zs_filter) call del4_cubed_sphere(npx, npy, sgh_g, area, dx, dy, dxc, dyc, sin_sg, 1, zero_ocean, oro_g, bounded_domain, domain, bd)
@@ -485,7 +484,7 @@
       real, intent(inout):: oro(isd:ied,jsd,jed)
       type(domain2d), intent(INOUT) :: domain
       integer mdim
-      real(kind=R_GRID) da_max
+      real(kind=R_GRID) da_max, da_min
 
       if (is_master()) print*, ' Calling FV3_zs_filter...'
 
@@ -1150,9 +1149,8 @@
 
  end subroutine del4_cubed_sphere
 
-
  subroutine map_to_cubed_raw(igh, im, jt, lat1, lon1, zs, ft,  grid, agrid,  &
-                              q2, f2, h2, npx, npy, jstart, jend, stretch_fac, &
+                              phis, oro, sgh, npx, npy, jstart, jend, stretch_fac, &
                               bounded_domain, npx_global, bd)
 
 ! Input
@@ -1168,9 +1166,9 @@
       real(kind=R_GRID), intent(IN) :: stretch_fac
       logical, intent(IN) :: bounded_domain
 ! Output
-      real, intent(out):: q2(bd%isd:bd%ied,bd%jsd:bd%jed) ! Mapped data at the target resolution
-      real, intent(out):: f2(bd%isd:bd%ied,bd%jsd:bd%jed) ! oro
-      real, intent(out):: h2(bd%isd:bd%ied,bd%jsd:bd%jed) ! variances of terrain
+      real, intent(out):: phis(bd%isd:bd%ied,bd%jsd:bd%jed) ! phis (surface geopotential) mapped data at the target resolution
+      real, intent(out):: oro(bd%isd:bd%ied,bd%jsd:bd%jed) ! oro (land mask)
+      real, intent(out):: sgh(bd%isd:bd%ied,bd%jsd:bd%jed) ! sgh variances of terrain
 ! Local
       real :: lon_g(-igh:im+igh)
       real lat_g(jt), cos_g(jt)
@@ -1307,23 +1305,23 @@
                (i < is .and. j > je) .or. &
                (i > ie .and. j < js) .or. &
                (i > ie .and. j > je)) .and. .not. bounded_domain) then
-             q2(i,j) = 1.e25
-             f2(i,j) = 1.e25
-             h2(i,j) = 1.e25
+             phis(i,j) = 1.e25
+             oro(i,j) = 1.e25
+             sgh(i,j) = 1.e25
              goto 4444
           end if
 
           if ( agrid(i,j,2) < -pi5+stretch_fac*pi5/real(npx_global-1) ) then
 ! SP:
-               q2(i,j) = qsp
-               f2(i,j) = fsp
-               h2(i,j) = hsp
+               phis(i,j) = qsp
+               oro(i,j) = fsp
+               sgh(i,j) = hsp
                goto 4444
           elseif ( agrid(i,j,2) > pi5-stretch_fac*pi5/real(npx_global-1) ) then
 ! NP:
-               q2(i,j) = qnp
-               f2(i,j) = fnp
-               h2(i,j) = hnp
+               phis(i,j) = qnp
+               oro(i,j) = fnp
+               sgh(i,j) = hnp
                goto 4444
           endif
 
@@ -1422,9 +1420,9 @@
             enddo
 
             if ( np > 0 ) then
-                 q2(i,j) = qsum / asum
-                 f2(i,j) = fsum / asum
-                 h2(i,j) = hsum / real(np) - q2(i,j)**2
+                 phis(i,j) = qsum / asum
+                 oro(i,j) = fsum / asum
+                 sgh(i,j) = hsum / real(np) - phis(i,j)**2
                  min_pts = min(min_pts, np)
             else
                  write(*,*) 'min and max lat_g is ', r2d*minval(lat_g), r2d*maxval(lat_g), mpp_pe()
@@ -1436,7 +1434,7 @@
       enddo
     enddo
 
-      if(is_master()) write(*,*) 'surf_map: minimum pts per cell (master PE)=', min_pts
+    if(is_master()) write(*,*) 'surf_map: minimum pts per cell (master PE)=', min_pts
       if ( min_pts <3 ) then
            if(is_master()) write(*,*) 'Warning: too few points used in creating the cell mean terrain !!!'
       endif
@@ -1493,7 +1491,7 @@
 
       if (status .ne. nf_noerr) then
         print *, nf_strerror(status)
-        stop 'Stopped'
+        stop 'fv_surf_map_mod: Stopped due to file error'
       endif
 
  end subroutine  handle_err

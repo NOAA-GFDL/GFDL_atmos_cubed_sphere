@@ -28,10 +28,9 @@
 #if defined(SPMD)
 ! !USES:
       use fms_mod,         only : fms_end
-      use mpp_mod,         only : FATAL, MPP_DEBUG, NOTE, MPP_CLOCK_SYNC,MPP_CLOCK_DETAILED, WARNING
+      use mpp_mod,         only : FATAL, MPP_DEBUG, NOTE, WARNING
       use mpp_mod,         only : mpp_pe, mpp_npes, mpp_root_pe, mpp_error, mpp_set_warn_level
       use mpp_mod,         only : mpp_declare_pelist, mpp_set_current_pelist, mpp_sync
-      use mpp_mod,         only : mpp_clock_begin, mpp_clock_end, mpp_clock_id
       use mpp_mod,         only : mpp_chksum, stdout, stderr, mpp_broadcast
       use mpp_mod,         only : mpp_min, mpp_max, mpp_sum
       use mpp_mod,         only : mpp_send, mpp_recv, mpp_sync_self, EVENT_RECV, mpp_gather
@@ -323,7 +322,6 @@ contains
                nregions = 1
                num_contact = 0
                npes_per_tile = npes_x*npes_y !/nregions !Set up for concurrency
-               is_symmetry = .true.
                call mpp_define_layout( (/1,npx-1,1,npy-1/), npes_per_tile, layout )
 
                if ( npes_x == 0 ) then
@@ -333,7 +331,7 @@ contains
                   npes_y = layout(2)
                endif
 
-               if ( npes_x==npes_y .and. (npx-1)==((npx-1)/npes_x)*npes_x )  square_domain = .true.
+               if ( npx==npy .and. npes_x==npes_y .and. (npx-1)==((npx-1)/npes_x)*npes_x )  square_domain = .true.
 
                if ( (npx/npes_x < ng) .or. (npy/npes_y < ng) ) then
                   write(*,310) npes_x, npes_y, npx/npes_x, npy/npes_y
@@ -357,8 +355,15 @@ contains
             case (4)   ! Cartesian, double periodic
                type="Cartesian: double periodic"
                nregions = 1
-               num_contact = 2
-               npes_per_tile = npes/nregions
+               if (.not. nested) then
+                 num_contact = 2
+               else !accomodate a cartesian nest
+                  num_contact = 0
+                  if ( npx==npy .and. npes_x==npes_y .and. (npx-1)==((npx-1)/npes_x)*npes_x )  square_domain = .true.
+               endif
+               !npes_per_tile = npes/nregions
+               !the previous line will crash if there is a nest, all "npes" will be distributed on the first grid only
+               npes_per_tile = npes_x*npes_y
                if(npes_x*npes_y == npes_per_tile) then
                   layout = (/npes_x,npes_y/)
                else
@@ -466,6 +471,7 @@ contains
                istart2(8) = nx; iend2(8) = nx; jstart2(8) = 1;  jend2(8) = ny
                is_symmetry = .false.
             case (4)   ! Cartesian, double periodic
+              if (.not. nested) then
                !--- Contact line 1, between tile 1 (EAST) and tile 1 (WEST)
                tile1(1) = 1; tile2(1) = 1
                istart1(1) = nx; iend1(1) = nx; jstart1(1) = 1;  jend1(1) = ny
@@ -474,6 +480,7 @@ contains
                tile1(2) = 1; tile2(2) = 1
                istart1(2) = 1;  iend1(2) = nx; jstart1(2) = 1;   jend1(2) = 1
                istart2(2) = 1;  iend2(2) = nx; jstart2(2) = ny;  jend2(2) = ny
+              endif
             case (5)   ! latlon patch
 
             case (6)   !latlon strip

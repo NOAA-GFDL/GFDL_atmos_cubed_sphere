@@ -43,11 +43,12 @@
       use mpp_parameter_mod, only: AGRID_PARAM=>AGRID,CGRID_NE_PARAM=>CGRID_NE, &
                                    SCALAR_PAIR
       use gfdl_mp_mod,       only: mqs3d
-      use fv_diagnostics_mod, only: prt_maxmin, ppme, eqv_pot, qcly0, is_ideal_case
+      use fv_diagnostics_mod, only: prt_maxmin, ppme, eqv_pot, qcly0
       use mpp_mod,            only: mpp_pe, mpp_chksum, stdout
       use fv_arrays_mod,         only: fv_grid_type, fv_flags_type, fv_grid_bounds_type, R_GRID
       use tracer_manager_mod,    only: get_tracer_index
       use field_manager_mod,     only: MODEL_ATMOS
+      use w_forcing_mod,         only: init_w_forcing
       implicit none
       private
 
@@ -110,8 +111,8 @@
 !                   19 = LJZ update to 17 with Cetrone-Houze marine sounding
 !                        and several bubble and sounding options
 !                  101 = LES with isothermal atmosphere (not implemented)
-
-
+!                  102 = Beare et al. (Boundary-Layer Meteorol. 2006) SBL LES case
+!                  103 = DYCOMS II (Stevens et al. 2003, MWR) SCu case (requires forcing terms)
 
 
 
@@ -122,13 +123,16 @@
       logical :: no_wind = .false.
       logical :: gaussian_dt = .false.
       logical :: do_marine_sounding = .false.
-      real    :: dt_amp = 2.1
+      real    :: dt_amp = 2.1   ! K
+      real    :: dt_rad = 2000. !m
       real    :: alpha = 0.0
       integer :: Nsolitons = 2
       real    :: soliton_size = 750.e3, soliton_Umax = 50.
       logical :: checker_tr
       real    :: small_earth_scale = 1.0
       real    :: umean = 0.0
+      real    :: vmean = 0.0
+      logical :: w_forcing
 
 ! Case 0 parameters
       real :: p0_c0 = 3.0
@@ -160,6 +164,10 @@
      real  , allocatable :: case9_B(:,:)
      real   :: AofT(2)
 
+     ! case 20 -doubly periodic- idealized TC
+     real :: dp_TC = 1115.
+     real :: rp_TC = 100000.
+     real :: Ts_TC = 300.
 
      !  Validating fields used in statistics
      real  , allocatable :: phi0(:,:,:) ! Validating Field
@@ -182,7 +190,7 @@
       public :: case9_forcing1, case9_forcing2, case51_forcing
       public :: init_double_periodic
       public :: checker_tracers
-      public :: radius, omega, small_earth_scale
+      public :: radius, omega, small_earth_scale, w_forcing
 
   INTERFACE mp_update_dwinds
      MODULE PROCEDURE mp_update_dwinds_2d
@@ -634,7 +642,7 @@
       real :: gz(bd%isd:bd%ied,bd%jsd:bd%jed,npz+1), zt, zdist
       real :: zvir
 
-      integer :: Cl, Cl2
+      integer :: Cl, Cl2, itrac
 
 ! Super-Cell
       real :: us0 = 30.
@@ -682,6 +690,7 @@
 
       integer :: is, ie, js, je
       integer :: isd, ied, jsd, jed
+      integer :: counter
 
       is  = bd%is
       ie  = bd%ie
@@ -1703,7 +1712,8 @@
          delta_T = 480000.0
          lapse_rate = 0.005
 !$OMP parallel do default(none) shared(is,ie,js,je,npz,eta,ak,bk,T_0,lapse_rate,eta_t, &
-!$OMP                                  delta_T,ptop,delp,Ubar,eta_v,agrid,grid,pcen,pt,r0,radius,omega) &
+!$OMP                                  delta_T,ptop,delp,Ubar,eta_v,agrid,grid,pcen,pt,&
+!$OMP                                  r0,radius,omega,flagstruct) &
 !$OMP                          private(T_mean,press,pt1,pt2,pt3,pt4,pt5,pt6,pt7,pt8,pt9,p1,r)
          do z=1,npz
             eta(z) = 0.5*( (ak(z)+ak(z+1))/1.e5 + bk(z)+bk(z+1) )
@@ -1716,7 +1726,7 @@
             do zz=1,z
                press = press + delp(is,js,zz)
             enddo
-            if (is_master()) write(*,230) z, eta(z), press/100., T_mean
+            if (is_master() .and. flagstruct%fv_debug) write(*,230) z, eta(z), press/100., T_mean
             do j=js,je
                do i=is,ie
 ! A-grid cell center: i,j
@@ -1870,8 +1880,10 @@
 !         call get_vorticity(is, ie, js, je, isd, ied, jsd, jed, npz, u, v, q(is:ie,js:je,:,2))
 !         call pv_entropy(is, ie, js, je, ng, npz, q(is:ie,js:je,:,2), f0, pt, pkz, delp, grav)
 
-      write(stdout(), *) 'PI:', pi
-      write(stdout(), *) 'PHIS:', mpp_chksum(phis(is:ie,js:je))
+         if (flagstruct%fv_debug) then
+            write(stdout(), *) 'PI:', pi
+            write(stdout(), *) 'PHIS:', mpp_chksum(phis(is:ie,js:je))
+         endif
 
       else if ( (test_case==-12) .or. (test_case==-13) ) then
 
@@ -1880,7 +1892,7 @@
               pk,peln,pe,pkz,gz,phis,ps,grid,agrid,hydrostatic, &
               nwat, adiabatic, test_case == -13, domain, bd)
 
-         write(stdout(), *) 'PHIS:', mpp_chksum(phis(is:ie,js:je))
+         if (flagstruct%fv_debug) write(stdout(), *) 'PHIS:', mpp_chksum(phis(is:ie,js:je))
 
       else if ( test_case==15 .or. test_case==19 ) then
 !------------------------------------
@@ -2533,7 +2545,7 @@
                ak(k) = (((t00-height*gamma)/t00)**(1./exponent)-1.)/(px - 1.)*px*p00
                bk(k) = (((t00-height*gamma)/t00)**(1./exponent)-px)/(1.-px)
             endif
-            if (is_master()) write(*,*) k, ak(k), bk(k), height, ak(k)+bk(k)*p00
+            if (flagstruct%fv_debug .and. is_master()) write(*,*) k, ak(k), bk(k), height, ak(k)+bk(k)*p00
          enddo
 
          ptop = ak(1)
@@ -2681,7 +2693,7 @@
               vbar = vtmp - 4.25
            endif
 
-           if( is_master() ) then
+           if( is_master() .and. flagstruct%fv_debug) then
               write(6,*) k, utmp, vtmp
            endif
 
@@ -3332,7 +3344,7 @@
                enddo
             enddo
          endif
-      else if (test_case == 55 .or. test_case == 56 .or. test_case == 57) then
+      else if (test_case == 55 .or. test_case == 56 .or. test_case == 57 .or. test_case == 58) then
 
          !Tropical cyclone test case: DCMIP 5X
 
@@ -3340,6 +3352,10 @@
          ! but no vortex
 
          !test_case 57 uses a globally-uniform f-plane
+
+         ! test_case 58 same as 57 with a second TC in the atlantic
+         ! to test mutiple moving nests
+         counter = 0
 
          ! Initialize surface Pressure
          !Vortex perturbation
@@ -3356,12 +3372,18 @@
          p00 = 101500.
 
          ps = p00
+         ps_u = p00
+         ps_v = p00
+
+         58 continue ! create second TC
+
+         if (is_master() .and. test_case == 58) print*, 'INITIALIZING TC at: ', p0(1), p0(2)
 
          do j=js,je
          do i=is,ie
             p2(:) = agrid(i,j,1:2)
             r = great_circle_dist( p0, p2, radius )
-            ps(i,j) = p00 - dp*exp(-(r/rp)**1.5)
+            ps(i,j) = ps(i,j) - dp*exp(-(r/rp)**1.5)
             phis(i,j) = 0.
          enddo
          enddo
@@ -3394,14 +3416,14 @@
          do i=is,ie+1
             p2(:) = 0.5*(grid(i,j,1:2)+grid(i,j+1,1:2))
             r = great_circle_dist( p0, p2, radius )
-            ps_v(i,j) = p00 - dp*exp(-(r/rp)**1.5)
+            ps_v(i,j) = ps_v(i,j) - dp*exp(-(r/rp)**1.5)
          enddo
          enddo
          do j=js,je+1
          do i=is,ie
             p2(:) = 0.5*(grid(i,j,1:2)+grid(i+1,j,1:2))
             r = great_circle_dist( p0, p2, radius )
-            ps_u(i,j) = p00 - dp*exp(-(r/rp)**1.5)
+            ps_u(i,j) = ps_u(i,j) - dp*exp(-(r/rp)**1.5)
          enddo
          enddo
 
@@ -3434,18 +3456,24 @@
             zvir = rvgas/rdgas - 1.
          !endif
 
-         p0 = (/ pi, pi/18. /)
+       !  p0 = (/ pi, pi/18. /)
 
-         exppr = 1.5
-         exppz = 2.
-         gamma = 0.007
-         Ts0 = 302.15
-         q00 = 0.021
-         t00 = Ts0*(1.+zvir*q00)
-         exponent = rdgas*gamma/grav
-         ztrop = 15000.
-         zp = 7000.
-         dp = 1115.
+         if (counter ==0) then
+           exppr = 1.5
+           exppz = 2.
+           gamma = 0.007
+           Ts0 = 302.15
+           q00 = 0.021
+           t00 = Ts0*(1.+zvir*q00)
+           exponent = rdgas*gamma/grav
+           ztrop = 15000.
+           zp = 7000.
+           dp = 1115.
+           u=0.
+           v=0.
+           pt=1.
+         endif
+
          cor = 2.*omega*sin(p0(2)) !Coriolis at vortex center
 
          !Initialize winds separately on the D-grid
@@ -3476,7 +3504,7 @@
                      vtmp = utmp*d2
                      utmp = utmp*d1
 
-                     v(i,j,k) = utmp*inner_prod(e2,ex) + vtmp*inner_prod(e2,ey)
+                     v(i,j,k) = v(i,j,k) + utmp*inner_prod(e2,ex) + vtmp*inner_prod(e2,ey)
 
                   endif
                enddo
@@ -3509,7 +3537,7 @@
                      vtmp = utmp*d2
                      utmp = utmp*d1
 
-                     u(i,j,k) = utmp*inner_prod(e1,ex) + vtmp*inner_prod(e1,ey)
+                     u(i,j,k) = u(i,j,k) + utmp*inner_prod(e1,ex) + vtmp*inner_prod(e1,ey)
                   endif
                enddo
 
@@ -3535,12 +3563,25 @@
                   q(i,j,k,1) = q00*exp(-height/zq1)*exp(-(height/zq2)**exppz)
                   p2(:) = agrid(i,j,1:2)
                   r = great_circle_dist( p0, p2, radius )
-                  pt(i,j,k) = (T00-gamma*height)/(1.d0+zvir*q(i,j,k,1))/(1.d0+exppz*Rdgas*(T00-gamma*height)*height &
-                       /(grav*zp**exppz*(1.d0-p00/dp*exp((r/rp)**exppr)*exp((height/zp)**exppz))))
+                  if (counter == 0) then
+                     pt(i,j,k) = (T00-gamma*height)/(1.d0+zvir*q(i,j,k,1))/(1.d0+exppz*Rdgas*(T00-gamma*height)*height &
+                          /(grav*zp**exppz*(1.d0-p00/dp*exp((r/rp)**exppr)*exp((height/zp)**exppz))))
+                  elseif (counter > 0 .and. r < 4*rp) then ! find a cleaner way
+                     pt(i,j,k) = (T00-gamma*height)/(1.d0+zvir*q(i,j,k,1))/(1.d0+exppz*Rdgas*(T00-gamma*height)*height &
+                          /(grav*zp**exppz*(1.d0-p00/dp*exp((r/rp)**exppr)*exp((height/zp)**exppz))))
+                  endif
                end if
          enddo
          enddo
          enddo
+
+         if (test_case == 58 .and. counter==0) then
+           p0(1) = -30. * pi / 180.
+           p0(2) = 10. * pi / 180.
+           counter=1
+           if (is_master()) print*, 'Initializing second TC'
+           goto 58
+         endif
 
          !Note that this is already the moist pressure
          do j=js,je
@@ -3616,14 +3657,61 @@
       if (cl > 0 .and. cl2 > 0) then
          call terminator_tracers(is,ie,js,je,isd,ied,jsd,jed,npz, &
               q, delp,ncnst,agrid(isd:ied,jsd:jed,1),agrid(isd:ied,jsd:jed,2),bd)
+      endif
+
+      itrac = get_tracer_index(MODEL_ATMOS, 'qdry')
+      if (itrac > 0) then
+
+         do k=1,npz
+            do j=js,je
+               do i=is,ie
+                  dum = 1.
+                  do n=1,nwat
+                     dum = dum - q(i,j,k,n)
+                  enddo
+                  q(i,j,k,itrac) = dum
+               enddo
+            enddo
+         enddo
+
+         call mpp_update_domains(q,domain)
+      endif
+
+      itrac = get_tracer_index(MODEL_ATMOS, 'qmoist')
+      if (itrac > 0) then
+
+         do k=1,npz
+            do j=js,je
+               do i=is,ie
+                  dum = 1.
+                  do n=2,nwat
+                     dum = dum - q(i,j,k,n)
+                  enddo
+                  q(i,j,k,itrac) = dum
+               enddo
+            enddo
+         enddo
+
+         call mpp_update_domains(q,domain)
+      endif
+
+      itrac = get_tracer_index(MODEL_ATMOS, 'qtotal')
+      if (itrac > 0) then
+
+         do k=1,npz
+            do j=js,je
+               do i=is,ie
+                  q(i,j,k,itrac) = 1.
+               enddo
+            enddo
+         enddo
+
          call mpp_update_domains(q,domain)
       endif
 
 #endif SW_DYNAMICS
 
     call mp_update_dwinds(u, v, npx, npy, npz, domain, bd)
-
-    is_ideal_case = .true.
 
     nullify(agrid)
     nullify(grid)
@@ -4490,20 +4578,39 @@ end subroutine terminator_tracers
         type(fv_flags_type), target :: flagstruct
 
         real, dimension(bd%is:bd%ie):: pm, qs
-        real, dimension(1:npz):: pk1, ts1, qs1
+        real, dimension(1:npz):: ts1, qs1
+        real, dimension(npz+1):: pk1, pe1
         real :: us0 = 30.
-        real :: dist, r0, f0_const, prf, rgrav
-        real :: ptmp, ze, zc, zm, utmp, vtmp, xr, yr
+        real :: dist, dist0, r0, f0_const, prf, rgrav
+        real :: ptmp, ze, zc, zm, utmp, vtmp, xr, yr, tmp
         real :: t00, p00, xmax, xc, xx, yy, pk0, pturb, ztop
         real :: ze1(npz+1)
-        real:: dz1(npz)
+        real:: dz1(npz), qc1(npz), qv1(npz)
         real :: gz(bd%isd:bd%ied,bd%jsd:bd%jed,npz+1)
         real:: zvir
         real :: sigma, mu, amp, zint, zmid, qsum, pint, pmid
         real :: N2, N2b, th0, ths, pks, rkap, ampb, thl
-        real :: dz, thp, pp, zt, p_t, pkp
-        integer :: o3mr
+        real :: dz, thp, pp, zt, p_t, pkp, dlogp, logpb, lcl, tl, qt
+        integer :: o3mr, liq_wat
+
+!Test case 20
+        real, dimension(npz+1) :: pe0, gz0, ue, ve, we, pte, qe
+        real :: d, dp, cor, exppr, exppz, gamma, Ts0, q00, exponent, ztrop, height, zp, rp
+        real :: qtrop, ttrop, zq1, zq2, r
+        real :: dum, dum1, dum2, dum3, dum4, dum5, dum6, uetmp, vetmp
+        real ::   pe_u(bd%is:bd%ie,npz+1,bd%js:bd%je+1)
+        real ::   pe_v(bd%is:bd%ie+1,npz+1,bd%js:bd%je)
+        real ::   ps_u(bd%is:bd%ie,bd%js:bd%je+1)
+        real ::   ps_v(bd%is:bd%ie+1,bd%js:bd%je)
+  
+        real(kind=R_GRID) :: p1(2), p2(2), p3(2), p4(2)
+        real(kind=R_GRID) :: e1(3), e2(3), ex(3), ey(3)
+        integer :: z
+        real(kind=R_GRID)   :: p0(2)       ! Temporary Point
+        real :: d1, d2
+
         integer :: i, j, k, m, icenter, jcenter
+        real, parameter :: hlv = 2.5e6 ! gfs: latent heat of evaporation
 
         real, pointer, dimension(:,:,:)   :: agrid, grid
         real(kind=R_GRID), pointer, dimension(:,:)     :: area
@@ -4636,27 +4743,6 @@ end subroutine terminator_tracers
            call hydro_eq(npz, is, ie, js, je, ps, phis, dry_mass,      &
                          delp, ak, bk, pt, delz, area, ng, .false., hydrostatic, hybrid_z, domain)
 
-           ! *** Add Initial perturbation ***
-           if (bubble_do) then
-               r0 = 100.*sqrt(dx_const**2 + dy_const**2)
-               icenter = npx/2
-               jcenter = npy/2
-
-               do j=js,je
-                  do i=is,ie
-                     dist = (i-icenter)*dx_const*(i-icenter)*dx_const   &
-                           +(j-jcenter)*dy_const*(j-jcenter)*dy_const
-                     dist = min(r0, sqrt(dist))
-                     do k=1,npz
-                        prf = ak(k) + ps(i,j)*bk(k)
-                        if ( prf > 100.E2 ) then
-                             pt(i,j,k) = pt(i,j,k) + 2.0*(1. - (dist/r0)) * prf/ps(i,j)
-!                             pt(i,j,k) = pt(i,j,k) + 0.01*(1. - (dist/r0)) * prf/ps(i,j)
-                        endif
-                     enddo
-                  enddo
-               enddo
-           endif
           if ( hydrostatic ) then
           call p_var(npz, is, ie, js, je, ptop, ptop_min, delp, delz, pt, ps,   &
                      pe, peln, pk, pkz, kappa, q, ng, ncnst, area, dry_mass, .false., .false., &
@@ -4667,6 +4753,28 @@ end subroutine terminator_tracers
                      pe, peln, pk, pkz, kappa, q, ng, ncnst, area, dry_mass, .false., .false., &
                      moist_phys, hydrostatic, nwat, domain, flagstruct%adiabatic, .true. )
           endif
+
+           ! *** Add Initial perturbation ***
+           if (bubble_do) then
+              !r0 = 100.*sqrt(dx_const**2 + dy_const**2)
+               icenter = (npx-1)/2
+               jcenter = (npy-1)/2
+               zc = 1500. !1500 m center AGL
+
+               do j=js,je
+                  do i=is,ie
+                     dist0 = (real(i-icenter)*dx_const/dt_rad)**2 + (real(j-jcenter)*dy_const/dt_rad)**2
+                     ze = 0.
+                     do k=npz,1,-1
+                        zm = ze - 0.5*delz(i,j,k)   ! layer center
+                        ze = ze - delz(i,j,k)
+                        dist = dist0 + ((zm-zc)/zc)**2 !1500 m height
+                        dist = min(1.0,dist)
+                        pt(i,j,k) = pt(i,j,k) + dt_amp*cos(0.5*pi*dist)
+                     enddo
+                  enddo
+               enddo
+           endif
 
          q = 0.
          do k=1,npz
@@ -4712,7 +4820,7 @@ end subroutine terminator_tracers
 
         case ( 15 )
 !---------------------------
-! Doubly periodic bubble
+! Doubly periodic warm bubble
 !---------------------------
            t00 = 250.
 
@@ -4825,6 +4933,10 @@ end subroutine terminator_tracers
                 enddo
              enddo
           enddo
+
+          call p_var(npz, is, ie, js, je, ptop, ptop_min, delp, delz, pt, ps,   &
+                     pe, peln, pk, pkz, kappa, q, ng, ncnst, area, dry_mass, .false., .false., &
+                     moist_phys, .false., nwat, domain, flagstruct%adiabatic, .true.)
 
           pturb = 15.
            xmax = 51.2E3
@@ -5011,13 +5123,13 @@ end subroutine terminator_tracers
 ! u-wind
            do j=js,je+1
               do i=is,ie
-                 u(i,j,k) = utmp - 8.
+                 u(i,j,k) = utmp - 8. + Umean
              enddo
            enddo
 ! v-wind
            do j=js,je
               do i=is,ie+1
-                 v(i,j,k) = vtmp - 4.
+                 v(i,j,k) = vtmp - 4. + Vmean
              enddo
            enddo
         enddo
@@ -5128,7 +5240,7 @@ end subroutine terminator_tracers
 
 ! *** Add Initial perturbation (Gaussian) ***
         pturb = dt_amp
-        r0 = 10.e3
+        r0 = dt_rad ! 10.e3
         zc = 1.4e3         ! center of bubble  from surface
         icenter = (npx-1)/2 + 1
         jcenter = (npy-1)/2 + 1
@@ -5149,7 +5261,7 @@ end subroutine terminator_tracers
 
 ! *** Add Initial perturbation (Ellipse) ***
         pturb = dt_amp
-        r0 = 10.e3
+        r0 = dt_rad ! 10.e3
         zc = 1.4e3         ! center of bubble  from surface
         icenter = (npx-1)/2 + 1
         jcenter = (npy-1)/2 + 1
@@ -5158,13 +5270,253 @@ end subroutine terminator_tracers
            ptmp = ( (zm-zc)/zc ) **2
            do j=js,je
               do i=is,ie
-                 dist = ptmp+((i-icenter)*dx_const/r0)**2+((j-jcenter)*dy_const/r0)**2
+                 dist = ptmp+((i-icenter)*dx_const/r0)**2+((j-jcenter)*dy_const/(r0*8))**2
                  pt(i,j,k) = pt(i,j,k) + pturb*max(1.-sqrt(dist),0.)
               enddo
            enddo
         enddo
 
         endif
+
+
+
+        case ( 20 )
+!---------------------------------------------------------
+! Tropical cyclone
+! adapted from case 55 - Joseph M.
+!---------------------------------------------------------
+
+         !p0(1) = (0.) * pi / 180. 
+         p0(1) = (-50.) * pi / 180. !weird physics IC (tsc) when this is around 0
+         p0(2) = (flagstruct%deglat) * pi / 180. 
+
+         !original
+         !dp = 1115.
+         !rp = 100000.
+
+         dp = dp_TC
+         rp = rp_TC
+         Ts0 = Ts_TC
+
+         if (is_master()) print*, "Initializing TC (dp,rp):", dp, rp, &
+         "in a doubly periodic domain at: lon/lat (deg)", p0(1) * 180./pi, p0(2)*180. /pi
+
+         p00 = 101500.
+
+         ps = p00
+
+         do j=js,je
+         do i=is,ie
+            p2(:) = agrid(i,j,1:2)
+            r = great_circle_dist( p0, p2, radius )
+            ps(i,j) = p00 - dp*exp(-(r/rp)**1.5)
+            phis(i,j) = 0.
+         enddo
+         enddo
+
+        call prt_maxmin('PS', ps(is:ie,js:je), is, ie, js, je, 0, 1, 0.01)
+
+         ! Initialize delta-P
+         do z=1,npz
+         do j=js,je
+         do i=is,ie
+            delp(i,j,z) = ak(z+1)-ak(z) + ps(i,j)*(bk(z+1)-bk(z))
+         enddo
+         enddo
+         enddo
+
+         !Pressure
+         do j=js,je
+            do i=is,ie
+               pe(i,1,j) = ptop
+            enddo
+            do k=2,npz+1
+            do i=is,ie
+               pe(i,k,j) = pe(i,k-1,j) + delp(i,j,k-1)
+            enddo
+            enddo
+         enddo
+
+         !Pressure on v-grid and u-grid points
+         do j=js,je
+         do i=is,ie+1
+            p2(:) = 0.5*(grid(i,j,1:2)+grid(i,j+1,1:2))
+            r = great_circle_dist( p0, p2, radius )
+            ps_v(i,j) = p00 - dp*exp(-(r/rp)**1.5)
+         enddo
+         enddo
+         do j=js,je+1
+         do i=is,ie
+            p2(:) = 0.5*(grid(i,j,1:2)+grid(i+1,j,1:2))
+            r = great_circle_dist( p0, p2, radius )
+            ps_u(i,j) = p00 - dp*exp(-(r/rp)**1.5)
+         enddo
+         enddo
+
+         !Pressure
+         do j=js,je
+            do i=is,ie+1
+               pe_v(i,1,j) = ptop
+            enddo
+            do k=2,npz+1
+            do i=is,ie+1
+               pe_v(i,k,j) = ak(k) + ps_v(i,j)*bk(k)
+            enddo
+            enddo
+         enddo
+         do j=js,je+1
+            do i=is,ie
+               pe_u(i,1,j) = ptop
+            enddo
+            do k=2,npz+1
+            do i=is,ie
+               pe_u(i,k,j) = ak(k) + ps_u(i,j)*bk(k)
+            enddo
+            enddo
+         enddo
+
+         !Everything else
+         !if (adiabatic) then
+         !   zvir = 0.
+         !else
+            zvir = rvgas/rdgas - 1.
+         !endif
+
+         ! Use p0 from above
+         !p0 = (/ pi, pi/18. /)
+
+         exppr = 1.5
+         exppz = 2.
+         gamma = 0.007
+         !Ts0 = 302.15
+         q00 = 0.021
+         t00 = Ts0*(1.+zvir*q00)
+         exponent = rdgas*gamma/grav
+         ztrop = 15000.
+         zp = 7000.
+         cor = 2.*omega*sin(p0(2)) !Coriolis at vortex center
+
+         !Initialize winds separately on the D-grid
+         do j=js,je
+            do i=is,ie+1
+               p1(:) = grid(i  ,j ,1:2)
+               p2(:) = grid(i,j+1 ,1:2)
+               call mid_pt_sphere(p1, p2, p3)
+               call get_unit_vect2(p1, p2, e2)
+               call get_latlon_vector(p3, ex, ey)
+
+               d1 = sin(p0(2))*cos(p3(2)) - cos(p0(2))*sin(p3(2))*cos(p3(1)-p0(1))
+               d2 = cos(p0(2))*sin(p3(1)-p0(1))
+               d = max(1.e-15,sqrt(d1**2+d2**2))
+
+               r = great_circle_dist( p0, p3, radius )
+
+               do k=1,npz
+                  ptmp = 0.5*(pe_v(i,k,j)+pe_v(i,k+1,j))
+                  height = (t00/gamma)*(1.-(ptmp/ps_v(i,j))**exponent)
+                  if (height > ztrop) then
+                     v(i,j,k) = 0.
+                  else
+                     utmp = 1.d0/d*(-cor*r/2.d0+sqrt((cor*r/2.d0)**(2.d0) &
+                          - exppr*(r/rp)**exppr*rdgas*(t00-gamma*height) &
+                          /(exppz*height*rdgas*(t00-gamma*height)/(grav*zp**exppz) &
+                          +(1.d0-p00/dp*exp((r/rp)**exppr)*exp((height/zp)**exppz)))))
+                     vtmp = utmp*d2
+                     utmp = utmp*d1
+
+                     v(i,j,k) = utmp*inner_prod(e2,ex) + vtmp*inner_prod(e2,ey)
+
+                  endif
+               enddo
+            enddo
+         enddo
+         do j=js,je+1
+            do i=is,ie
+               p1(:) = grid(i,  j,1:2)
+               p2(:) = grid(i+1,j,1:2)
+               call mid_pt_sphere(p1, p2, p3)
+               call get_unit_vect2(p1, p2, e1)
+               call get_latlon_vector(p3, ex, ey)
+
+               d1 = sin(p0(2))*cos(p3(2)) - cos(p0(2))*sin(p3(2))*cos(p3(1)-p0(1))
+               d2 = cos(p0(2))*sin(p3(1)-p0(1))
+               d = max(1.e-15,sqrt(d1**2+d2**2))
+
+               r = great_circle_dist( p0, p3, radius )
+
+               do k=1,npz
+                  ptmp = 0.5*(pe_u(i,k,j)+pe_u(i,k+1,j))
+                  height = (t00/gamma)*(1.-(ptmp/ps_u(i,j))**exponent)
+                  if (height > ztrop) then
+                     v(i,j,k) = 0.
+                  else
+                     utmp = 1.d0/d*(-cor*r/2.d0+sqrt((cor*r/2.d0)**(2.d0) &
+                          - exppr*(r/rp)**exppr*rdgas*(t00-gamma*height) &
+                          /(exppz*height*rdgas*(t00-gamma*height)/(grav*zp**exppz) &
+                          +(1.d0-p00/dp*exp((r/rp)**exppr)*exp((height/zp)**exppz)))))
+                     vtmp = utmp*d2
+                     utmp = utmp*d1
+
+                     u(i,j,k) = utmp*inner_prod(e1,ex) + vtmp*inner_prod(e1,ey)
+                  endif
+               enddo
+
+            enddo
+         enddo
+
+         qtrop = 1.e-11
+         ttrop = t00 - gamma*ztrop
+         zq1 = 3000.
+         zq2 = 8000.
+
+         q(:,:,:,:) = 0.
+
+         do k=1,npz
+         do j=js,je
+         do i=is,ie
+               ptmp = 0.5*(pe(i,k,j)+pe(i,k+1,j))
+               height = (t00/gamma)*(1.-(ptmp/ps(i,j))**exponent)
+               if (height > ztrop) then
+                  q(i,j,k,1) = qtrop
+                  pt(i,j,k) = Ttrop
+               else
+                  q(i,j,k,1) = q00*exp(-height/zq1)*exp(-(height/zq2)**exppz)
+                  p2(:) = agrid(i,j,1:2)
+                  r = great_circle_dist( p0, p2, radius )
+                  pt(i,j,k) = (T00-gamma*height)/(1.d0+zvir*q(i,j,k,1))/(1.d0+exppz*Rdgas*(T00-gamma*height)*height &
+                       /(grav*zp**exppz*(1.d0-p00/dp*exp((r/rp)**exppr)*exp((height/zp)**exppz))))
+               end if
+         enddo
+         enddo
+         enddo
+
+
+         !Note that this is already the moist pressure
+         do j=js,je
+         do i=is,ie
+            ps(i,j) = pe(i,npz+1,j)
+         enddo
+         enddo
+
+         if (.not.hydrostatic) then
+             do k=1,npz
+                do j=js,je
+                   do i=is,ie
+                      delz(i,j,k) = rdgas*pt(i,j,k)*(1.+zvir*q(i,j,k,1))/grav*log(pe(i,k,j)/pe(i,k+1,j))
+                         w(i,j,k) = 0.0
+                   enddo
+                enddo
+             enddo
+         endif
+
+         call dtoa(u , v , ua, va, dx,dy,dxa,dya,dxc,dyc,npx, npy, ng, bd)
+
+         call prt_maxmin('PS end', ps(is:ie,js:je), is, ie, js, je, 0, 1, 0.01)
+         call prt_maxmin('Delz', delz(is:ie,js:je,:), is, ie, js, je, 0, 1, 0.01)
+
+         call p_var(npz, is, ie, js, je, ptop, ptop_min, delp, delz, pt, ps,   &
+                   pe, peln, pk, pkz, kappa, q, ng, ncnst, area, dry_mass, .false., .false., &
+                   .true., hydrostatic, nwat, domain, flagstruct%adiabatic)
 
         case ( 21 )
 !---------------------------------------------------------
@@ -5297,8 +5649,8 @@ end subroutine terminator_tracers
            pks = pk0 + amp*(1./ths - 1./th0)
            p_t  = exp(1./kappa*log(pks))
 
-           if (is_master()) write(*,'(I, 2F)') npz+1, ak(npz+1), bk(npz+1)
-           if (is_master()) write(*,'(2F)') ths*pk0, p_t
+           if (is_master()) write(*,'(I3, 2F11.3)') npz+1, ak(npz+1), bk(npz+1)
+           if (is_master()) write(*,'(2F11.3)') ths*pk0, p_t
 
            do k=npz,1,-1
               ze = ze+dz
@@ -5319,7 +5671,7 @@ end subroutine terminator_tracers
               endif
               thp = ths
               pkp = pks
-              if (is_master()) write(*,'(I, 5F)') k, ak(k), bk(k), ak(k+1)-ak(k) + p00*(bk(k+1)-bk(k)), ths*pk0, pp
+              if (is_master()) write(*,'(I3, 5F11.3)') k, ak(k), bk(k), ak(k+1)-ak(k) + p00*(bk(k+1)-bk(k)), ths*pk0, pp
 
            enddo
 
@@ -5527,9 +5879,226 @@ end subroutine terminator_tracers
               enddo
            enddo
 
+        case ( 102 )
+
+           !No topography (simpler)
+
+           t00 = 265.
+           N2 = 0.0
+           N2b = 0.01**2
+           p00 = 1.e5
+           pk0 = exp(kappa*log(p00))
+           th0 = t00/pk0
+           !NOTE since lowest 100 m is well mixed amp is different
+           amp = -grav/(cp_air*th0)
+           ampb = grav*grav/(cp_air*N2b)
+           rkap = 1./kappa
+
+           !Uniform 5 m grid spacing up to 300 m
+           dz = 5.
+           ze = 0.0
+           zt = 300.
+           thp = th0
+           pkp = pk0
+           ak(npz+1) = 0.0
+           bk(npz+1) = 1.0
+           if (is_master()) print*, 'SBL Test case (102)'
+           if (is_master()) write(*,'(I3, 2F11.3)') npz+1, ak(npz+1), bk(npz+1)
+           ze1(npz+1) = ze
+           pk1(npz+1) = pk0
+           pe1(npz+1) = p00
+
+           do k=npz,1,-1
+              ze = ze+dz
+              ze1(k) = ze
+              if (ze >= 100.) then
+                 ths = thp*exp(dz*N2b/grav)
+                 pks = pkp + ampb*(1./ths - 1./thp)
+              else
+                 ths = thp*exp(dz*N2/grav)
+                 pks = pkp + amp*dz
+              endif
+              pk1(k) = pks
+              ts1(k) = ths*pks
+              pp = exp(1./kappa*log(pks))
+              pe1(k) = pp
+              if (ze >= zt) then
+                 ak(k) = pp
+                 bk(k) = 0.0
+              else
+                 bk(k) = ((zt-ze)/zt)**2
+                 ak(k) = pp - bk(k)*p00
+              endif
+              thp = ths
+              pkp = pks
+
+              if (is_master()) write(*,'(I3, 6(2x,F11.3))') k, ak(k), bk(k), ak(k+1)-ak(k) + p00*(bk(k+1)-bk(k)), ths*pks, pp, ze1(k)
+
+           enddo
+
+           call mpp_sync()
+
+
+         phis = 0.
+         u = 8. !m/s
+         v = 0.
+         w = 0.
+
+         do j=js,je
+            do i=is,ie
+               ps(i,j) = p00
+               pe(i,npz+1,j) = p00
+               pk(i,j,npz+1) = pk0
+               peln(i,npz+1,j) = log(p00)
+            enddo
+         enddo
+
+         do k=npz,1,-1
+            do j=js,je
+               do i=is,ie
+                  peln(i,k,j) = log(pe1(k))
+                  delp(i,j,k) = pe1(k+1) - pe1(k)
+                  delz(i,j,k) = ze1(k+1) - ze1(k)
+                  pe(i,k,j) = pe1(k)
+                  pk(i,j,k) = pk1(k)
+                  pkz(i,j,k) = delp(i,j,k)/(peln(i,k+1,j)-peln(i,k,j))
+                  pkz(i,j,k) = exp(kappa*log(pkz(i,j,k)))
+                  pt(i,j,k) = ts1(k)
+               enddo
+            enddo
+         enddo
+         ptop = ak(1)
+
+          call p_var(npz, is, ie, js, je, ptop, ptop_min, delp, delz, pt, ps,   &
+                     pe, peln, pk, pkz, kappa, q, ng, ncnst, area, dry_mass, .false., .false., &
+                     moist_phys, hydrostatic, nwat, domain, flagstruct%adiabatic, .not. hydrostatic )
+
+        case ( 103 ) !DYCOMS II SCu
+           zvir = rvgas/rdgas - 1.
+
+           sphum = get_tracer_index (MODEL_ATMOS, 'sphum')
+           liq_wat = get_tracer_index (MODEL_ATMOS, 'liq_wat')
+           if (liq_wat <= 0) call mpp_error(FATAL, "liq_wat not defined")
+
+           !No topography (simpler)
+
+           t00 = 289.
+           !N2 = 0.0
+           !N2b = 0.01**2
+           p00 = 101780.
+           pk0 = exp(kappa*log(p00))
+           th0 = t00/pk0
+
+           !Variable grid spacing: 10 m near surface, 5m near cloud top
+           dz = 10.
+           ze = 0.
+           zt = 840. !cloud top
+           thp = th0
+           pkp = pk0
+           ak(npz+1) = 0.0
+           bk(npz+1) = 1.0
+           if (is_master()) print*, 'DYCOMS II SCu Test case (103)'
+           if (is_master()) write(*,'(I3, 2F11.3)') npz+1, ak(npz+1), bk(npz+1)
+           ze1(npz+1) = ze
+           pk1(npz+1) = pk0
+           pe1(npz+1) = p00
+
+           do k=npz,1,-1
+              dz1(k) = 10.-5.*sin(pi*ze/1600.)**8
+              ze = ze+dz1(k)
+              ze1(k) = ze
+           enddo
+
+           do k=1,npz
+              zmid = 0.5*(ze1(k)+ze1(k+1))
+              lcl = 600.
+              !Temperature, moisture is in z-coordinates
+              if ( zmid > zt) then
+                 tl = 297.5 + exp(log(zmid-zt)*1./3.)
+                 qt = 1.5e-3
+                 qc1(k) = 0.0
+              else
+                 tl = t00
+                 qt = 9.e-3
+                 qc1(k) = max(0.0,0.45e-3*(zmid-lcl)/200.)
+              endif
+              qv1(k)= qt - qc1(k)
+
+              !Liquid water temperature
+              !new constants!
+              ts1(k) = tl + (hlv*qc1(k) - grav*zmid)/cp_air
+              if (is_master()) write(*,'(I3, 4(2x,F11.3))') k, ts1(k), qv1(k), ze1(k), qc1(k)
+           enddo
+
+           !Compute pressure, integrating upward
+           pp = p00
+           do k=npz,1,-1
+              dlogp = dz1(k)*grav/(Rdgas * ts1(k)*(1.+zvir*qv1(k)))
+              logpb = log(pp)
+              pp = exp(logpb - dlogp)
+
+              if (ze1(k) >= zt) then
+                 ak(k) = pp
+                 bk(k) = 0.0
+              else
+                 bk(k) = ((zt-ze1(k))/zt)**2
+                 ak(k) = pp - bk(k)*p00
+              endif
+
+              pe1(k) = pp
+              pk1(k) = exp(kappa*log(pp))
+
+              if (is_master()) write(*,'(I3, 4(2x,F11.3))') k, ak(k), bk(k), pp, ze1(k)
+
+           enddo
+
+           call mpp_sync()
+
+
+         phis = 0.
+         u = 7. !m/s
+         v = -5.5
+         w = 0.
+
+         do j=js,je
+            do i=is,ie
+               ps(i,j) = p00
+               pe(i,npz+1,j) = p00
+               pk(i,j,npz+1) = pk0
+               peln(i,npz+1,j) = log(p00)
+            enddo
+         enddo
+
+         do k=npz,1,-1
+            do j=js,je
+               do i=is,ie
+                  peln(i,k,j) = log(pe1(k))
+                  delp(i,j,k) = pe1(k+1) - pe1(k)
+                  delz(i,j,k) = ze1(k+1) - ze1(k)
+                  pe(i,k,j) = pe1(k)
+                  pk(i,j,k) = pk1(k)
+                  pkz(i,j,k) = delp(i,j,k)/(peln(i,k+1,j)-peln(i,k,j))
+                  pkz(i,j,k) = exp(kappa*log(pkz(i,j,k)))
+                  pt(i,j,k) = ts1(k)
+                  q(i,j,k,sphum) = qv1(k)
+                  q(i,j,k,liq_wat) = qc1(k)
+               enddo
+            enddo
+         enddo
+         ptop = ak(1)
+
+          call p_var(npz, is, ie, js, je, ptop, ptop_min, delp, delz, pt, ps,   &
+                     pe, peln, pk, pkz, kappa, q, ng, ncnst, area, dry_mass, .false., .false., &
+                     moist_phys, hydrostatic, nwat, domain, flagstruct%adiabatic, .not. hydrostatic )
+
+
         end select
 
-        is_ideal_case = .true.
+        if (w_forcing) then
+           call init_w_forcing(bd, npx, npy, npz, flagstruct%grid_type, agrid, flagstruct)
+        endif
+
+        flagstruct%is_ideal_case = .true.
 
         nullify(grid)
         nullify(agrid)
@@ -5575,7 +6144,8 @@ end subroutine terminator_tracers
 
         integer :: ierr, f_unit, unit, ios
         namelist /test_case_nml/test_case, bubble_do, alpha, nsolitons, soliton_Umax, soliton_size, &
-             no_wind, gaussian_dt, dt_amp, do_marine_sounding, checker_tr, small_earth_scale, Umean
+             no_wind, gaussian_dt, dt_amp, dt_rad, do_marine_sounding, checker_tr, small_earth_scale, &
+             Umean, Vmean, w_forcing, dp_TC, rp_TC, Ts_TC
 
 #include<file_version.h>
 
@@ -6111,21 +6681,11 @@ end subroutine terminator_tracers
 !      if ( (is_master()) ) write(*,*) k, temp1, rh(k)
        if ( pk(k) > 0. ) then
             pp(k) = exp(log(pk(k))/kappa)
-!#ifdef SUPER_K
             qs(k) = 380./pp(k)*exp(17.27*(temp1-273.)/(temp1-36.))
             qs(k) = min( qv0, rh(k)*qs(k) )
-            if ( (is_master()) ) write(*,*) 0.01*pp(k), qs(k)
-!#else
-!
-!#ifdef USE_MIXED_TABLE
-!            qs(k) = min(qv0, rh(k)*mqs(temp1, pp(k), qs(k)))
-!#else
-!            qs(k) = min(qv0, rh(k)*wqs(temp1, pp(k), qs(k)))
-!#endif
-!
-!#endif
+            !if ( (is_master()) .and. n=1 ) write(*,*) 0.01*pp(k), qs(k)
        else
-            if ( (is_master()) ) write(*,*) n, k, pk(k)
+            !if ( (is_master()) ) write(*,*) n, k, pk(k)
             call mpp_error(FATAL, 'Super-Cell case: pk < 0')
        endif
     enddo
@@ -6241,7 +6801,7 @@ end subroutine terminator_tracers
 #ifdef SUPER_K
             qs(k) = 380./pp(k)*exp(17.27*(temp1-273.)/(temp1-36.))
             qs(k) = min( qv0, rh(k)*qs(k) )
-            if ( (is_master()) ) write(*,*) 0.01*pp(k), qs(k)
+            !if ( (is_master()) ) write(*,*) 0.01*pp(k), qs(k)
 #else
 
 #ifdef USE_MIXED_TABLE
@@ -6252,7 +6812,7 @@ end subroutine terminator_tracers
 
 #endif
        else
-            if ( (is_master()) ) write(*,*) n, k, pk(k)
+            !if ( (is_master()) ) write(*,*) n, k, pk(k)
             call mpp_error(FATAL, 'Super-Cell case: pk < 0')
        endif
     enddo
@@ -7977,7 +8537,5 @@ end subroutine terminator_tracers
    enddo
 
  end subroutine sm1_edge
-
-
 
 end module test_cases_mod

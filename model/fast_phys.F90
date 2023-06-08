@@ -31,7 +31,6 @@ module fast_phys_mod
     use fv_grid_utils_mod, only: cubed_to_latlon, update_dwinds_phys
     use fv_arrays_mod, only: fv_grid_type, fv_grid_bounds_type
     use mpp_domains_mod, only: domain2d, mpp_update_domains
-    use fv_timing_mod, only: timing_on, timing_off
     use tracer_manager_mod, only: get_tracer_index, get_tracer_names
     use field_manager_mod, only: model_atmos
     use gfdl_mp_mod, only: mtetw
