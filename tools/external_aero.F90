@@ -325,7 +325,7 @@ subroutine read_aero(is, ie, js, je, npz, nq, Time, pe, peln, qa, kord_tr, fill)
 			call map1_q2 (nlev, aero_now_pe (is:ie, j, :), aero_now_a (is:ie, js:je, :), &
 				npz, pe (is:ie, :, j), qa (is:ie, j, :, aero_id), &
 				pe (is:ie, 2:npz+1, j) - pe (is:ie, 1:npz, j), &
-				is, ie, 0, kord_tr, j, is, ie, js, je, 0., .false.)
+				is, ie, 0, kord_tr, j, is, ie, js, je, 0.)
 			if (fill) call fillz (ie-is+1, npz, 1, qa (is:ie, j, :, aero_id), &
 				pe (is:ie, 2:npz+1, j) - pe (is:ie, 1:npz, j))
 		enddo

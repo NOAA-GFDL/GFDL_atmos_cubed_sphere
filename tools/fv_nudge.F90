@@ -3532,9 +3532,9 @@ module fv_nwp_nudge_mod
          enddo
       enddo
    enddo
-                     call timing_on('COMM_TOTAL')
+   call timing_on('COMM_TOTAL')
    call mpp_update_domains(q, domain, complete=.true.)
-                     call timing_off('COMM_TOTAL')
+   call timing_off('COMM_TOTAL')
 
    do n=1,ntimes
 

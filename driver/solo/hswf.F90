@@ -28,7 +28,6 @@ module hswf_mod
  use mpp_domains_mod,    only: mpp_update_domains, domain2d
  use time_manager_mod,   only: time_type, get_date, get_time
  use diag_manager_mod,   only: send_data
- use fv_timing_mod,      only: timing_on, timing_off
 
       implicit none
 !-----------------------------------------------------------------------
@@ -43,7 +42,7 @@ contains
                               u, v, pt, q, pe, delp, peln, pkz, pdt,  &
                               ua, va, u_dt, v_dt, t_dt, q_dt, agrid,  &
                               delz, phis, hydrostatic, ak, bk, ks,    &
-                              strat, rayf, master, Time, time_total)
+                              strat, zurita, rd_zur, master, Time, time_total)
 
       integer, INTENT(IN   ) :: npx, npy, npz
       integer, INTENT(IN   ) :: is, ie, js, je, ng, nq
@@ -74,8 +73,8 @@ contains
       real   , INTENT(IN   ) :: ak(npz+1), bk(npz+1)
       integer, INTENT(IN   ) :: ks
 
-      real   , INTENT(IN   ) :: pdt
-      logical, INTENT(IN   ) :: strat, rayf, master
+      real   , INTENT(IN   ) :: pdt, rd_zur
+      logical, INTENT(IN   ) :: strat, zurita,  master
 
       type(time_type), intent(in) :: Time
       real, INTENT(IN), optional:: time_total
@@ -85,7 +84,7 @@ contains
       real, dimension(is:ie):: u1, v1
       integer  i,j,k
       integer  seconds, days
-      real  ty, tz, akap
+      real  ty, tz, akap, rakap
       real  p0, t0, sday, rkv, rka, rks, rkt, sigb, rsgb
       real  tmp, solar_ang, solar_rate
       real  ap0k, algpk
@@ -97,10 +96,12 @@ contains
       real  t_st, t_ms
       real  rdt, f1
       real rad_ratio, kf_day
+      real rd_zur_rad
 
       ty = 60.0
       tz = 10.0             ! Original value from H-S was 10.
       akap = 2./7.
+      rakap = 1./akap
 
       p0 = 100000.
       t0 = 200.
@@ -129,10 +130,13 @@ contains
       ap0k = 1./p0**akap
       algpk = log(ap0k)
 
+      rd_zur_rad = rd_zur*pi/180.
+      
 ! Temperature forcing...
 !$OMP parallel do default(none) shared(is,ie,js,je,npz,delp,peln,ap0k,ty,agrid,tz,akap, &
 !$OMP                                  strat,h0,t_dt,pt,rms,rmr,rdt,t_ms,tau,pdt,sday,pe, &
-!$OMP                                  sigb,rsgb,pkz,algpk,t0,rka,rks,rkv,u_dt,ua,v_dt,va) &
+!$OMP                                  sigb,rsgb,pkz,algpk,t0,rka,rks,rkv,u_dt,ua,v_dt,va,&
+!$OMP                                  zurita,rd_zur_rad,rakap) &
 !$OMP                          private(pl, teq, tey, tez, dz, relx, dt_tropic, sigl, f1, rkt,tmp,u1,v1)
      do j=js,je
         do k=1,npz
@@ -142,8 +146,6 @@ contains
         enddo
         do k=npz,1,-1
            do i=is,ie
-              tey = ap0k*( 315.0 - ty*SIN(agrid(i,j,2))*SIN(agrid(i,j,2)) )
-              tez =  tz*( ap0k/akap )*COS(agrid(i,j,2))*COS(agrid(i,j,2))
               if (strat .and. pl(i,k) <= 1.E2)  then
 ! Mesosphere: defined as the region above 1 mb
                   dz = h0 * log(pl(i,k+1)/pl(i,k))
@@ -165,11 +167,24 @@ contains
 ! Troposphere: standard Held-Suarez
                   sigl = pl(i,k)/pe(i,npz+1,j)
                   f1 = max(0., (sigl-sigb) * rsgb )
-                  teq(i,k) = tey - tez*(log(pkz(i,j,k))+algpk)
-                  teq(i,k) = max(t0, teq(i,k)*pkz(i,j,k))
-                  rkt = rka + (rks-rka)*f1*(COS(agrid(i,j,2))**4.0)
-                  t_dt(i,j,k) = t_dt(i,j,k) + rkt*(teq(i,k)-pt(i,j,k))/(1.+rkt) * rdt
-                                                       ! Bottom friction:
+                  if (zurita) then
+                     tmp = agrid(i,j,2)/rd_zur_rad
+                     tey = 1.0 - 0.19*(1.-exp(-tmp*tmp))
+                     tmp = exp(akap*log(sigl))
+                     tez = 0.1*(1.-tmp)*rakap
+                     tmp = tmp*315.0
+                     teq(i,k) = max(t0, tmp*(tey + tez))
+                     !t_dt(i,j,k) = t_dt(i,j,k) + rka*(teq(i,k)-pt(i,j,k)) * rdt
+                     rkt = rka
+                  else
+                     tey = ap0k*( 315.0 - ty*SIN(agrid(i,j,2))*SIN(agrid(i,j,2)) )
+                     tez =  tz*( ap0k/akap )*COS(agrid(i,j,2))*COS(agrid(i,j,2))
+                     tmp = tey - tez*(log(pkz(i,j,k))+algpk)
+                     teq(i,k) = max(t0, tmp*pkz(i,j,k))
+                     rkt = rka + (rks-rka)*f1*(COS(agrid(i,j,2))**4.0)
+                 endif
+                 t_dt(i,j,k) = t_dt(i,j,k) + rkt*(teq(i,k)-pt(i,j,k))/(1.+rkt) * rdt
+                 ! Bottom friction:
                   sigl = pl(i,k) / pe(i,npz+1,j)
                   sigl = (sigl-sigb)*rsgb * rkv
                   if (sigl > 0.) then

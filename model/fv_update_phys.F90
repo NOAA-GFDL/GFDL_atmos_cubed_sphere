@@ -646,7 +646,7 @@ module fv_update_phys_mod
 
   if ( .not.flagstruct%dwind_2d ) then
 
-                                                            call timing_on('COMM_TOTAL')
+      call timing_on('COMM_TOTAL')
       if ( gridstruct%square_domain ) then
            call start_group_halo_update(i_pack(1), u_dt, domain, whalo=1, ehalo=1, shalo=1, nhalo=1, complete=.false.)
            call start_group_halo_update(i_pack(1), v_dt, domain, whalo=1, ehalo=1, shalo=1, nhalo=1, complete=.true.)
@@ -654,7 +654,7 @@ module fv_update_phys_mod
            call start_group_halo_update(i_pack(1), u_dt, domain, complete=.false.)
            call start_group_halo_update(i_pack(1), v_dt, domain, complete=.true.)
       endif
-                                                           call timing_off('COMM_TOTAL')
+      call timing_off('COMM_TOTAL')
   endif
 
 !----------------------------------------
@@ -691,7 +691,6 @@ module fv_update_phys_mod
       endif
    enddo      ! j-loop
 
-                                                    call timing_on(' Update_dwinds')
   if ( flagstruct%dwind_2d ) then
     call update2d_dwinds_phys(is, ie, js, je, isd, ied, jsd, jed, dt, u_dt, v_dt, u, v, gridstruct, &
          npx,npy,npz,domain)
@@ -700,9 +699,7 @@ module fv_update_phys_mod
      !I have not seen dwind_2d be used for anything; so we will only handle nesting assuming dwind_2d == .false.
 
     call timing_on('COMM_TOTAL')
-
     call complete_group_halo_update(i_pack(1), domain)
-
     call timing_off('COMM_TOTAL')
 !
 ! for regional grid need to set values for u_dt and v_dt at the edges.
@@ -766,7 +763,7 @@ module fv_update_phys_mod
 !
     call update_dwinds_phys(is, ie, js, je, isd, ied, jsd, jed, dt, u_dt, v_dt, u, v, gridstruct, npx, npy, npz, domain)
  endif
-                                                    call timing_off(' Update_dwinds')
+
 #ifdef GFS_PHYS
     call cubed_to_latlon(u, v, ua, va, gridstruct, &
          npx, npy, npz, 1, gridstruct%grid_type, domain, gridstruct%bounded_domain, flagstruct%c2l_ord, bd)
@@ -856,9 +853,9 @@ module fv_update_phys_mod
          enddo
       enddo
    enddo
-                     call timing_on('COMM_TOTAL')
+   call timing_on('COMM_TOTAL')
    call mpp_update_domains(q, domain, complete=.true.)
-                     call timing_off('COMM_TOTAL')
+   call timing_off('COMM_TOTAL')
 
 !$OMP parallel do default(none) shared(is,ie,js,je,km,mask,dy,sina_u,q,rdxc,gridstruct, &
 !$OMP                                  sin_sg,npx,dx,npy,rdyc,sina_v,qdt,rarea,delp)    &
