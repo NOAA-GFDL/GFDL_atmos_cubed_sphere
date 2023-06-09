@@ -144,7 +144,7 @@ module fv_control_mod
    use test_cases_mod,      only: read_namelist_test_case_nml
    use fv_timing_mod,       only: timing_on, timing_off, timing_init, timing_prt
    use mpp_domains_mod,     only: domain2D
-   use mpp_domains_mod,     only: mpp_define_nest_domains, nest_domain_type, mpp_get_global_domain
+   use mpp_domains_mod,     only: mpp_define_nest_domains, nest_domain_type, mpp_get_global_domain, mpp_is_nest_fine
    use mpp_domains_mod,     only: mpp_get_C2F_index, mpp_get_F2C_index
    use mpp_domains_mod,     only: CENTER, CORNER, NORTH, EAST, WEST, SOUTH
    use mpp_mod,             only: mpp_send, mpp_sync, mpp_transmit, mpp_set_current_pelist, &
@@ -733,21 +733,22 @@ module fv_control_mod
      Atm(this_grid)%neststruct%parent_proc = ANY(Atm(this_grid)%neststruct%child_grids) !ANY(tile_coarse == Atm(this_grid)%global_tile)
      Atm(this_grid)%neststruct%child_proc = ASSOCIATED(Atm(this_grid)%parent_grid) !this means a nested grid
 
-     call mpp_set_current_pelist( global_pelist )
-     do n=1,ngrids
+     if(n>1) then
+       call mpp_set_current_pelist( global_pelist )
+       do n=2,ngrids
         ! Construct the MPI communicators that are used in fill_nested_grid_cpl()
-        if(n>1) then
           Atm(n)%sending_proc = Atm(n)%parent_grid%pelist(1) + &
                      ( Atm(n)%neststruct%parent_tile-tile_fine(Atm(n)%parent_grid%grid_number)+ &
                        Atm(n)%parent_grid%flagstruct%ntiles-1 )*Atm(n)%parent_grid%npes_per_tile
-          allocate(Atm(n)%Bcast_ranks(0:size(Atm(n)%pelist)))
+          allocate(Atm(n)%Bcast_ranks(1+size(Atm(n)%pelist)))
 
-          Atm(n)%Bcast_ranks(0)=Atm(n)%sending_proc ! parent grid sending rank within the soon to be created Bcast_comm
-          Atm(n)%Bcast_ranks(1:size(Atm(n)%pelist))=Atm(n)%pelist ! Receivers
-          call mpp_declare_pelist(Atm(n)%Bcast_ranks)
-        endif
-     enddo
-     call mpp_set_current_pelist(Atm(this_grid)%pelist)
+          Atm(n)%Bcast_ranks(1)=Atm(n)%sending_proc ! parent grid sending rank within the soon to be created Bcast_comm
+          Atm(n)%Bcast_ranks(2:(1+size(Atm(n)%pelist)))=Atm(n)%pelist ! Receivers
+          call mpp_declare_pelist(Atm(n)%Bcast_ranks(:))
+          Atm(n)%is_fine_pe = mpp_is_nest_fine(global_nest_domain, 1)
+       enddo
+       call mpp_set_current_pelist(Atm(this_grid)%pelist)
+     endif
 
      if (ngrids > 1) call setup_update_regions
      if (Atm(this_grid)%neststruct%nestbctype > 1) then

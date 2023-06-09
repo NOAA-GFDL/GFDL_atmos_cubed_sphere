@@ -1306,6 +1306,7 @@ module fv_arrays_mod
     ! to replace numerous p2p MPI transfers with a single mpp_broadcast()
     integer, allocatable :: Bcast_ranks(:)
     integer :: Bcast_comm, sending_proc
+    logical :: is_fine_pe
 
      type(fv_grid_bounds_type) :: bd
 

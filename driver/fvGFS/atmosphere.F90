@@ -168,7 +168,7 @@ use mpp_mod,                only: mpp_error, stdout, FATAL, WARNING, NOTE, &
                                   mpp_sync, mpp_sync_self, mpp_send, mpp_recv, mpp_broadcast
 use mpp_parameter_mod,      only: EUPDATE, WUPDATE, SUPDATE, NUPDATE
 use mpp_domains_mod,        only: CENTER, CORNER, NORTH, EAST, WEST, SOUTH
-use mpp_domains_mod,        only: domain2d, mpp_update_domains, mpp_global_field
+use mpp_domains_mod,        only: domain2d, mpp_update_domains, mpp_global_field, mpp_domain_is_tile_root_pe
 use mpp_domains_mod,        only: mpp_get_data_domain, mpp_get_compute_domain, mpp_get_global_domain
 use xgrid_mod,              only: grid_box_type
 use field_manager_mod,      only: MODEL_ATMOS
@@ -2433,7 +2433,6 @@ contains
     logical, intent(in), optional :: proc_in
 
     real, allocatable :: g_dat(:,:,:)
-    integer, allocatable :: global_pelist(:)
     integer :: p
     integer :: isd_p, ied_p, jsd_p, jed_p
     integer :: isg, ieg, jsg, jeg
@@ -2460,13 +2459,9 @@ contains
                             g_dat(isg:,jsg:,1), position=CENTER)
     endif
 
-    allocate(global_pelist(mpp_npes()))
-    call mpp_get_current_pelist(global_pelist)
-    if(any(mpp_pe() == Atm(this_grid)%Bcast_ranks)) then
-      call mpp_set_current_pelist(Atm(this_grid)%Bcast_ranks)
-      call mpp_broadcast(g_dat, size(g_dat),Atm(this_grid)%sending_proc, Atm(this_grid)%Bcast_ranks)
+    if(Atm(this_grid)%is_fine_pe .or. mpp_domain_is_tile_root_pe(Atm(this_grid)%parent_grid%domain)) then
+      call mpp_broadcast(g_dat, size(g_dat),Atm(this_grid)%Bcast_ranks(1), Atm(this_grid)%Bcast_ranks)
     endif
-    call mpp_set_current_pelist(global_pelist)
 
     call timing_off('COMM_TOTAL')
     if (process) then
@@ -2475,7 +2470,7 @@ contains
                             0, 0, isg, ieg, jsg, jeg, Atm(this_grid)%bd)
     endif
     deallocate(g_dat)
-    deallocate(global_pelist)
+    !deallocate(global_pelist)
 
   end subroutine fill_nested_grid_cpl
 
