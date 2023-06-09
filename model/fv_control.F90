@@ -737,12 +737,12 @@ module fv_control_mod
        call mpp_set_current_pelist( global_pelist )
        do n=2,ngrids
         ! Construct the MPI communicators that are used in fill_nested_grid_cpl()
-          Atm(n)%sending_proc = Atm(n)%parent_grid%pelist(1) + &
+          allocate(Atm(n)%Bcast_ranks(1+size(Atm(n)%pelist)))
+          ! parent grid sending rank within Bcast_ranks array
+          Atm(n)%Bcast_ranks(1)=Atm(n)%parent_grid%pelist(1) + &
                      ( Atm(n)%neststruct%parent_tile-tile_fine(Atm(n)%parent_grid%grid_number)+ &
                        Atm(n)%parent_grid%flagstruct%ntiles-1 )*Atm(n)%parent_grid%npes_per_tile
-          allocate(Atm(n)%Bcast_ranks(1+size(Atm(n)%pelist)))
 
-          Atm(n)%Bcast_ranks(1)=Atm(n)%sending_proc ! parent grid sending rank within the soon to be created Bcast_comm
           Atm(n)%Bcast_ranks(2:(1+size(Atm(n)%pelist)))=Atm(n)%pelist ! Receivers
           call mpp_declare_pelist(Atm(n)%Bcast_ranks(:))
           Atm(n)%is_fine_pe = mpp_is_nest_fine(global_nest_domain, 1)
