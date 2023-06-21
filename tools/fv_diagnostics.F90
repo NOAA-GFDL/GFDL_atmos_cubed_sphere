@@ -4270,20 +4270,9 @@ contains
       integer year, month, day, hour, minute, second
 
       if ( present(bad_range) ) bad_range = .false.
-      qmin = q(is,js,1)
-      qmax = qmin
 
-      do k=1,km
-      do j=js,je
-         do i=is,ie
-            if( q(i,j,k) < qmin ) then
-                qmin = q(i,j,k)
-            elseif( q(i,j,k) > qmax ) then
-                qmax = q(i,j,k)
-            endif
-          enddo
-      enddo
-      enddo
+      qmin=minval(q(is:ie,js:je,1:km))
+      qmax=maxval(q(is:ie,js:je,1:km))
 
       call mp_reduce_min(qmin)
       call mp_reduce_max(qmax)
@@ -4337,18 +4326,9 @@ contains
       integer year, month, day, hour, minute, second
 
       if ( present(bad_range) ) bad_range = .false.
-      qmin = q(is,js)
-      qmax = qmin
 
-      do j=js,je
-         do i=is,ie
-            if( q(i,j) < qmin ) then
-                qmin = q(i,j)
-            elseif( q(i,j) > qmax ) then
-                qmax = q(i,j)
-            endif
-          enddo
-      enddo
+      qmin=minval(q(is:ie,js:je))
+      qmax=maxval(q(is:ie,js:je))
 
       call mp_reduce_min(qmin)
       call mp_reduce_max(qmax)
