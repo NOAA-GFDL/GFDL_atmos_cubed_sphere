@@ -2433,7 +2433,6 @@ contains
     logical, intent(in), optional :: proc_in
 
     real, allocatable :: g_dat(:,:,:)
-    integer :: p
     integer :: isd_p, ied_p, jsd_p, jed_p
     integer :: isg, ieg, jsg, jeg
     integer :: isc, iec, jsc, jec
@@ -2459,7 +2458,7 @@ contains
                             g_dat(isg:,jsg:,1), position=CENTER)
     endif
 
-    if(Atm(this_grid)%is_fine_pe .or. mpp_domain_is_tile_root_pe(Atm(this_grid)%parent_grid%domain)) then
+    if(Atm(this_grid)%BcastMember) then
       call mpp_broadcast(g_dat, size(g_dat),Atm(this_grid)%Bcast_ranks(1), Atm(this_grid)%Bcast_ranks)
     endif
 
@@ -2470,7 +2469,6 @@ contains
                             0, 0, isg, ieg, jsg, jeg, Atm(this_grid)%bd)
     endif
     deallocate(g_dat)
-    !deallocate(global_pelist)
 
   end subroutine fill_nested_grid_cpl
 

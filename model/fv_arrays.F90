@@ -1305,7 +1305,7 @@ module fv_arrays_mod
     ! These are set in fv_control_init() and used in fill_nested_grid_cpl()
     ! to replace numerous p2p MPI transfers with a single mpp_broadcast()
     integer, allocatable :: Bcast_ranks(:)
-    logical :: is_fine_pe
+    logical :: BcastMember
 
      type(fv_grid_bounds_type) :: bd
 

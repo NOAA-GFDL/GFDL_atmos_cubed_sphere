@@ -744,8 +744,12 @@ module fv_control_mod
                        Atm(n)%parent_grid%flagstruct%ntiles-1 )*Atm(n)%parent_grid%npes_per_tile
 
           Atm(n)%Bcast_ranks(2:(1+size(Atm(n)%pelist)))=Atm(n)%pelist ! Receivers
+          Atm(n)%BcastMember=.false.
+          if(any(mpp_pe() == Atm(n)%Bcast_ranks)) then
+            Atm(n)%BcastMember=.true.
+          endif
+
           call mpp_declare_pelist(Atm(n)%Bcast_ranks(:))
-          Atm(n)%is_fine_pe = mpp_is_nest_fine(global_nest_domain, 1)
        enddo
        call mpp_set_current_pelist(Atm(this_grid)%pelist)
      endif
