@@ -168,7 +168,7 @@ use mpp_mod,                only: mpp_error, stdout, FATAL, WARNING, NOTE, &
                                   mpp_sync, mpp_sync_self, mpp_send, mpp_recv, mpp_broadcast
 use mpp_parameter_mod,      only: EUPDATE, WUPDATE, SUPDATE, NUPDATE
 use mpp_domains_mod,        only: CENTER, CORNER, NORTH, EAST, WEST, SOUTH
-use mpp_domains_mod,        only: domain2d, mpp_update_domains, mpp_global_field, mpp_domain_is_tile_root_pe
+use mpp_domains_mod,        only: domain2d, mpp_update_domains, mpp_global_field
 use mpp_domains_mod,        only: mpp_get_data_domain, mpp_get_compute_domain, mpp_get_global_domain
 use xgrid_mod,              only: grid_box_type
 use field_manager_mod,      only: MODEL_ATMOS

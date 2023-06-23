@@ -1853,7 +1853,7 @@ contains
     implicit none
     type(fv_atmos_type), intent(INOUT) :: Atm
 
-    integer :: n,ierr
+    integer :: n
 
     if (.not.Atm%allocated) return
     deallocate (    Atm%u )

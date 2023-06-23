@@ -144,7 +144,7 @@ module fv_control_mod
    use test_cases_mod,      only: read_namelist_test_case_nml
    use fv_timing_mod,       only: timing_on, timing_off, timing_init, timing_prt
    use mpp_domains_mod,     only: domain2D
-   use mpp_domains_mod,     only: mpp_define_nest_domains, nest_domain_type, mpp_get_global_domain, mpp_is_nest_fine
+   use mpp_domains_mod,     only: mpp_define_nest_domains, nest_domain_type, mpp_get_global_domain
    use mpp_domains_mod,     only: mpp_get_C2F_index, mpp_get_F2C_index
    use mpp_domains_mod,     only: CENTER, CORNER, NORTH, EAST, WEST, SOUTH
    use mpp_mod,             only: mpp_send, mpp_sync, mpp_transmit, mpp_set_current_pelist, &
