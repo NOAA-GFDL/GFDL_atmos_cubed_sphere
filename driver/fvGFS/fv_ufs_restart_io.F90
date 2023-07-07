@@ -6,6 +6,7 @@ module fv_ufs_restart_io_mod
   use tracer_manager_mod, only: get_tracer_names
   use field_manager_mod,  only: MODEL_ATMOS
   use atmosphere_mod,     only: atmosphere_resolution
+  use fv_io_mod,          only: fv_io_write_BCs
 
   implicit none
 
@@ -156,7 +157,7 @@ module fv_ufs_restart_io_mod
 
    implicit none
 
-   type(fv_atmos_type), intent(in) :: Atm
+   type(fv_atmos_type), intent(inout) :: Atm
    character(len=*), intent(in) :: timestamp
 
    integer :: isc, iec, jsc, jec, nx, ny
@@ -221,6 +222,11 @@ module fv_ufs_restart_io_mod
 
    ! Instead of creating yet another esmf bundle just to write Atm%ak and Atm%bk, write them here synchronously
    call write_ak_bk(Atm, timestamp)
+
+   ! Write bcs restarts
+   if (Atm%neststruct%nested) then
+     call fv_io_write_BCs(Atm)
+   endif
 
  end subroutine fv_dyn_restart_output
 
