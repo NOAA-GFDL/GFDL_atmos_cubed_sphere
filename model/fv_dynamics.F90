@@ -466,13 +466,13 @@ contains
     else
     
 #ifdef __GFORTRAN__
-!$OMP parallel do default(none) shared(is,ie,js,je,isd,ied,jsd,jed,npz,zvir,q,q_con,sphum,liq_wat,ind_trkap, &
+!$OMP parallel do default(none) shared(is,ie,js,je,isd,ied,jsd,jed,npz,zvir,q,q_con,sphum,liq_wat, &
 #else
-!$OMP parallel do default(none) shared(is,ie,js,je,isd,ied,jsd,jed,npz,dp1,zvir,q,q_con,sphum,liq_wat,ind_trkap, &
+!$OMP parallel do default(none) shared(is,ie,js,je,isd,ied,jsd,jed,npz,dp1,zvir,q,q_con,sphum,liq_wat, &
 #endif
 !$OMP                                  rainwat,ice_wat,snowwat,graupel,hailwat,pkz,flagstruct, &
 #ifdef MULTI_GASES
-!$OMP                                  kapad, nq, pe,    num_gas,   &
+!$OMP                                  kapad, nq, pe,    num_gas, ind_trkap,   &
 #endif
 #ifdef __GFORTRAN__
 !$OMP                                  kappa,rdg,delp,pt,delz,nwat)                    &
@@ -713,8 +713,9 @@ contains
 
                                            call timing_on('DYN_CORE')
       call dyn_core(npx, npy, npz, ng, sphum, nq, mdt, n_map, n_split, zvir, cp_air, akap, cappa, &
+                    kappa, liq_wat, ice_wat, rainwat, snowwat, graupel, hailwat, &
 #ifdef MULTI_GASES
-                    kapad, kappa, liq_wat, ice_wat, rainwat, snowwat, graupel, hailwat, &
+                    kapad,  &
 #endif
                     grav, hydrostatic, &
                     u, v, w, delz, pt, q, delp, pe, pk, phis, ws, omga, ptop, pfull, ua, va,           &
@@ -863,9 +864,12 @@ contains
 		     
 
 	     
-!$OMP parallel do default(none) shared(is,ie,js,je, isd,ied,jsd,jed, npz, q, kapad, &
-!$OMP         kappa,nwat, sphum, liq_wat, rainwat, ice_wat, snowwat, graupel, hailwat,& 
-!$OMP         q_con, cvm, dp1, num_gas, cappa)
+!$OMP parallel do default(none) shared(is,ie,js,je, isd,ied,jsd,jed, npz, q, zvir, &
+!$OMP         kappa,nwat, sphum, liq_wat, rainwat, ice_wat, snowwat, graupel, hailwat,&
+#ifdef MULTI_GASES
+!$OMP         kapad, num_gas, &
+#endif 
+!$OMP         q_con, cvm, dp1, cappa)
 !
 ! update cappa and kapad after remapping to hybrid-pressure vert. coordinate, 
 !  check:      cappa maybe updated inside Lagrangian_to_Eulerian, then only kapad-update

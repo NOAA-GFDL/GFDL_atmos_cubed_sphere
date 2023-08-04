@@ -174,8 +174,9 @@ contains
 !-----------------------------------------------------------------------
 
  subroutine dyn_core(npx, npy, npz, ng, sphum, nq, bdt, n_map, n_split, zvir, cp, akap, cappa,  &
+                     kappa,liq_wat, ice_wat, rainwat, snowwat, graupel, hailwat, &
 #ifdef MULTI_GASES
-                     kapad, kappa, liq_wat, ice_wat, rainwat, snowwat, graupel, hailwat, &
+                     kapad,  &
 #endif
                      grav, hydrostatic,  &
                      u,  v,  w, delz, pt, q, delp, pe, pk, phis, ws, omga, ptop, pfull, ua, va, &
@@ -203,10 +204,10 @@ contains
     real, intent(inout) :: w(   bd%isd:,bd%jsd:,1:)  !< vertical vel. (m/s)
     real, intent(inout) ::  delz(bd%is:,bd%js:,1:)  !< delta-height (m, negative)
     real, intent(inout) :: cappa(bd%isd:bd%ied,bd%jsd:bd%jed,1:npz)  !< moist kappa
-#ifdef MULTI_GASES
-    real, intent(in) :: kappa
-    real, intent(inout) :: kapad(bd%isd:bd%ied,bd%jsd:bd%jed,1:npz) !< multi_gases kappa
     integer, intent(in) :: liq_wat, ice_wat, rainwat, snowwat, graupel, hailwat
+    real, intent(in) :: kappa
+#ifdef MULTI_GASES
+    real, intent(inout) :: kapad(bd%isd:bd%ied,bd%jsd:bd%jed,1:npz) !< multi_gases kappa
 #endif
     real, intent(inout) :: pt(  bd%isd:bd%ied  ,bd%jsd:bd%jed  ,npz)  !< potential temperature (K)
     real, intent(inout) :: delp(bd%isd:bd%ied  ,bd%jsd:bd%jed  ,npz)  !< pressure thickness (pascal)
@@ -1254,18 +1255,18 @@ contains
 
     if ( flagstruct%molecular_diffusion .and. md_time ) then
 #ifdef __GFORTRAN__
-!$OMP parallel do default(none) shared(is,ie,js,je,isd,ied,jsd,jed,npz,zvir,q,q_con,sphum,liq_wat, &
+!$OMP parallel do default(none) shared(is,ie,js,je,isd,ied,jsd,jed,npz,zvir,q,q_con,sphum,pkz,flagstruct,&
 #else
-!$OMP parallel do default(none) shared(is,ie,js,je,isd,ied,jsd,jed,npz,dp1,zvir,q,q_con,sphum,liq_wat, &
+!$OMP parallel do default(none) shared(is,ie,js,je,isd,ied,jsd,jed,npz,dp1,zvir,q,q_con,sphum,pkz,flagstruct,&
 #endif
-!$OMP                                  rainwat,ice_wat,snowwat,graupel,hailwat,pkz,flagstruct, &
+!$OMP                              kappa,liq_wat,rainwat,ice_wat,snowwat,graupel,hailwat, &
 #ifdef MULTI_GASES
-!$OMP                                  kapad, nq, pe,    num_gas,   &
+!$OMP                              kapad,nq,pe,num_gas, &
 #endif
 #ifdef __GFORTRAN__
-!$OMP                                  kappa,rdg,delp,pt,delz,nwat)                    &
+!$OMP                                  rdg,delp,pt,delz,nwat)                    &
 #else
-!$OMP                                  cappa,kappa,rdg,delp,pt,delz,nwat)              &
+!$OMP                                  cappa,rdg,delp,pt,delz,nwat)              &
 #endif
 !$OMP                          private(cvm,i,j,k)
 
