@@ -446,7 +446,7 @@ module fv_ufs_restart_io_mod
    if (ESMF_LogFoundError(rcToCheck=rc, msg=ESMF_LOGERR_PASSTHRU, line=__LINE__, file=__FILE__)) return
 
    call ESMF_AttributeAdd(field, convention="NetCDF", purpose="FV3-dim",  &
-                          attrList=(/trim(axis_name),trim(axis_name)//":cartesian_axis"/), rc=rc)
+                          attrList=(/trim(axis_name)//"               ",trim(axis_name)//":cartesian_axis"/), rc=rc)
    if (ESMF_LogFoundError(rcToCheck=rc, msg=ESMF_LOGERR_PASSTHRU, line=__LINE__, file=__FILE__)) return
 
    allocate( buffer(num_levels) )
