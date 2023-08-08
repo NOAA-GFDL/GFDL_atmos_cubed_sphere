@@ -148,7 +148,7 @@ module fv_grid_tools_mod
   use fms2_io_mod,       only: file_exists, variable_exists, open_file, read_data, &
                                get_global_attribute, get_variable_attribute, &
                                close_file, get_mosaic_tile_grid, FmsNetcdfFile_t
-  use mosaic_mod,        only: get_mosaic_ntiles
+  use mosaic2_mod,        only: get_mosaic_ntiles
 
   implicit none
   private
@@ -227,6 +227,11 @@ contains
 
     call get_mosaic_tile_grid(atm_hgrid, atm_mosaic, Atm%domain)
 
+    if (open_file(Grid_input, atm_mosaic, "read")) then
+       ntiles = get_mosaic_ntiles(Grid_input)
+       call close_file(Grid_input)
+    endif
+
     grid_form = "none"
     if (open_file(Grid_input, atm_hgrid, "read")) then
        call get_global_attribute(Grid_input, "history", attvalue)
@@ -234,7 +239,6 @@ contains
     if(grid_form .NE. "gnomonic_ed") call mpp_error(FATAL, &
          "fv_grid_tools(read_grid): the grid should be 'gnomonic_ed' when reading from grid file, contact developer")
 
-    ntiles = get_mosaic_ntiles(atm_mosaic)
     if( .not. Atm%gridstruct%bounded_domain) then  !<-- The regional setup has only 1 tile so do not shutdown in that case.
        if(ntiles .NE. 6) call mpp_error(FATAL, &
             'fv_grid_tools(read_grid): ntiles should be 6 in mosaic file '//trim(atm_mosaic) )
