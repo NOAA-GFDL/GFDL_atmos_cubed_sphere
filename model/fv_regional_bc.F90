@@ -31,7 +31,7 @@ module fv_regional_mod
                                 CENTER, CORNER,                         &
                                 mpp_domains_set_stack_size,             &
                                 mpp_update_domains, mpp_get_neighbor_pe
-   use mpp_mod,           only: FATAL, input_nml_file,                  &
+   use mpp_mod,           only: FATAL, input_nml_file, mpp_broadcast,   &
                                 mpp_error ,mpp_pe, mpp_sync,            &
                                 mpp_npes, mpp_root_pe, mpp_gather,      &
                                 mpp_get_current_pelist, NOTE, NULL_PE
@@ -1380,13 +1380,16 @@ contains
 !-----------------------------------------------------------------------
       allocate(pes(mpp_npes()))
       call mpp_get_current_pelist(pes)
-      if( open_file(Gfs_ctl, 'INPUT/gfs_ctrl.nc', "read", pelist=pes) ) then
+      if (mpp_pe() == pes(1)) then
+        if( open_file(Gfs_ctl, 'INPUT/gfs_ctrl.nc', "read", pelist=pes(1)) ) then
 !--- read in the number of levsp
-        call get_dimension_size(Gfs_ctl, 'levsp', levsp)
-        call close_file(Gfs_ctl)
-      else
-        call mpp_error(FATAL,'==> Error in fv_regional::start_regional_restart file INPUT/gfs_ctl.nc does not exist')
+          call get_dimension_size(Gfs_ctl, 'levsp', levsp)
+          call close_file(Gfs_ctl)
+        else
+          call mpp_error(FATAL,'==> Error in fv_regional::start_regional_restart file INPUT/gfs_ctl.nc does not exist')
+        endif
       endif
+      call mpp_broadcast(levsp, 1, pes(1), pes)
 
       levp = levsp-1
 !
@@ -1411,17 +1414,20 @@ contains
       allocate (wk2(levp+1,2))
       allocate (ak_in(levp+1))                                               !<-- Save the input vertical structure for
       allocate (bk_in(levp+1))                                               !    remapping BC updates during the forecast.
-      if (Atm%flagstruct%hrrrv3_ic) then
-        if (open_file(Grid_input, 'INPUT/hrrr_ctrl.nc', "read", pelist=pes)) then
-          call read_data(Grid_input,'vcoord',wk2)
-          call close_file(Grid_input)
-        endif
-      else
-        if (open_file(Grid_input, 'INPUT/gfs_ctrl.nc', "read", pelist=pes)) then
-          call read_data(Grid_input,'vcoord',wk2)
-          call close_file(Grid_input)
+      if (mpp_pe() == pes(1)) then
+        if (Atm%flagstruct%hrrrv3_ic) then
+          if (open_file(Grid_input, 'INPUT/hrrr_ctrl.nc', "read", pelist=pes(1))) then
+            call read_data(Grid_input,'vcoord',wk2)
+            call close_file(Grid_input)
+          endif
+        else
+          if (open_file(Grid_input, 'INPUT/gfs_ctrl.nc', "read", pelist=pes(1))) then
+            call read_data(Grid_input,'vcoord',wk2)
+            call close_file(Grid_input)
+          endif
         endif
       endif
+      call mpp_broadcast(wk2, size(wk2), pes(1), pes)
       deallocate(pes)
       ak_in(1:levp+1) = wk2(1:levp+1,1)
       ak_in(1) = max(1.e-9, ak_in(1))
@@ -4361,7 +4367,7 @@ subroutine remap_scalar_nggps_regional_bc(Atm                         &
 !
       integer,intent(in) :: is,ie,js,je                               &  !<-- Compute limits
                            ,isd,ied,jsd,jed                           &  !<-- Memory limits
-                           ,it                                           !<-- Acoustic step 
+                           ,it                                           !<-- Acoustic step
 !
       integer,intent(in),optional :: index4                              !<-- Index for the 4-D tracer array.
 !
@@ -6839,20 +6845,24 @@ subroutine remap_scalar_nggps_regional_bc(Atm                         &
       allocate(pes(mpp_npes()))
       call mpp_get_current_pelist(pes)
 
-        if (open_file(Gfs_data , trim(dir)//'/gfs_data.nc', "read", pelist=pes) .or. &
-            open_file(Gfs_data , trim(dir)//'/gfs_data.tile1.nc', "read", pelist=pes)) then
+      if (mpp_pe() == pes(1)) then
+        if (open_file(Gfs_data , trim(dir)//'/gfs_data.nc', "read", pelist=pes(1)) .or. &
+            open_file(Gfs_data , trim(dir)//'/gfs_data.tile1.nc', "read", pelist=pes(1))) then
           lstatus = global_att_exists(Gfs_data, "source")
           if(lstatus) call get_global_attribute(Gfs_data, "source", source)
           call close_file(Gfs_data)
         endif
+      endif
 
-      deallocate(pes)
       if (.not. lstatus) then
-       if (mpp_pe() == 0) write(0,*) 'INPUT source not found in ', trim(dir), &
-                          ' status=', lstatus,' set source=No Source Attribute'
+       if (mpp_pe() == mpp_root_pe()) write(0,*) 'INPUT source not found in ', trim(dir), &
+                                      ' status=', lstatus,' set source=No Source Attribute'
        source='No Source Attribute'
       endif
-      if (mpp_pe()==0) write(*,*) 'INPUT gfs_data source string=',source
+      if (mpp_pe()==mpp_root_pe()) write(*,*) 'INPUT gfs_data source string=',source
+
+      call mpp_broadcast(source, len(source), pes(1), pes)
+      deallocate(pes)
 
 ! Logical flag for fv3gfs nemsio/netcdf/grib2 --------
       if ( trim(source)=='FV3GFS GAUSSIAN NEMSIO FILE' .or.        &
@@ -6862,7 +6872,7 @@ subroutine remap_scalar_nggps_regional_bc(Atm                         &
       else
          data_source_fv3gfs = .FALSE.
       endif
-      if (mpp_pe()==0) write(*,*) 'data_source_fv3gfs=',data_source_fv3gfs
+      if (mpp_pe()==mpp_root_pe()) write(*,*) 'data_source_fv3gfs=',data_source_fv3gfs
 
   end subroutine get_data_source
 
