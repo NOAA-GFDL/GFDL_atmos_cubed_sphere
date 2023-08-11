@@ -1381,7 +1381,7 @@ contains
       allocate(pes(mpp_npes()))
       call mpp_get_current_pelist(pes)
       if (mpp_pe() == pes(1)) then
-        if( open_file(Gfs_ctl, 'INPUT/gfs_ctrl.nc', "read", pelist=pes(1)) ) then
+        if( open_file(Gfs_ctl, 'INPUT/gfs_ctrl.nc', "read", pelist=pes(1:1)) ) then
 !--- read in the number of levsp
           call get_dimension_size(Gfs_ctl, 'levsp', levsp)
           call close_file(Gfs_ctl)
@@ -1389,8 +1389,7 @@ contains
           call mpp_error(FATAL,'==> Error in fv_regional::start_regional_restart file INPUT/gfs_ctl.nc does not exist')
         endif
       endif
-      call mpp_broadcast(levsp, 1, pes(1), pes)
-
+      call mpp_broadcast(levsp, pes(1), pes)
       levp = levsp-1
 !
 !-----------------------------------------------------------------------
@@ -1416,12 +1415,12 @@ contains
       allocate (bk_in(levp+1))                                               !    remapping BC updates during the forecast.
       if (mpp_pe() == pes(1)) then
         if (Atm%flagstruct%hrrrv3_ic) then
-          if (open_file(Grid_input, 'INPUT/hrrr_ctrl.nc', "read", pelist=pes(1))) then
+          if (open_file(Grid_input, 'INPUT/hrrr_ctrl.nc', "read", pelist=pes(1:1))) then
             call read_data(Grid_input,'vcoord',wk2)
             call close_file(Grid_input)
           endif
         else
-          if (open_file(Grid_input, 'INPUT/gfs_ctrl.nc', "read", pelist=pes(1))) then
+          if (open_file(Grid_input, 'INPUT/gfs_ctrl.nc', "read", pelist=pes(1:1))) then
             call read_data(Grid_input,'vcoord',wk2)
             call close_file(Grid_input)
           endif
@@ -6828,7 +6827,7 @@ subroutine remap_scalar_nggps_regional_bc(Atm                         &
       logical, intent(in):: regional
       logical, intent(out):: data_source_fv3gfs
 
-      character (len=80) :: source
+      character (len=80), dimension(1) :: source
       logical :: lstatus
       character(len=*), intent(in), optional :: directory
       character(len=128) :: dir
@@ -6846,8 +6845,8 @@ subroutine remap_scalar_nggps_regional_bc(Atm                         &
       call mpp_get_current_pelist(pes)
 
       if (mpp_pe() == pes(1)) then
-        if (open_file(Gfs_data , trim(dir)//'/gfs_data.nc', "read", pelist=pes(1)) .or. &
-            open_file(Gfs_data , trim(dir)//'/gfs_data.tile1.nc', "read", pelist=pes(1))) then
+        if (open_file(Gfs_data , trim(dir)//'/gfs_data.nc', "read", pelist=pes(1:1)) .or. &
+            open_file(Gfs_data , trim(dir)//'/gfs_data.tile1.nc', "read", pelist=pes(1:1))) then
           lstatus = global_att_exists(Gfs_data, "source")
           if(lstatus) call get_global_attribute(Gfs_data, "source", source)
           call close_file(Gfs_data)
@@ -6865,9 +6864,9 @@ subroutine remap_scalar_nggps_regional_bc(Atm                         &
       deallocate(pes)
 
 ! Logical flag for fv3gfs nemsio/netcdf/grib2 --------
-      if ( trim(source)=='FV3GFS GAUSSIAN NEMSIO FILE' .or.        &
-           trim(source)=='FV3GFS GAUSSIAN NETCDF FILE' .or.        &
-           trim(source)=='FV3GFS GRIB2 FILE'                ) then
+      if ( trim(source(1))=='FV3GFS GAUSSIAN NEMSIO FILE' .or.        &
+           trim(source(1))=='FV3GFS GAUSSIAN NETCDF FILE' .or.        &
+           trim(source(1))=='FV3GFS GRIB2 FILE'                ) then
          data_source_fv3gfs = .TRUE.
       else
          data_source_fv3gfs = .FALSE.

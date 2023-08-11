@@ -470,7 +470,7 @@ contains
     if (mpp_pe() == pes(1)) then
       suffix = ''
       fname = ''//trim(dir)//'/'//trim(pre)//'fv_core.res.nc'
-      Atm(1)%Fv_restart_is_open = open_file(Atm(1)%Fv_restart,fname,"read", is_restart=.true., pelist=pes(1))
+      Atm(1)%Fv_restart_is_open = open_file(Atm(1)%Fv_restart,fname,"read", is_restart=.true., pelist=pes(1:1))
       if (Atm(1)%Fv_restart_is_open) then
         call fv_io_register_restart(Atm(1))
         call read_restart(Atm(1)%Fv_restart)
@@ -687,7 +687,7 @@ contains
     allocate(pes(mpp_npes()))
     call mpp_get_current_pelist(pes)
     if (mpp_pe() == pes(1)) then
-      if (open_file(Fv_restart_r,fname,"read", is_restart=.true., pelist=pes(1))) then
+      if (open_file(Fv_restart_r,fname,"read", is_restart=.true., pelist=pes(1:1))) then
          call read_data(Fv_restart_r, 'ak', ak_r(:))
          call read_data(Fv_restart_r, 'bk', bk_r(:))
          call close_file(Fv_restart_r)

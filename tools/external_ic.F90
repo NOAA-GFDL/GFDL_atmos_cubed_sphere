@@ -395,7 +395,7 @@ contains
     allocate(pes(mpp_npes()))
     call mpp_get_current_pelist(pes)
     if (mpp_pe() == pes(1)) then
-      if( open_file(Gfs_ctl, fn_gfs_ctl, "read", pelist=pes(1)) ) then
+      if( open_file(Gfs_ctl, fn_gfs_ctl, "read", pelist=pes(1:1)) ) then
 !--- read in the number of tracers in the NCEP NGGPS ICs
         call read_data (Gfs_ctl, 'ntrac', dum_i4(1))
 !--- read in the number of levp
@@ -408,7 +408,7 @@ contains
     call mpp_broadcast(dum_i4, size(dum_i4), pes(1), pes)
     deallocate(pes)
     ntrac = dum_i4(1)
-    levsp = dum_14(2)
+    levsp = dum_i4(2)
 
     call mpp_error(NOTE,'==> External_ic::get_nggps_ic: using control file '//trim(fn_gfs_ctl)//' for NGGPS IC')
 
@@ -738,7 +738,7 @@ contains
         allocate(pes(mpp_npes()))
         call mpp_get_current_pelist(pes)
         if (mpp_pe() == pes(1)) then
-          if( open_file(Gfs_ctl, fn_gfs_ctl, "read", pelist=pes(1)) ) then
+          if( open_file(Gfs_ctl, fn_gfs_ctl, "read", pelist=pes(1:1)) ) then
             call read_data(Gfs_ctl,'vcoord',wk2)
             call close_file(Gfs_ctl)
           endif
@@ -916,7 +916,7 @@ contains
       allocate(pes(mpp_npes()))
       call mpp_get_current_pelist(pes)
       if (mpp_pe() == pes(1)) then
-        if( open_file(Hrr_ctl, fn_hrr_ctl, "read", pelist=pes(1)) ) then
+        if( open_file(Hrr_ctl, fn_hrr_ctl, "read", pelist=pes(1:1)) ) then
 !--- read in the number of tracers in the HRRR ICs
           call read_data (Hrr_ctl, 'ntrac', ntrac)
           if (ntrac > ntracers) call mpp_error(FATAL,'==> External_ic::get_hrrr_ic: more HRRR tracers &
@@ -1936,12 +1936,12 @@ contains
           allocate(pes(mpp_npes()))
           call mpp_get_current_pelist(pes)
           if (mpp_pe() == pes(1)) then
-            if( open_file(Gfs_ctl, fn_gfs_ctl, "read", pelist=pes(1)) ) then
+            if( open_file(Gfs_ctl, fn_gfs_ctl, "read", pelist=pes(1:1)) ) then
               call read_data(Gfs_ctl,'vcoord',wk2)
               call close_file(Gfs_ctl)
             endif
           endif
-          mpp_broadcast(wk2, size(wk2), pes(1), pes)
+          call mpp_broadcast(wk2, size(wk2), pes(1), pes)
           ak_gfs(1:levp_gfs+1) = wk2(1:levp_gfs+1,1)
           bk_gfs(1:levp_gfs+1) = wk2(1:levp_gfs+1,2)
           deallocate (wk2, pes)
