@@ -132,6 +132,7 @@ module fv_ufs_restart_io_mod
    ! srf_wnd
    nvar2d_srf_wnd = 2
    allocate (srf_wnd_var2(nx,ny,nvar2d_srf_wnd), srf_wnd_var2_names(nvar2d_srf_wnd))
+   srf_wnd_var2 = 0.0
    srf_wnd_var2_names(1) = 'u_srf'
    srf_wnd_var2_names(2) = 'v_srf'
 
@@ -141,6 +142,7 @@ module fv_ufs_restart_io_mod
    nvar3d_tracers = ntprog+ntdiag
    tracers_zsize = size(Atm%q,3)
    allocate (tracers_var3(nx,ny,tracers_zsize,nvar3d_tracers), tracers_var3_names(nvar3d_tracers))
+   tracers_var3 = 0.0
 
    do nt = 1, ntprog
       call get_tracer_names(MODEL_ATMOS, nt, tracer_name)
