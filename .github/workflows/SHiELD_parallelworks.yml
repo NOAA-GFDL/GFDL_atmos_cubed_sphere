@@ -6,13 +6,13 @@ on:
       - main
 jobs:
   checkout:
-    runs-on: [self-hosted]
+    runs-on: [self-hosted, devcimultiintel]
     name: Checkout Code
     steps:
     - run: /contrib/fv3/FV3CIScripts/checkout.sh $GITHUB_REF
     
   build:
-    runs-on: [self-hosted]
+    runs-on: [self-hosted,devcimultiintel]
     name: SOLO SHiELD build
     needs: [checkout]
     strategy:
@@ -28,7 +28,7 @@ jobs:
         run: $RUNPATH/$RUNSCRIPT $GITHUB_REF
         
   test:
-    runs-on: [self-hosted]
+    runs-on: [self-hosted, devcimultiintel]
     name: SOLO SHiELD test suite
     needs: [checkout, build]
     strategy:
