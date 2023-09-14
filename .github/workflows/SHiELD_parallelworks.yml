@@ -36,7 +36,42 @@ jobs:
       max-parallel: 3
       matrix:
         runpath: [/contrib/fv3/intelFV3CIScripts/]
-        runscript: [C128r20.solo.superC.sh]
+        runscript: 
+          - C128r20.solo.superC.sh
+          - C128r3.solo.TC.d1.sh
+          - C128r3.solo.TC.h6.sh
+          - C128r3.solo.TC.sh
+          - C128r3.solo.TC.tr8.sh
+          - C192.sw.BLvortex.sh
+          - C192.sw.BTwave.sh
+          - C192.sw.modon.sh
+          - C256r20.solo.superC.sh
+          - C384.sw.BLvortex.sh
+          - C384.sw.BTwave.sh
+          - C512r20.solo.superC.sh
+          - C768.sw.BTwave.sh
+          - C96.solo.BCdry.hyd.sh
+          - C96.solo.BCdry.sh
+          - C96.solo.BCmoist.hyd.d3.sh
+          - C96.solo.BCmoist.hyd.sh
+          - C96.solo.BCmoist.nhK.sh
+          - C96.solo.BCmoist.sh
+          - C96.solo.mtn_rest.hyd.diff2.sh
+          - C96.solo.mtn_rest.hyd.sh
+          - C96.solo.mtn_rest.nonmono.diff2.sh
+          - C96.solo.mtn_rest.sh
+          - C96.sw.BLvortex.sh
+          - C96.sw.BTwave.sh
+          - C96.sw.modon.sh
+          - C96.sw.RHwave.sh
+          - d96_1k.solo.mtn_rest_shear.olddamp.sh
+          - d96_1k.solo.mtn_rest_shear.sh
+          - d96_1k.solo.mtn_schar.mono.sh
+          - d96_1k.solo.mtn_schar.sh
+          - d96_2k.solo.bubble.n0.sh
+          - d96_2k.solo.bubble.nhK.sh
+          - d96_2k.solo.bubble.sh
+          - d96_500m.solo.mtn_schar.sh
     steps:
       - env:
           RUNPATH: ${{ matrix.runpath }}
