@@ -10,8 +10,8 @@ jobs:
     name: Checkout Code
     steps:
     # It can take a long time (5-15 minutes) to spinup nodes
-    # so this salloc will prompt 64 nodes to startup and stay active for 20 min
-    - run: salloc --partition=p2 -N 64 -J $GITHUB_REF sleep 20m &
+    # so this salloc will prompt 46 nodes to startup and stay active for 20 min
+    - run: salloc --partition=p2 -N 46 -J $GITHUB_REF sleep 20m &
     - run: /contrib/fv3/intelFV3CIScripts/checkout.sh $GITHUB_REF
     
   build:
