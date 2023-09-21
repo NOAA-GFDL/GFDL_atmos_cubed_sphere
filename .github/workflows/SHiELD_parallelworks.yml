@@ -40,6 +40,7 @@ jobs:
       matrix:
         runpath: [/contrib/fv3/intelFV3CIScripts/]
         runscript:
+          # These are placed in order of largest to smallest jobs
           - C512r20.solo.superC.sh
           - C768.sw.BTwave.sh
           - C256r20.solo.superC.sh
@@ -89,7 +90,7 @@ jobs:
     needs: [checkout, build, test]
     strategy:
       fail-fast: false
-      max-parallel: 9
+      max-parallel: 17
       matrix:
         test:
           - C512r20.solo.superC
