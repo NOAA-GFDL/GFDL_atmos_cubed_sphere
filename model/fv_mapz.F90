@@ -899,7 +899,6 @@ endif        ! end last_step check
               endif
 #else
               if ( .not. adiabatic ) then
-                if(is_master()) print*, "adiabatic=false"
                 do i=is,ie
 #ifdef MULTI_GASES
                     pt(i,j,k) = (pt(i,j,k)+dtmp*pkz(i,j,k)) / virq(q(i,j,k,1:num_gas))

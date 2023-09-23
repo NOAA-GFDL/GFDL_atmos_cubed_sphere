@@ -78,8 +78,7 @@ list(APPEND model_srcs
   model/sw_core.F90
   model/tp_core.F90
   model/nh_core.F90
-  model/nh_utils.F90
-  model/forpy_mod.F90)
+  model/nh_utils.F90)
 
 list(APPEND tools_srcs
   tools/coarse_grained_diagnostics.F90

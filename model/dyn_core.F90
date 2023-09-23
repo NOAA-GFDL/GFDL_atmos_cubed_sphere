@@ -382,6 +382,7 @@ contains
     call init_ijk_mem(is, ie  , js,  je+1, npz, mfy, 0.)
     call init_ijk_mem(is, ie+1, jsd, jed,  npz, cx, 0.)
     call init_ijk_mem(isd, ied, js,  je+1, npz, cy, 0.)
+
     if ( flagstruct%d_con > 1.0E-5 ) then
          allocate( heat_source(isd:ied, jsd:jed, npz) )
          call init_ijk_mem(isd, ied, jsd, jed, npz, heat_source, 0.)
@@ -1427,7 +1428,6 @@ contains
 #endif
 #endif
                 dtmp = heat_source(i,j,k) / (cv_air*delp(i,j,k))
-                !if(is_master()) write(*,*) "Help i'm somewhere i shouldn't be: n_con loop, delt,pkz=", delt, pkz(i,j,k)
                 pt(i,j,k) = pt(i,j,k) + sign(min(delt, abs(dtmp)),dtmp) / pkz(i,j,k)
              enddo
           enddo

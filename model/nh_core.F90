@@ -55,7 +55,6 @@ module nh_core_mod
    use nh_utils_mod,      only: sim_solver, sim1_solver, sim3_solver
    use nh_utils_mod,      only: sim3p0_solver, rim_2d
    use nh_utils_mod,      only: Riem_Solver_c
-   use forpy_mod
 
    implicit none
    private
@@ -221,8 +220,6 @@ CONTAINS
 
       do k=1, km
          do i=is, ie
-!LJR            dwnh(i,j,k) = w2)i,k)=w(i,j,k)
-!LJR            dznh(i,j,k) = dz2(i,k)-delz(i,j,k)
             w(i,j,k) = w2(i,k)
             delz(i,j,k) = dz2(i,k)
          enddo
@@ -233,7 +230,6 @@ CONTAINS
               do i=is,ie
                  peln(i,k,j) = peln2(i,k)
                    pk(i,j,k) = pk3(i,j,k)
-!LJR                    dpnh(i,j,k)=pem)i,j)-pe(i,k,j)
                    pe(i,k,j) = pem(i,k)
               enddo
            enddo
