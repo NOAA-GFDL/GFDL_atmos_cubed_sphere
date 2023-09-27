@@ -1,5 +1,14 @@
 name: Compile SHiELD SOLO and run tests
 
+# This GitHub Action Workflow is running on the cloud devcimultiintel cluster
+# The tests are run inside of a container with the following software/libraries:
+# -intel: 2023.2.0
+# -hdf5: 1.14.0
+# -netcdf-c: 4.9.2
+# -netcdf-fortran: 4.6.0
+# -cmake
+# -libyaml
+
 on:
   pull_request:
     branches:
