@@ -11,6 +11,8 @@ jobs:
     steps:
     # It can take a long time (5-15 minutes) to spinup nodes
     # so this salloc will prompt 46 nodes to startup and stay active for 20 min
+    # this is enough nodes for the first 17 tests to run in parallel, and we
+    # have 17 runners configured.
     - run: salloc --partition=p2 -N 46 -J $GITHUB_REF sleep 20m &
     - run: /contrib/fv3/intelFV3CIScripts/checkout.sh $GITHUB_REF
     
@@ -36,15 +38,18 @@ jobs:
     needs: [checkout, build]
     strategy:
       fail-fast: false
-      max-parallel: 9
+      max-parallel: 17
       matrix:
         runpath: [/contrib/fv3/intelFV3CIScripts/]
         runscript:
           # These are placed in order of largest to smallest jobs
+          #layout 8,8 needs 8 nodes on dvcimultiintel cluster
           - C512r20.solo.superC.sh
           - C768.sw.BTwave.sh
+          #layout 4,8 needs 4 nodes on dvcimultiintel cluster
           - C256r20.solo.superC.sh
           - C384.sw.BLvortex.sh
+          #layout 4,4 needs 2 nodes on dvcimultiintel cluster
           - C128r20.solo.superC.sh
           - C128r3.solo.TC.d1.sh
           - C128r3.solo.TC.h6.sh
@@ -54,6 +59,7 @@ jobs:
           - C192.sw.BTwave.sh
           - C192.sw.modon.sh
           - C384.sw.BTwave.sh
+          #layout 4,1 and 2,2 need 1 node on dvcimultiintel cluster
           - C96.solo.BCdry.hyd.sh
           - C96.solo.BCdry.sh
           - C96.solo.BCmoist.hyd.d3.sh
