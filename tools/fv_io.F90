@@ -696,8 +696,9 @@ contains
           call read_restart(Atm(1)%Rsf_restart, ignore_checksum=Atm(1)%flagstruct%ignore_rst_cksum)
           call close_file(Atm(1)%Rsf_restart)
           Atm(1)%Rsf_restart_is_open = .false.
-         call mpp_error(NOTE,'==> Warning from remap_restart: Expected file '//trim(fname)//' does not exist')
-         Atm%flagstruct%srf_init = .false.
+       else
+          call mpp_error(NOTE,'==> Warning from remap_restart: Expected file '//trim(fname)//' does not exist')
+          Atm%flagstruct%srf_init = .false.
        endif
 
        if ( Atm(1)%flagstruct%fv_land ) then
@@ -707,6 +708,7 @@ contains
          if (Atm(1)%Mg_restart_is_open) then
             call read_data(Atm(1)%Mg_restart, 'ghprime', Atm(1)%sgh)
             call close_file(Atm(1)%Mg_restart)
+            Atm(1)%Mg_restart_is_open = .false.
          else
            call mpp_error(NOTE,'==> Warning from remap_restart: Expected file '//trim(fname)//' does not exist')
          endif
@@ -716,6 +718,7 @@ contains
          if (Atm(1)%Lnd_restart_is_open) then
            call read_data(Atm(1)%Lnd_restart, 'oro', Atm(1)%oro)
            call close_file(Atm(1)%Lnd_restart)
+           Atm(1)%Lnd_restart_is_open = .false.
          else
            call mpp_error(NOTE,'==> Warning from remap_restart: Expected file '//trim(fname)//' does not exist')
          endif
@@ -1300,11 +1303,13 @@ contains
     if (Atm%neststruct%BCfile_sw_is_open) then
       call write_restart_bc(Atm%neststruct%BCfile_sw)
       call close_file(Atm%neststruct%BCfile_sw)
+      Atm%neststruct%BCfile_sw_is_open = .false.
     endif
 
     if (Atm%neststruct%BCfile_ne_is_open) then
      call write_restart_bc(Atm%neststruct%BCfile_ne)
      call close_file(Atm%neststruct%BCfile_ne)
+     Atm%neststruct%BCfile_ne_is_open = .false.
     endif
 
     deallocate(all_pelist)
@@ -1334,11 +1339,13 @@ contains
     if (Atm%neststruct%BCfile_sw_is_open) then
       call read_restart_bc(Atm%neststruct%BCfile_sw, ignore_checksum=Atm%flagstruct%ignore_rst_cksum)
       call close_file(Atm%neststruct%BCfile_sw)
+      Atm%neststruct%BCfile_sw_is_open = .false.
     endif
 
     if (Atm%neststruct%BCfile_ne_is_open) then
      call read_restart_bc(Atm%neststruct%BCfile_ne, ignore_checksum=Atm%flagstruct%ignore_rst_cksum)
      call close_file(Atm%neststruct%BCfile_ne)
+     Atm%neststruct%BCfile_ne_is_open = .false.
     endif
 
 
