@@ -13,6 +13,10 @@ on:
   pull_request:
     branches:
       - main
+  # run weekly on Sunday
+  schedule:
+    - cron: '0 0 * * 0'
+    
 jobs:
   checkout:
     runs-on: [self-hosted, devcimultiintel]
