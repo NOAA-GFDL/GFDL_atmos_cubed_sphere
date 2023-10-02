@@ -1848,7 +1848,6 @@ contains
 
 !>@brief The subroutine 'deallocate_fv_atmos_type' deallocates the fv_atmos_type.
   subroutine deallocate_fv_atmos_type(Atm)
-    use mpi
 
     implicit none
     type(fv_atmos_type), intent(INOUT) :: Atm
