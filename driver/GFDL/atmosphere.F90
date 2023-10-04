@@ -40,7 +40,7 @@ use fms_mod,               only: error_mesg, FATAL,                 &
                                  write_version_number,              &
                                  mpp_clock_id, mpp_clock_begin,     &
                                  mpp_clock_end, CLOCK_SUBCOMPONENT, &
-                                 clock_flag_default
+                                 clock_flag_default, string
 use fms2_io_mod,           only: file_exists
 use mpp_mod,               only: mpp_error, FATAL, NOTE, input_nml_file, &
                                  mpp_npes, mpp_get_current_pelist, &
@@ -206,7 +206,7 @@ contains
    !For regional
    a_step = 0
    current_time_in_seconds = time_type_to_real( Time - Time_init )
-   if (mpp_pe() == 0) write(0,"('atmosphere_init: current_time_seconds = ',f9.1)")current_time_in_seconds
+   call mpp_error(NOTE, 'atmosphere_init: current_time_seconds = '//string(current_time_in_seconds))
 
    allocate(pelist(mpp_npes()))
    call mpp_get_current_pelist(pelist)
