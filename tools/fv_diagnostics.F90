@@ -1070,7 +1070,7 @@ contains
 
 ! Total energy (only when moist_phys = .T.)
        idiag%id_te    = register_diag_field ( trim(field), 'te', axes(1:2), Time,      &
-            'Total Energy', 'J/kg', missing_value=missing_value )
+            'Total Energy', 'J/m/s^2', missing_value=missing_value )
 ! Total Kinetic energy
        id_ke    = register_diag_field ( trim(field), 'ke', axes(1:2), Time,      &
             'Total KE', 'm^2/s^2', missing_value=missing_value )
@@ -1665,12 +1665,6 @@ contains
 
 
         endif
-        if ( .not. Atm(n)%flagstruct%hydrostatic )   &
-          call nh_total_energy(isc, iec, jsc, jec, isd, ied, jsd, jed, npz,  &
-                               Atm(n)%w, Atm(n)%delz, Atm(n)%pt, Atm(n)%delp,  &
-                               Atm(n)%q, Atm(n)%phis, Atm(n)%gridstruct%area, Atm(n)%domain, &
-                               sphum, liq_wat, rainwat, ice_wat, snowwat, graupel, Atm(n)%flagstruct%nwat,     &
-                               Atm(n)%ua, Atm(n)%va, Atm(n)%flagstruct%moist_phys, a2)
 #endif
         call prt_mxm('UA_Top (m/s): ', Atm(n)%ua(isc:iec,jsc:jec,1),    &
                         isc, iec, jsc, jec, 0, 1, 1., Atm(n)%gridstruct%area_64, Atm(n)%domain)
@@ -5847,78 +5841,6 @@ end subroutine eqv_pot
 
 #endif
 
- subroutine nh_total_energy(is, ie, js, je, isd, ied, jsd, jed, km,  &
-                            w, delz, pt, delp, q, hs, area, domain,  &
-                            sphum, liq_wat, rainwat, ice_wat,        &
-                            snowwat, graupel, nwat, ua, va, moist_phys, te)
-!------------------------------------------------------
-! Compute vertically integrated total energy per column
-!------------------------------------------------------
-! !INPUT PARAMETERS:
-   integer,  intent(in):: km, is, ie, js, je, isd, ied, jsd, jed
-   integer,  intent(in):: nwat, sphum, liq_wat, rainwat, ice_wat, snowwat, graupel
-   real, intent(in), dimension(isd:ied,jsd:jed,km):: ua, va, pt, delp, w
-   real, intent(in), dimension(is:ie,js:je,km) :: delz
-   real, intent(in), dimension(isd:ied,jsd:jed,km,nwat):: q
-   real, intent(in):: hs(isd:ied,jsd:jed)  ! surface geopotential
-   real, intent(in):: area(isd:ied, jsd:jed)
-   logical, intent(in):: moist_phys
-   type(domain2d), intent(INOUT) :: domain
-   real, intent(out):: te(is:ie,js:je)   ! vertically integrated TE
-! Local
-   real(kind=R_Grid) ::    area_l(isd:ied, jsd:jed)
-   real, parameter:: cv_vap = cp_vapor - rvgas  ! 1384.5
-   real  phiz(is:ie,km+1)
-   real, dimension(is:ie):: cvm, qc
-   real cv_air, psm
-   integer i, j, k
-
-   area_l = area
-   cv_air =  cp_air - rdgas
-
-!$OMP parallel do default(none) shared(te,nwat,is,ie,js,je,isd,ied,jsd,jed,km,ua,va,   &
-!$OMP          w,q,pt,delp,delz,hs,cv_air,moist_phys,sphum,liq_wat,rainwat,ice_wat,snowwat,graupel) &
-!$OMP          private(phiz,cvm, qc)
-  do j=js,je
-
-     do i=is,ie
-        te(i,j) = 0.
-        phiz(i,km+1) = hs(i,j)
-     enddo
-
-     do i=is,ie
-        do k=km,1,-1
-           phiz(i,k) = phiz(i,k+1) - grav*delz(i,j,k)
-        enddo
-     enddo
-
-     if ( moist_phys ) then
-        do k=1,km
-           call moist_cv(is,ie,isd,ied,jsd,jed, km, j, k, nwat, sphum, liq_wat, rainwat,    &
-                         ice_wat, snowwat, graupel, q, qc, cvm)
-           do i=is,ie
-              te(i,j) = te(i,j) + delp(i,j,k)*( cvm(i)*pt(i,j,k) + hlv*q(i,j,k,sphum) +  &
-                      0.5*(phiz(i,k)+phiz(i,k+1)+ua(i,j,k)**2+va(i,j,k)**2+w(i,j,k)**2) )
-           enddo
-        enddo
-     else
-       do k=1,km
-          do i=is,ie
-             te(i,j) = te(i,j) + delp(i,j,k)*( cv_air*pt(i,j,k) +  &
-                     0.5*(phiz(i,k)+phiz(i,k+1)+ua(i,j,k)**2+va(i,j,k)**2+w(i,j,k)**2) )
-          enddo
-       enddo
-     endif
-! Unit: kg*(m/s)^2/m^2 = Joule/m^2
-     do i=is,ie
-        te(i,j) = te(i,j)/grav
-     enddo
-  enddo
-
-  psm = g_sum(domain, te, is, ie, js, je, 3, area_l, 1)
-  if( master ) write(*,*) 'Total_Energy (J/m**2 * E9) = ',  psm * 1.E-9
-
-  end subroutine nh_total_energy
 
   subroutine compute_brn(ua, va, delp, delz, cape, bd, npz, Time)
 
