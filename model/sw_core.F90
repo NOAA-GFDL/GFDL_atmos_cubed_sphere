@@ -1439,7 +1439,7 @@ module sw_core_mod
 
    endif
 
-   if ( d_con > 1.e-5 ) then
+   if ( d_con > 1.e-5 .or. flagstruct%do_diss_est) then
       do j=js,je+1
          do i=is,ie
             ub(i,j) = vort(i,j) - vort(i+1,j)
@@ -1493,6 +1493,9 @@ module sw_core_mod
    if ( damp_v>1.E-5 ) then
         damp4 = (damp_v*gridstruct%da_min_c)**(nord_v+1)
         call del6_vt_flux(nord_v, npx, npy, damp4, wk, vort, ut, vt, gridstruct, bd)
+   elseif (flagstruct%do_diss_est) then
+        ut=0.
+        vt=0.
    endif
 
    if ( d_con > 1.e-5 .or. flagstruct%do_diss_est ) then
