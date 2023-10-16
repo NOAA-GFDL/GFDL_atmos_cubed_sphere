@@ -5823,7 +5823,7 @@ subroutine remap_scalar_nggps_regional_bc(Atm                         &
         call register_global_attribute(fileobj, "jhalo_shift", halo )
         call register_global_attribute(fileobj,  "hstagger", stagname )
 
-        call register_field(fileobj, name, "double", dim_names_3d)
+        call register_field(fileobj, name, axis_type, dim_names_3d)
 
         call write_data(fileobj, name, glob_field)
 
@@ -5935,7 +5935,7 @@ subroutine remap_scalar_nggps_regional_bc(Atm                         &
         call register_global_attribute(fileobj, "jhalo_shift", halo )
         call register_global_attribute(fileobj,  "hstagger", stagname )
 
-        call register_field(fileobj, name, "double", dim_names_3d)
+        call register_field(fileobj, name, axis_type, dim_names_3d)
 
         call write_data(fileobj, name, glob_field)
 
