@@ -657,16 +657,16 @@ subroutine gfdl_mp_end
     ! free up memory
     ! -----------------------------------------------------------------------
 
-    deallocate (table0)
-    deallocate (table1)
-    deallocate (table2)
-    deallocate (table3)
-    deallocate (table4)
-    deallocate (des0)
-    deallocate (des1)
-    deallocate (des2)
-    deallocate (des3)
-    deallocate (des4)
+    if (allocated (table0)) deallocate (table0)
+    if (allocated (table1)) deallocate (table1)
+    if (allocated (table2)) deallocate (table2)
+    if (allocated (table3)) deallocate (table3)
+    if (allocated (table4)) deallocate (table4)
+    if (allocated (des0)) deallocate (des0)
+    if (allocated (des1)) deallocate (des1)
+    if (allocated (des2)) deallocate (des2)
+    if (allocated (des3)) deallocate (des3)
+    if (allocated (des4)) deallocate (des4)
 
     tables_are_initialized = .false.
 
@@ -6940,17 +6940,17 @@ subroutine qs_init
 
     if (.not. tables_are_initialized) then
 
-        allocate (table0 (length))
-        allocate (table1 (length))
-        allocate (table2 (length))
-        allocate (table3 (length))
-        allocate (table4 (length))
+        if (.not. allocated (table0)) allocate (table0 (length))
+        if (.not. allocated (table1)) allocate (table1 (length))
+        if (.not. allocated (table2)) allocate (table2 (length))
+        if (.not. allocated (table3)) allocate (table3 (length))
+        if (.not. allocated (table4)) allocate (table4 (length))
 
-        allocate (des0 (length))
-        allocate (des1 (length))
-        allocate (des2 (length))
-        allocate (des3 (length))
-        allocate (des4 (length))
+        if (.not. allocated (des0)) allocate (des0 (length))
+        if (.not. allocated (des1)) allocate (des1 (length))
+        if (.not. allocated (des2)) allocate (des2 (length))
+        if (.not. allocated (des3)) allocate (des3 (length))
+        if (.not. allocated (des4)) allocate (des4 (length))
 
         call qs_table0 (length)
         call qs_table1 (length)
