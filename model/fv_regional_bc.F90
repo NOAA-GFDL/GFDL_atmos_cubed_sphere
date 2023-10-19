@@ -235,8 +235,10 @@ module fv_regional_mod
 
 #ifdef OVERLOAD_R4
       real, parameter:: real_snan=real(Z'FFBFFFFF')
+      character(len=5), parameter :: axis_type = 'float'
 #else
       real, parameter:: real_snan=real(Z'FFF7FFFFFFFFFFFF')
+      character(len=6), parameter :: axis_type = 'double'
 #endif
       real(kind=R_GRID), parameter:: dbl_snan=real(Z'FFF7FFFFFFFFFFFF',kind=R_GRID)
 
@@ -5785,7 +5787,7 @@ subroutine remap_scalar_nggps_regional_bc(Atm                         &
 
     if (open_file(fileobj, fname, "overwrite", domain)) then
         call register_axis(fileobj, "grid_xt", nxg)
-        call register_field(fileobj, "grid_xt", "double", (/"grid_xt"/))
+        call register_field(fileobj, "grid_xt", axis_type, (/"grid_xt"/))
         call register_variable_attribute(fileobj, "grid_xt", "axis", "X", str_len=1)
         call register_variable_attribute(fileobj, "grid_xt", "units", "km", str_len=len("km"))
         call register_variable_attribute(fileobj, "grid_xt", "long_name", "X distance", str_len=len("X distance"))
@@ -5793,7 +5795,7 @@ subroutine remap_scalar_nggps_regional_bc(Atm                         &
         call write_data(fileobj, "grid_xt", (/(i*1.0,i=1,nxg)/))
 
         call register_axis(fileobj, "grid_yt", nyg)
-        call register_field(fileobj, "grid_yt", "double", (/"grid_yt"/))
+        call register_field(fileobj, "grid_yt", axis_type, (/"grid_yt"/))
         call register_variable_attribute(fileobj, "grid_yt", "axis", "Y", str_len=1)
         call register_variable_attribute(fileobj, "grid_yt", "units", "km", str_len=len("km"))
         call register_variable_attribute(fileobj, "grid_yt", "long_name", "Y distance", str_len=len("Y distance"))
@@ -5801,7 +5803,7 @@ subroutine remap_scalar_nggps_regional_bc(Atm                         &
         call write_data(fileobj, "grid_yt", (/(j*1.0,j=1,nyg)/))
 
         call register_axis(fileobj, "lev", nz)
-        call register_field(fileobj, "lev", "double", (/"lev"/))
+        call register_field(fileobj, "lev", axis_type, (/"lev"/))
         call register_variable_attribute(fileobj, "lev", "axis", "Z", str_len=1)
         call register_variable_attribute(fileobj, "lev", "units", "km", str_len=len("km"))
         call register_variable_attribute(fileobj, "lev", "long_name", "Z distance", str_len=len("Z distance"))
@@ -5821,7 +5823,7 @@ subroutine remap_scalar_nggps_regional_bc(Atm                         &
         call register_global_attribute(fileobj, "jhalo_shift", halo )
         call register_global_attribute(fileobj,  "hstagger", stagname )
 
-        call register_field(fileobj, name, "double", dim_names_3d)
+        call register_field(fileobj, name, axis_type, dim_names_3d)
 
         call write_data(fileobj, name, glob_field)
 
@@ -5904,7 +5906,7 @@ subroutine remap_scalar_nggps_regional_bc(Atm                         &
 
     if (open_file(fileobj, fname, "overwrite", domain)) then
         call register_axis(fileobj, "grid_xt", nxg)
-        call register_field(fileobj, "grid_xt", "double", (/"grid_xt"/))
+        call register_field(fileobj, "grid_xt", axis_type, (/"grid_xt"/))
         call register_variable_attribute(fileobj, "grid_xt", "axis", "X", str_len=1)
         call register_variable_attribute(fileobj, "grid_xt", "units", "km", str_len=len("km"))
         call register_variable_attribute(fileobj, "grid_xt", "long_name", "X distance", str_len=len("X distance"))
@@ -5912,7 +5914,7 @@ subroutine remap_scalar_nggps_regional_bc(Atm                         &
         call write_data(fileobj, "grid_xt", (/(i*1.0,i=1,nxg)/))
 
         call register_axis(fileobj, "grid_yt", nyg)
-        call register_field(fileobj, "grid_yt", "double", (/"grid_yt"/))
+        call register_field(fileobj, "grid_yt", axis_type, (/"grid_yt"/))
         call register_variable_attribute(fileobj, "grid_yt", "axis", "Y", str_len=1)
         call register_variable_attribute(fileobj, "grid_yt", "units", "km", str_len=len("km"))
         call register_variable_attribute(fileobj, "grid_yt", "long_name", "Y distance", str_len=len("Y distance"))
@@ -5933,7 +5935,7 @@ subroutine remap_scalar_nggps_regional_bc(Atm                         &
         call register_global_attribute(fileobj, "jhalo_shift", halo )
         call register_global_attribute(fileobj,  "hstagger", stagname )
 
-        call register_field(fileobj, name, "double", dim_names_3d)
+        call register_field(fileobj, name, axis_type, dim_names_3d)
 
         call write_data(fileobj, name, glob_field)
 
