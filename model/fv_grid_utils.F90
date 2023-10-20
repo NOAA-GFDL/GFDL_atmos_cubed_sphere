@@ -42,12 +42,12 @@
  implicit none
  private
  logical:: symm_grid
-#ifdef NO_QUAD_PRECISION
-! 64-bit precision (kind=8)
- integer, parameter:: f_p = selected_real_kind(15)
-#else
+#ifdef ENABLE_QUAD_PRECISION
 ! Higher precision (kind=16) for grid geometrical factors:
  integer, parameter:: f_p = selected_real_kind(20)
+#else
+! 64-bit precision (kind=8)
+ integer, parameter:: f_p = selected_real_kind(15)
 #endif
  real, parameter::  big_number=1.d8
  real, parameter:: tiny_number=1.d-8
