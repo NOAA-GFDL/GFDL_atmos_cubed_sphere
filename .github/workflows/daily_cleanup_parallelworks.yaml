@@ -1,0 +1,17 @@
+name: Old Build Cleanup
+
+# This GitHub Action Workflow is runing on the devcimultiintel cluster
+# This will delete all build directories older than 30 days
+# Build directories are on the cloud at /contrib/fv3/2023.2.0
+
+on:
+  schedule:
+    # run daily at midnight
+    - cron: '0 0 * * *'
+
+jobs:
+  delete:
+    runs-on: [self-hosted, devcimultiintel]
+    name: Delete Builds
+    steps:
+      - run: find /contrib/fv3/2023.2.0/GFDL_atmos_cubed_sphere/refs/pull -maxdepth 1 -mindepth 1 -mtime +30 -type d -print -delete
