@@ -528,6 +528,7 @@ contains
       real, parameter:: ustar2 = 1.E-4
       real:: cv_air, xvir
       integer :: sphum, liq_wat, rainwat, snowwat, graupel, ice_wat, cld_amt
+      logical:: sat_adj = .false.
 
       cv_air = cp_air - rdgas ! = rdgas * (7/2-1) = 2.5*rdgas=717.68
         rk = cp_air/rdgas + 1.
@@ -570,7 +571,7 @@ contains
 !$OMP parallel do default(none) shared(im,is,ie,js,je,nq,kbot,qa,ta,sphum,ua,va,delp,peln,     &
 !$OMP                                  hydrostatic,pe,delz,g2,w,liq_wat,rainwat,ice_wat,  &
 !$OMP                                  snowwat,cv_air,m,graupel,pkz,rk,rz,fra,cld_amt,    &
-!$OMP                                  u_dt,rdt,v_dt,xvir,nwat)                 &
+!$OMP                                  u_dt,rdt,v_dt,xvir,nwat,sat_adj)                 &
 !$OMP                          private(kk,lcp2,icp2,tcp3,dh,dq,den,qs,qsw,dqsdt,qcon,q0, &
 !$OMP                                  t0,u0,v0,w0,h0,pm,gzh,tvm,tmp,cpm,cvm, q_liq,q_sol,&
 !$OMP                                  tv,gz,hd,te,ratio,pt1,pt2,tv1,tv2,ri_ref, ri,mc,km1)
@@ -876,7 +877,7 @@ contains
 !----------------------
 ! Saturation adjustment
 !----------------------
-  if ( nwat > 5 ) then
+  if ( nwat > 5 .and. sat_adj) then
     do k=1, kbot
       if ( hydrostatic ) then
         do i=is, ie
