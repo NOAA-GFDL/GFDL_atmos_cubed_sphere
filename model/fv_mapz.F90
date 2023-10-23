@@ -2044,6 +2044,7 @@ else ! all others
        grat = delp(i,km-1) / delp(i,km)
        q(i,km) = ( 3.*(a4(1,i,k-1)+d4(i)*a4(1,i,k)) - grat*qs(i) - q(i,k-1) )/bet
        q(i,km+1) = qs(i)
+       gam(i,km) = d4(i) / bet
     enddo
 
   else ! all others
