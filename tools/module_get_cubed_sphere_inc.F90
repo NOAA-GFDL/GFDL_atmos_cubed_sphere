@@ -263,6 +263,7 @@ module module_get_cubed_sphere_inc
       allocate(increment_data%va_inc(im,jm,pf))
       allocate(increment_data%temp_inc(im,jm,pf))
       allocate(increment_data%delp_inc(im,jm,pf))
+      allocate(increment_data%delz_inc(im,jm,pf))
       allocate(increment_data%tracer_inc(im,jm,pf,num_tracers)) 
     endif
     if(testing) then
@@ -325,6 +326,9 @@ module module_get_cubed_sphere_inc
         case("DELP")
           ncerr = nf90_get_var(ncid, incvars(i)%varid, array_r8_3d_tiled) ; NC_ERR_STOP(ncerr)
           increment_data%delp_inc(isc:iec,jsc:jec,:) = array_r8_3d_tiled(isc:iec,jsc:jec,:,mytile,1)
+        case("delz")
+          ncerr = nf90_get_var(ncid, incvars(i)%varid, array_r8_3d_tiled) ; NC_ERR_STOP(ncerr)
+          increment_data%delz_inc(isc:iec,jsc:jec,:) = array_r8_3d_tiled(isc:iec,jsc:jec,:,mytile,1)
       end select
     enddo
     do i = 1,num_tracers
