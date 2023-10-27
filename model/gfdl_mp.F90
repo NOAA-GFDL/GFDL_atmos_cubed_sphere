@@ -7233,8 +7233,6 @@ function es_core (length, tk, table, des)
 
     real :: ap1, tmin
 
-    if (.not. tables_are_initialized) call qs_init
-
     tmin = tice - 160.
     ap1 = 10. * dim (tk, tmin) + 1.
     ap1 = min (2621., ap1)

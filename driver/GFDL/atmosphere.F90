@@ -95,7 +95,7 @@ use amip_interp_mod,      only: forecast_mode
 #endif
 
 use mpp_domains_mod, only:  mpp_get_data_domain, mpp_get_compute_domain
-use gfdl_mp_mod,        only: gfdl_mp_init, gfdl_mp_end
+use gfdl_mp_mod,        only: qs_init, gfdl_mp_init, gfdl_mp_end
 use coarse_graining_mod, only: coarse_graining_init
 use coarse_grained_diagnostics_mod, only: fv_coarse_diag_init, fv_coarse_diag
 use coarse_grained_restart_files_mod, only: fv_coarse_restart_init
@@ -314,6 +314,8 @@ contains
 
    if (Atm(mygrid)%flagstruct%do_inline_mp) then
      call gfdl_mp_init(input_nml_file, stdlog(), Atm(mygrid)%flagstruct%hydrostatic)
+   else
+     call qs_init
    endif
 
    call timing_on('FV_RESTART')
