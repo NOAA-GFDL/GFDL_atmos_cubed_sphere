@@ -159,7 +159,7 @@ contains
         Atm(mygrid)%flagstruct%moist_phys = .true.
         call fv_phys_init(isc,iec,jsc,jec,Atm(mygrid)%npz,Atm(mygrid)%flagstruct%nwat, Atm(mygrid)%ts, Atm(mygrid)%pt(isc:iec,jsc:jec,:),   &
                           Time, axes, Atm(mygrid)%gridstruct%agrid(isc:iec,jsc:jec,2))
-     endif
+
 
      if (.not. Atm(mygrid)%flagstruct%adiabatic) call gfdl_mp_init (input_nml_file, stdlog(), Atm(mygrid)%flagstruct%hydrostatic)
 
