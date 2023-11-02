@@ -150,5 +150,5 @@ jobs:
     steps:
       - run: scancel -n $GITHUB_SHA
       - env:
-          TEST: ${{ matrix.test }}
-        run: scancel -n $GITHUB_SHA_$TEST
+          JOB: ${{ github.sha }}_${{ matrix.test }}
+        run: echo $JOB
