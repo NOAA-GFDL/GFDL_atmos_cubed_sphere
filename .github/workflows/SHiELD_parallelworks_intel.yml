@@ -151,4 +151,4 @@ jobs:
       - run: scancel -n $GITHUB_SHA
       - env:
           JOB: ${{ github.sha }}_${{ matrix.test }}
-        run: echo $JOB
+        run: scancel -n $JOB
