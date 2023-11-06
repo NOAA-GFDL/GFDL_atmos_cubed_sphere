@@ -11,6 +11,7 @@ on:
 
 jobs:
   delete:
+    if: github.repository == 'NOAA-GFDL/GFDL_atmos_cubed_sphere'
     runs-on: [gfdlacsciintel]
     name: Delete Builds
     steps:
