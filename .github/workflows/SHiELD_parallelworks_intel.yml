@@ -112,10 +112,9 @@ jobs:
           RUNSCRIPT: ${{ matrix.runscript }}
         run: $RUNPATH/$RUNSCRIPT $GITHUB_REF $GITHUB_SHA
   shutdown:
-    if: github.repository == 'NOAA-GFDL/GFDL_atmos_cubed_sphere'
+    if: always() && github.repository == 'NOAA-GFDL/GFDL_atmos_cubed_sphere'
     runs-on: [gfdlacsciintel]
     name: Shutdown Processes
-    if: always()
     needs: [checkout, build, test]
     strategy:
       fail-fast: false
