@@ -25,6 +25,7 @@ concurrency:
     
 jobs:
   checkout:
+    if: github.repository == 'NOAA-GFDL/GFDL_atmos_cubed_sphere'
     runs-on: [gfdlacsciintel]
     name: Checkout Code
     steps:
@@ -36,6 +37,7 @@ jobs:
     - run: /contrib/fv3/GFDL_atmos_cubed_sphere_CI/checkout.sh $GITHUB_REF $GITHUB_SHA
     
   build:
+    if: github.repository == 'NOAA-GFDL/GFDL_atmos_cubed_sphere'
     runs-on: [gfdlacsciintel]
     name: SOLO SHiELD build
     needs: [checkout]
@@ -52,6 +54,7 @@ jobs:
         run: $RUNPATH/$RUNSCRIPT $GITHUB_REF $GITHUB_SHA
         
   test:
+    if: github.repository == 'NOAA-GFDL/GFDL_atmos_cubed_sphere'
     runs-on: [gfdlacsciintel]
     name: SOLO SHiELD test suite
     needs: [checkout, build]
@@ -109,6 +112,7 @@ jobs:
           RUNSCRIPT: ${{ matrix.runscript }}
         run: $RUNPATH/$RUNSCRIPT $GITHUB_REF $GITHUB_SHA
   shutdown:
+    if: github.repository == 'NOAA-GFDL/GFDL_atmos_cubed_sphere'
     runs-on: [gfdlacsciintel]
     name: Shutdown Processes
     if: always()
