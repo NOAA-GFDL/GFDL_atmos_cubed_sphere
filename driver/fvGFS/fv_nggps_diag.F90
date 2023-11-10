@@ -103,7 +103,7 @@ module fv_nggps_diags_mod
  implicit none
  private
 
- real, parameter:: missing_value = -1.e10
+ real, parameter:: missing_value = 9.99e20
  real, parameter:: stndrd_atmos_ps = 101325.
  real, parameter:: stndrd_atmos_lapse = 0.0065
 
