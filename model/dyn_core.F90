@@ -1382,6 +1382,7 @@ contains
        if(is_master()) write(*,*) 'End of n_split loop'
   endif
 
+
   if ( n_con/=0 .and. flagstruct%d_con > 1.e-5 ) then
        nf_ke = min(3, flagstruct%nord+1)
        call del2_cubed(heat_source, cnst_0p20*gridstruct%da_min, gridstruct, domain, npx, npy, npz, nf_ke, bd)
