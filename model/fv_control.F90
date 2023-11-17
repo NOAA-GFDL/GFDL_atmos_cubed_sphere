@@ -398,6 +398,8 @@ module fv_control_mod
      real(kind=R_GRID), pointer :: deglon_start, deglon_stop, &  ! boundaries of latlon patch
           deglat_start, deglat_stop
      real(kind=R_GRID), pointer :: deglat
+     real(kind=R_GRID), pointer :: deglon
+     real(kind=R_GRID), pointer :: deg_domain
 
      logical, pointer :: nested, twowaynest
      logical, pointer :: regional
@@ -956,6 +958,8 @@ module fv_control_mod
        deglat_stop                   => Atm%flagstruct%deglat_stop
 
        deglat                        => Atm%flagstruct%deglat
+       deglon                        => Atm%flagstruct%deglon
+       deg_domain                    => Atm%flagstruct%deg_domain
 
        nested                        => Atm%neststruct%nested
        twowaynest                    => Atm%neststruct%twowaynest
@@ -1060,7 +1064,7 @@ module fv_control_mod
             tau, tau_w, fast_tau_w_sec, tau_h2o, rf_cutoff, nf_omega, hydrostatic, fv_sg_adj, sg_cutoff, breed_vortex_inline,  &
             na_init, nudge_dz, hybrid_z, Make_NH, n_zs_filter, nord_zs_filter, full_zs_filter, reset_eta,         &
             pnats, dnats, dnrts, a2b_ord, remap_t, p_ref, d2_bg_k1, d2_bg_k2,  &
-            c2l_ord, dx_const, dy_const, umax, deglat,      &
+            c2l_ord, dx_const, dy_const, umax, deglat, deglon, deg_domain,      &
             deglon_start, deglon_stop, deglat_start, deglat_stop, &
             phys_hydrostatic, use_hydro_pressure, make_hybrid_z, old_divg_damp, add_noise, butterfly_effect, &
             molecular_diffusion, dz_min, psm_bc, nested, twowaynest, nudge_qv, &
