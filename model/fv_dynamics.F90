@@ -709,21 +709,7 @@ contains
 #endif
 #ifdef MULTI_GASES
      call complete_group_halo_update(i_pack(13), domain)
-#endif
 
-                                           call timing_on('DYN_CORE')
-      call dyn_core(npx, npy, npz, ng, sphum, nq, mdt, n_map, n_split, zvir, cp_air, akap, cappa, &
-                    kappa, liq_wat, ice_wat, rainwat, snowwat, graupel, hailwat, &
-#ifdef MULTI_GASES
-                    kapad,  &
-#endif
-                    grav, hydrostatic, &
-                    u, v, w, delz, pt, q, delp, pe, pk, phis, ws, omga, ptop, pfull, ua, va,           &
-                    uc, vc, mfx, mfy, cx, cy, pkz, peln, q_con, ak, bk, ks, &
-                    gridstruct, flagstruct, neststruct, idiag, bd, &
-                    domain, n_map==1, i_pack, last_step, diss_est,time_total)
-                                           call timing_off('DYN_CORE')
-#ifdef MULTI_GASES
      if ( ind_trkap > 1 ) then
 !$OMP parallel do default(none) shared(is,ie,js,je,npz,ind_trkap,wam_kappain, kapad, cappa, q)     
          do k=1,npz
@@ -738,6 +724,19 @@ contains
 !	                                  minval(wam_kappain(is:ie, js:je,1:npz))   
      endif  
 #endif
+
+                                           call timing_on('DYN_CORE')
+      call dyn_core(npx, npy, npz, ng, sphum, nq, mdt, n_map, n_split, zvir, cp_air, akap, cappa, &
+                    kappa, liq_wat, ice_wat, rainwat, snowwat, graupel, hailwat, &
+#ifdef MULTI_GASES
+                    kapad,  &
+#endif
+                    grav, hydrostatic, &
+                    u, v, w, delz, pt, q, delp, pe, pk, phis, ws, omga, ptop, pfull, ua, va,           &
+                    uc, vc, mfx, mfy, cx, cy, pkz, peln, q_con, ak, bk, ks, &
+                    gridstruct, flagstruct, neststruct, idiag, bd, &
+                    domain, n_map==1, i_pack, last_step, diss_est,time_total)
+                                           call timing_off('DYN_CORE')
      
 #ifdef SW_DYNAMICS
 !!$OMP parallel do default(none) shared(is,ie,js,je,ps,delp,agrav)
@@ -770,38 +769,7 @@ contains
          endif
        endif
                                              call timing_off('tracer_2d')
-
-#ifdef MULTI_GASES
-!
-! fv3wam kap_cor of pt before remapping
-!					     					     
-     if ( ind_trkap > 1 ) then
-!$OMP parallel do default(none) shared(is,ie,js,je, npz, ind_trkap, scal_kapcor,pe, peln, wam_kappain, q, pt, kappa, kapad)	
-         do k=1,npz
-          do j=js,je
-             do i=is,ie   
-                  
-!	     scal_kapcor=.5*( log(pe(i,k,j))+log(pe(i,k+1,j)) ) *(-wam_kappain(i,j,k)+q(i,j,k,ind_trkap))	     
-             scal_kapcor=.5*( peln(i,k,j)+ peln(i,k+1,j) ) *( q(i,j,k,ind_trkap)-wam_kappain(i,j,k)) 
-     
-             pt(i,j,k) = pt(i,j,k) * (1.0 - scal_kapcor)
-!	     	     	     
-!	     kap_cor(i,j,k) =scal_kapcor    
-!			      
-             enddo
-          enddo
-         enddo
- 
-!	  if( is_master() ) then 
-!	   write(6,*) ' fv_dyn_kap_cor ', maxval(kap_cor(is:ie, js:je,1:npz)), &
-!	                                minval(kap_cor(is:ie, js:je,1:npz))
-!	   write(6,*) 'fv_dyn kap_cor-pt2 ', maxval(pt(is:ie, js:je,1:npz)),  minval(pt(is:ie, js:je,1:npz))
-!	   write(6,*) 'fv_dyn kap_cor-pe2 ', maxval(pe(is:ie, 1:npz, js:je)),  minval(pe(is:ie, 1:npz+1, js:je))		
-!       endif	
-     
-     endif
-#endif
-     
+    
 #ifdef FILL2D
      if ( flagstruct%hord_tr<8 .and. flagstruct%moist_phys ) then
                                                   call timing_on('Fill2D')
@@ -861,9 +829,38 @@ contains
                      flagstruct%adiabatic, do_adiabatic_init, flagstruct%do_inline_mp, &
                      inline_mp, flagstruct%c2l_ord, bd, flagstruct%fv_debug, &
                      flagstruct%moist_phys, flagstruct%remap_option, flagstruct%gmao_remap)
-		     
-
-	     
+     
+#ifdef MULTI_GASES
+!
+! fv3wam kap_cor of pt before remapping
+!					     					     
+     if ( ind_trkap > 1 ) then
+!$OMP parallel do default(none) shared(is,ie,js,je, npz, ind_trkap, scal_kapcor,pe, peln, wam_kappain, q, pt, kappa, kapad)	
+         do k=1,npz
+          do j=js,je
+             do i=is,ie   
+                  
+!	     scal_kapcor=.5*( log(pe(i,k,j))+log(pe(i,k+1,j)) ) *(-wam_kappain(i,j,k)+q(i,j,k,ind_trkap))	     
+             scal_kapcor=.5*( peln(i,k,j)+ peln(i,k+1,j) ) *( q(i,j,k,ind_trkap)-wam_kappain(i,j,k)) 
+     
+             pt(i,j,k) = pt(i,j,k) * (1.0 - scal_kapcor)
+!	     	     	     
+!	     kap_cor(i,j,k) =scal_kapcor    
+!			      
+             enddo
+          enddo
+         enddo
+ 
+!	  if( is_master() ) then 
+!	   write(6,*) ' fv_dyn_kap_cor ', maxval(kap_cor(is:ie, js:je,1:npz)), &
+!	                                minval(kap_cor(is:ie, js:je,1:npz))
+!	   write(6,*) 'fv_dyn kap_cor-pt2 ', maxval(pt(is:ie, js:je,1:npz)),  minval(pt(is:ie, js:je,1:npz))
+!	   write(6,*) 'fv_dyn kap_cor-pe2 ', maxval(pe(is:ie, 1:npz, js:je)),  minval(pe(is:ie, 1:npz+1, js:je))		
+!       endif	
+     
+     endif
+#endif
+     
 !$OMP parallel do default(none) shared(is,ie,js,je, isd,ied,jsd,jed, npz, q, zvir, &
 !$OMP         kappa,nwat, sphum, liq_wat, rainwat, ice_wat, snowwat, graupel, hailwat,&
 #ifdef MULTI_GASES
