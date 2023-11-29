@@ -860,7 +860,7 @@ contains
                      hybrid_z, do_omega,     &
                      flagstruct%adiabatic, do_adiabatic_init, flagstruct%do_inline_mp, &
                      inline_mp, flagstruct%c2l_ord, bd, flagstruct%fv_debug, &
-                     flagstruct%moist_phys)
+                     flagstruct%moist_phys, flagstruct%remap_option, flagstruct%gmao_remap)
 		     
 
 	     

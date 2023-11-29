@@ -354,7 +354,8 @@ module fv_control_mod
      logical , pointer :: fv_timers
      logical , pointer :: srf_init
      logical , pointer :: mountain
-     logical , pointer :: remap_t
+     integer , pointer :: remap_option
+     integer , pointer :: gmao_remap
      logical , pointer :: z_tracer
 
      logical , pointer :: old_divg_damp
@@ -911,7 +912,8 @@ module fv_control_mod
        fv_timers                     => Atm%flagstruct%fv_timers
        srf_init                      => Atm%flagstruct%srf_init
        mountain                      => Atm%flagstruct%mountain
-       remap_t                       => Atm%flagstruct%remap_t
+       remap_option                  => Atm%flagstruct%remap_option
+       gmao_remap                    => Atm%flagstruct%gmao_remap
        z_tracer                      => Atm%flagstruct%z_tracer
        old_divg_damp                 => Atm%flagstruct%old_divg_damp
        fv_land                       => Atm%flagstruct%fv_land
@@ -1059,7 +1061,7 @@ module fv_control_mod
             range_warn, dwind_2d, inline_q, z_tracer, reproduce_sum, adiabatic, do_vort_damp, no_dycore,   &
             tau, tau_w, fast_tau_w_sec, tau_h2o, rf_cutoff, nf_omega, hydrostatic, fv_sg_adj, sg_cutoff, breed_vortex_inline,  &
             na_init, nudge_dz, hybrid_z, Make_NH, n_zs_filter, nord_zs_filter, full_zs_filter, reset_eta,         &
-            pnats, dnats, dnrts, a2b_ord, remap_t, p_ref, d2_bg_k1, d2_bg_k2,  &
+            pnats, dnats, dnrts, a2b_ord, remap_option, gmao_remap, p_ref, d2_bg_k1, d2_bg_k2,  &
             c2l_ord, dx_const, dy_const, umax, deglat,      &
             deglon_start, deglon_stop, deglat_start, deglat_stop, &
             phys_hydrostatic, use_hydro_pressure, make_hybrid_z, old_divg_damp, add_noise, butterfly_effect, &
