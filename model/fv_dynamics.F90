@@ -201,7 +201,8 @@ contains
     use CCPP_data,         only: GFDL_interstitial
 
     use molecular_diffusion_mod, only: md_time, md_wait_sec, md_tadj_layers,          &
-                                       thermosphere_adjustment
+                                       thermosphere_adjustment, &
+                                       molecular_diffusion_run
 
     real, intent(IN) :: bdt  !< Large time-step
     real, intent(IN) :: consv_te
@@ -304,7 +305,7 @@ contains
       type(group_halo_update_type), save :: i_pack(max_packs)
       integer :: is,  ie,  js,  je
       integer :: isd, ied, jsd, jed
-      real    :: dt2
+      real    :: dt2, cv_air
       integer :: ierr
       real :: time_total
       integer :: seconds, days
@@ -325,7 +326,7 @@ contains
       jed = bd%jed
 
 
-!     cv_air =  cp_air - rdgas
+     cv_air =  cp_air - rdgas
       agrav = 1. / grav
         dt2 = 0.5*bdt
       k_split = flagstruct%k_split
@@ -830,6 +831,8 @@ contains
                      inline_mp, flagstruct%c2l_ord, bd, flagstruct%fv_debug, &
                      flagstruct%moist_phys, flagstruct%remap_option, flagstruct%gmao_remap)
      
+                                                  call timing_off('Remapping')
+
 #ifdef MULTI_GASES
 !
 ! fv3wam kap_cor of pt before remapping
@@ -861,40 +864,83 @@ contains
      endif
 #endif
      
-!$OMP parallel do default(none) shared(is,ie,js,je, isd,ied,jsd,jed, npz, q, zvir, &
-!$OMP         kappa,nwat, sphum, liq_wat, rainwat, ice_wat, snowwat, graupel, hailwat,&
+#ifdef __GFORTRAN__
+!$OMP parallel do default(none) shared(is,ie,js,je,isd,ied,jsd,jed,npz,zvir,q,q_con,sphum,pkz,flagstruct,&
+#else
+!$OMP parallel do default(none) shared(is,ie,js,je,isd,ied,jsd,jed,npz,dp1,zvir,q,q_con,sphum,pkz,flagstruct,&
+#endif
+!$OMP                              kappa,liq_wat,rainwat,ice_wat,snowwat,graupel,hailwat, &
 #ifdef MULTI_GASES
-!$OMP         kapad, num_gas, &
-#endif 
-!$OMP         q_con, cvm, dp1, cappa)
-!
-! update cappa and kapad after remapping to hybrid-pressure vert. coordinate, 
-!  check:      cappa maybe updated inside Lagrangian_to_Eulerian, then only kapad-update
-!	
-         do k=1,npz 
+!$OMP                              kapad,nq,pe,num_gas, &
+#endif
+#ifdef __GFORTRAN__
+!$OMP                                  rdg,delp,pt,delz,nwat)                    &
+#else
+!$OMP                                  cappa,rdg,delp,pt,delz,nwat)              &
+#endif
+!$OMP                          private(cvm,i,j,k)
+
+      do k=1,npz
+       
+        if ( flagstruct%moist_phys ) then
           do j=js,je
 #ifdef MOIST_CAPPA
-             call moist_cv(is,ie,isd,ied,jsd,jed, npz, j, k, nwat, sphum, liq_wat, rainwat,    &
-                           ice_wat, snowwat, graupel, hailwat, q, q_con(is:ie,j,k), cvm)
+            call moist_cv(is,ie,isd,ied,jsd,jed, npz, j, k, nwat, sphum, liq_wat, rainwat,    &
+                          ice_wat, snowwat, graupel, hailwat, q, q_con(is:ie,j,k), cvm)
 #endif
-             do i=is,ie
+            do i=is,ie
 #ifdef MULTI_GASES
-                dp1(i,j,k) = virq(q(i,j,k,1:num_gas))-1.
-                kapad(i,j,k)= kappa * (virqd(q(i,j,k,:))/vicpqd(q(i,j,k,:)))
+              dp1(i,j,k) = virq(q(i,j,k,1:num_gas))-1.
+              kapad(i,j,k)= kappa * (virqd(q(i,j,k,1:num_gas))/vicpqd(q(i,j,k,1:num_gas)))
 #else
-                dp1(i,j,k) = zvir*q(i,j,k,sphum)
+              dp1(i,j,k) = zvir*q(i,j,k,sphum)
 #endif
 
 #ifdef MOIST_CAPPA
-               cappa(i,j,k) = rdgas/(rdgas + cvm(i)/(1.+dp1(i,j,k)) )
-!!!	       cappa(i,j,k) = rdgas / ( rdgas + cvm(i)/virq(q(i,j,k,1:num_gas)) )
+              cappa(i,j,k) = rdgas/(rdgas + cvm(i)/(1.+dp1(i,j,k)) )
+              pkz(i,j,k) = exp(cappa(i,j,k)*log(rdg*delp(i,j,k)*pt(i,j,k)*    &
+#ifdef MULTI_GASES
+                           (1.+dp1(i,j,k))                  /delz(i,j,k)) )
 #else
-               cappa(i,j,k) = kappa	       
-#endif	      
-             enddo 
+                           (1.+dp1(i,j,k))*(1.-q_con(i,j,k))/delz(i,j,k)) )
+#endif
+
+#else
+              pkz(i,j,k) = exp( kappa*log(rdg*delp(i,j,k)*pt(i,j,k)*    &
+                           (1.+dp1(i,j,k))/delz(i,j,k)) )
+!			    
+! >>>>  Rd_multi = Rdgas*(1.+dp1(i,j,k))=Rdgas*virq(q(i,j,k,:))
+!
+#endif	   
+            enddo
           enddo
-         enddo
-	 	     
+        else
+!	 
+! dry-physics
+!	 
+        do j=js,je
+          do i=is,ie
+            dp1(i,j,k) = 0.
+#ifdef MULTI_GASES
+            kapad(i,j,k)= kappa * (virqd(q(i,j,k,1:num_gas))/vicpqd(q(i,j,k,1:num_gas)))
+            pkz(i,j,k) = exp(kapad(i,j,k)*log(rdg*virqd(q(i,j,k,1:num_gas))*delp(i,j,k)*pt(i,j,k)/delz(i,j,k)))
+#else
+            pkz(i,j,k) = exp(kappa*log(rdg*delp(i,j,k)*pt(i,j,k)/delz(i,j,k)))
+#endif
+          enddo
+        enddo
+      endif
+    enddo        !k-loop
+
+! -----------------------------------------------------
+! direct explicit molecular diffusion
+! -----------------------------------------------------
+    if ( flagstruct%molecular_diffusion .and. md_time ) then
+       call molecular_diffusion_run(u, v, w, delp, pt, pkz, cappa, q, bd,   &
+                 gridstruct, flagstruct, domain, i_pack, npx, npy, npz, nq, mdt, n_map, akap, zvir, cv_air)
+    endif
+! -------------------------------------------------
+
      if ( flagstruct%molecular_diffusion ) then
 ! do thermosphere adjustment if it is turned on and at last_step.
          if( md_tadj_layers .gt.0 .and. md_time .and. last_step ) then
@@ -916,7 +962,7 @@ contains
 #ifdef AVEC_TIMERS
                                                   call avec_timer_stop(6)
 #endif
-                                                  call timing_off('Remapping')
+
 #ifdef MOIST_CAPPA
          if ( neststruct%nested .and. .not. last_step) then
             call nested_grid_BC_apply_intT(cappa, &
