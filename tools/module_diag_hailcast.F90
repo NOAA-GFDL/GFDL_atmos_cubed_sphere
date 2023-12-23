@@ -776,7 +776,7 @@ CONTAINS
     !Find the cloud base for end-of-algorithm purposes.
     KBAS=nz
     !KFZL=nz
-    DO k=2,nz
+    DO k=1,nz
          cwitot = qi1d(k) + qc1d(k)
          !No longer include graupel in in-cloud ice amounts
          !RIA(k) = qi1d(k) + qs1d(k) + qg1d(k)
@@ -795,6 +795,9 @@ CONTAINS
     !IF (KFZL .lt. KBAS) THEN
     !   KFZL = KBAS
     !ENDIF
+
+    ! Avoid out-of-bounds accesses later.
+    KBAS=max(2, KBAS);
 
     !Pull heights, etc. of these levels out of 1-d arrays.
     ZBAS = h1d(KBAS)
