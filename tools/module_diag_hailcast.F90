@@ -796,9 +796,6 @@ CONTAINS
     !   KFZL = KBAS
     !ENDIF
 
-    ! Avoid out-of-bounds accesses later.
-    KBAS=max(2, KBAS);
-
     !Pull heights, etc. of these levels out of 1-d arrays.
     ZBAS = h1d(KBAS)
     TBAS = TCA(KBAS)
@@ -852,7 +849,7 @@ CONTAINS
        !ENDIF
     ENDDO
     !remove the height factor from RWA_new
-    DO k=KBAS,nz
+    DO k=KBAS+1,nz
        RWA_new(k) = RWA_new(k) / (h1d(k)-h1d(k-1))
     ENDDO
 
