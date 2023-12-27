@@ -2390,6 +2390,68 @@ contains
       endif
     endif
 
+    ! Deal with ssu and ssv
+    if (IPD_control%cplocn2atm .and. IPD_control%icplocn2atm==1) then
+      ! Extract the coupling field
+      do nb = 1,Atm_block%nblks
+        blen = Atm_block%blksz(nb)
+        do ix = 1, blen
+          i = Atm_block%index(nb)%ii(ix)
+          j = Atm_block%index(nb)%jj(ix)
+          Atm(mygrid)%parent2nest_2d(i,j) = IPD_Data(nb)%Sfcprop%ssu(ix)
+        enddo
+      enddo
+      ! Loop through and fill all nested grids
+      do n=2,ngrids
+        if (n==mygrid .or. mygrid==Atm(n)%parent_grid%grid_number) then
+          call fill_nested_grid_cpl(n, n==mygrid)
+        endif
+      enddo
+      ! Update the nested grids
+      if (Atm(mygrid)%neststruct%nested) then
+        do nb = 1,Atm_block%nblks
+          blen = Atm_block%blksz(nb)
+          do ix = 1, blen
+            i = Atm_block%index(nb)%ii(ix)
+            j = Atm_block%index(nb)%jj(ix)
+            if (IPD_data(nb)%Sfcprop%oceanfrac(ix) > 0.) then
+              IPD_data(nb)%Sfcprop%ssu(ix) = Atm(mygrid)%parent2nest_2d(i,j)
+            endif
+          enddo
+        enddo
+      endif
+
+      ! Extract the coupling field
+      do nb = 1,Atm_block%nblks
+        blen = Atm_block%blksz(nb)
+        do ix = 1, blen
+          i = Atm_block%index(nb)%ii(ix)
+          j = Atm_block%index(nb)%jj(ix)
+          Atm(mygrid)%parent2nest_2d(i,j) = IPD_Data(nb)%Sfcprop%ssv(ix)
+        enddo
+      enddo
+      ! Loop through and fill all nested grids
+      do n=2,ngrids
+        if (n==mygrid .or. mygrid==Atm(n)%parent_grid%grid_number) then
+          call fill_nested_grid_cpl(n, n==mygrid)
+        endif
+      enddo
+      ! Update the nested grids
+      if (Atm(mygrid)%neststruct%nested) then
+        do nb = 1,Atm_block%nblks
+          blen = Atm_block%blksz(nb)
+          do ix = 1, blen
+            i = Atm_block%index(nb)%ii(ix)
+            j = Atm_block%index(nb)%jj(ix)
+            if (IPD_data(nb)%Sfcprop%oceanfrac(ix) > 0.) then
+              IPD_data(nb)%Sfcprop%ssv(ix) = Atm(mygrid)%parent2nest_2d(i,j)
+            endif
+          enddo
+        enddo
+      endif
+
+    endif
+
     ! Deal with zorlwav (sea surface roughness length)
     if (IPD_control%cplwav2atm) then
       ! Extract the coupling field
