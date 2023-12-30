@@ -2416,6 +2416,8 @@ contains
             j = Atm_block%index(nb)%jj(ix)
             if (IPD_data(nb)%Sfcprop%oceanfrac(ix) > 0.) then
               IPD_data(nb)%Sfcprop%ssu(ix) = Atm(mygrid)%parent2nest_2d(i,j)
+            else
+              IPD_data(nb)%Sfcprop%ssu(ix) = 0.0_kind_phys
             endif
           enddo
         enddo
@@ -2445,6 +2447,8 @@ contains
             j = Atm_block%index(nb)%jj(ix)
             if (IPD_data(nb)%Sfcprop%oceanfrac(ix) > 0.) then
               IPD_data(nb)%Sfcprop%ssv(ix) = Atm(mygrid)%parent2nest_2d(i,j)
+            else
+              IPD_data(nb)%Sfcprop%ssv(ix) = 0.0_kind_phys
             endif
           enddo
         enddo
