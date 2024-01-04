@@ -850,7 +850,9 @@ CONTAINS
     ENDDO
     !remove the height factor from RWA_new
     DO k=KBAS+1,nz
+     IF (RWA_adiabat(k).ge.1.E-12) THEN
        RWA_new(k) = RWA_new(k) / (h1d(k)-h1d(k-1))
+     ENDIF
     ENDDO
 
 
