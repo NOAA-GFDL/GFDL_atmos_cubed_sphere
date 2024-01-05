@@ -1269,8 +1269,8 @@ module fv_arrays_mod
     real, _ALLOCATABLE :: sgh(:,:)      _NULL  !< Terrain standard deviation
     real, _ALLOCATABLE :: oro(:,:)      _NULL  !< land fraction (1: all land; 0: all water)
     real, _ALLOCATABLE :: ts(:,:)       _NULL  !< skin temperature (sst) from NCEP/GFS (K) -- tile
-    real, _ALLOCATABLE :: ssu(:,:)      _NULL  !< sea surface current (zonal) from NCEP/GFS (m s-1) -- tile
-    real, _ALLOCATABLE :: ssv(:,:)      _NULL  !< sea surface current (meridional) from NCEP/GFS (m s-1) -- tile
+    real, _ALLOCATABLE :: usfco(:,:)    _NULL  !< sea surface current (zonal) from NCEP/GFS (m s-1) -- tile
+    real, _ALLOCATABLE :: vsfco(:,:)    _NULL  !< sea surface current (meridional) from NCEP/GFS (m s-1) -- tile
 
 ! For stochastic kinetic energy backscatter (SKEB)
     real, _ALLOCATABLE :: diss_est(:,:,:) _NULL !< dissipation estimate taken from 'heat_source'

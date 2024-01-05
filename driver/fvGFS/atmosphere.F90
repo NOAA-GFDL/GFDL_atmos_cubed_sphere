@@ -2390,7 +2390,7 @@ contains
       endif
     endif
 
-    ! Deal with ssu and ssv
+    ! Deal with usfco and vsfco
     if (IPD_control%cplocn2atm .and. IPD_control%icplocn2atm==1) then
       ! Extract the coupling field
       do nb = 1,Atm_block%nblks
@@ -2398,7 +2398,7 @@ contains
         do ix = 1, blen
           i = Atm_block%index(nb)%ii(ix)
           j = Atm_block%index(nb)%jj(ix)
-          Atm(mygrid)%parent2nest_2d(i,j) = IPD_Data(nb)%Sfcprop%ssu(ix)
+          Atm(mygrid)%parent2nest_2d(i,j) = IPD_Data(nb)%Sfcprop%usfco(ix)
         enddo
       enddo
       ! Loop through and fill all nested grids
@@ -2415,9 +2415,9 @@ contains
             i = Atm_block%index(nb)%ii(ix)
             j = Atm_block%index(nb)%jj(ix)
             if (IPD_data(nb)%Sfcprop%oceanfrac(ix) > 0.) then
-              IPD_data(nb)%Sfcprop%ssu(ix) = Atm(mygrid)%parent2nest_2d(i,j)
+              IPD_data(nb)%Sfcprop%usfco(ix) = Atm(mygrid)%parent2nest_2d(i,j)
             else
-              IPD_data(nb)%Sfcprop%ssu(ix) = 0.0_kind_phys
+              IPD_data(nb)%Sfcprop%usfco(ix) = 0.0_kind_phys
             endif
           enddo
         enddo
@@ -2429,7 +2429,7 @@ contains
         do ix = 1, blen
           i = Atm_block%index(nb)%ii(ix)
           j = Atm_block%index(nb)%jj(ix)
-          Atm(mygrid)%parent2nest_2d(i,j) = IPD_Data(nb)%Sfcprop%ssv(ix)
+          Atm(mygrid)%parent2nest_2d(i,j) = IPD_Data(nb)%Sfcprop%vsfco(ix)
         enddo
       enddo
       ! Loop through and fill all nested grids
@@ -2446,9 +2446,9 @@ contains
             i = Atm_block%index(nb)%ii(ix)
             j = Atm_block%index(nb)%jj(ix)
             if (IPD_data(nb)%Sfcprop%oceanfrac(ix) > 0.) then
-              IPD_data(nb)%Sfcprop%ssv(ix) = Atm(mygrid)%parent2nest_2d(i,j)
+              IPD_data(nb)%Sfcprop%vsfco(ix) = Atm(mygrid)%parent2nest_2d(i,j)
             else
-              IPD_data(nb)%Sfcprop%ssv(ix) = 0.0_kind_phys
+              IPD_data(nb)%Sfcprop%vsfco(ix) = 0.0_kind_phys
             endif
           enddo
         enddo
