@@ -516,7 +516,7 @@ module fv_arrays_mod
 !-----------------------------------------------------------------------------------------------
 
    logical :: reset_eta = .false.
-   logical :: ignore_rst_cksum = .false. !< enfore (.false.) or override (.true.) data integrity restart checksums
+   logical :: ignore_rst_cksum = .true. !< enfore (.false.) or override (.true.) data integrity restart checksums
    real    :: p_fac = 0.05  !< Safety factor for minimum nonhydrostatic pressures, which
                             !< will be limited so the full pressure is no less than p_fac
                             !< times the hydrostatic pressure. This is only of concern in mid-top

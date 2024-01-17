@@ -322,7 +322,7 @@ contains
    logical :: dycore_only  = .false.
    logical :: debug        = .false.
    logical :: sync         = .false.
-   logical :: ignore_rst_cksum = .false.
+   logical :: ignore_rst_cksum = .true.
    real    :: avg_max_length = 3600.
    namelist /atmos_model_nml/ blocksize, chksum_debug, dycore_only, debug, sync, ccpp_suite, avg_max_length, &
                               ignore_rst_cksum
