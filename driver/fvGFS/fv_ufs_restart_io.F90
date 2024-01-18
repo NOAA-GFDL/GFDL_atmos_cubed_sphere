@@ -132,6 +132,7 @@ module fv_ufs_restart_io_mod
    ! srf_wnd
    nvar2d_srf_wnd = 2
    allocate (srf_wnd_var2(nx,ny,nvar2d_srf_wnd), srf_wnd_var2_names(nvar2d_srf_wnd))
+   srf_wnd_var2 = 0.0
    srf_wnd_var2_names(1) = 'u_srf'
    srf_wnd_var2_names(2) = 'v_srf'
 
@@ -141,6 +142,7 @@ module fv_ufs_restart_io_mod
    nvar3d_tracers = ntprog+ntdiag
    tracers_zsize = size(Atm%q,3)
    allocate (tracers_var3(nx,ny,tracers_zsize,nvar3d_tracers), tracers_var3_names(nvar3d_tracers))
+   tracers_var3 = 0.0
 
    do nt = 1, ntprog
       call get_tracer_names(MODEL_ATMOS, nt, tracer_name)
@@ -435,7 +437,7 @@ module fv_ufs_restart_io_mod
    character(len=*), intent(in)    :: axis_name
    integer,          intent(in)    :: num_levels
 
-   real(8), allocatable, dimension(:) :: buffer
+   real, allocatable, dimension(:) :: buffer
    integer :: rc, i
 
    call ESMF_AttributeAdd(field, convention="NetCDF", purpose="FV3", &
@@ -446,7 +448,7 @@ module fv_ufs_restart_io_mod
    if (ESMF_LogFoundError(rcToCheck=rc, msg=ESMF_LOGERR_PASSTHRU, line=__LINE__, file=__FILE__)) return
 
    call ESMF_AttributeAdd(field, convention="NetCDF", purpose="FV3-dim",  &
-                          attrList=(/trim(axis_name),trim(axis_name)//":cartesian_axis"/), rc=rc)
+                          attrList=(/trim(axis_name)//"               ",trim(axis_name)//":cartesian_axis"/), rc=rc)
    if (ESMF_LogFoundError(rcToCheck=rc, msg=ESMF_LOGERR_PASSTHRU, line=__LINE__, file=__FILE__)) return
 
    allocate( buffer(num_levels) )
@@ -485,6 +487,12 @@ module fv_ufs_restart_io_mod
    character(len=8), dimension(2)  :: dim_names_2d
    integer :: j
 
+#ifdef OVERLOAD_R4
+   character(len=5), parameter :: axis_type = 'float'
+#else
+   character(len=6), parameter :: axis_type = 'double'
+#endif
+
    dim_names_2d(1) = "xaxis_1"
    dim_names_2d(2) = "Time"
 
@@ -501,7 +509,7 @@ module fv_ufs_restart_io_mod
 
    call register_axis(Fv_restart, "xaxis_1", size(Atm%ak(:), 1))
    call register_axis(Fv_restart, "Time", unlimited)
-   call register_field(Fv_restart, "xaxis_1", "double", (/"xaxis_1"/))
+   call register_field(Fv_restart, "xaxis_1", axis_type, (/"xaxis_1"/))
    call register_variable_attribute(Fv_restart,"xaxis_1", "axis", "X", str_len=1)
    if (allocated(buffer)) deallocate(buffer)
    allocate(buffer(size(Atm%ak(:), 1)))
@@ -510,7 +518,7 @@ module fv_ufs_restart_io_mod
    end do
    call write_data(Fv_restart, "xaxis_1", buffer)
    deallocate(buffer)
-   call register_field(Fv_restart, "Time", "double", (/"Time"/))
+   call register_field(Fv_restart, "Time", axis_type, (/"Time"/))
    call register_variable_attribute(Fv_restart, dim_names_2d(2), "cartesian_axis", "T", str_len=1)
    call register_variable_attribute(Fv_restart, dim_names_2d(2), "units", "time level", str_len=len("time level"))
    call register_variable_attribute(Fv_restart, dim_names_2d(2), "long_name", dim_names_2d(2), str_len=len(dim_names_2d(2)))

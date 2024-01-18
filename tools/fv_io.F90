@@ -91,7 +91,7 @@ module fv_io_mod
                                      open_file, read_restart, read_restart_bc, write_restart, &
                                      write_restart_bc, close_file, register_field, write_data, &
                                      get_global_io_domain_indices, register_variable_attribute, &
-                                     variable_exists, read_data, set_filename_appendix
+                                     variable_exists, read_data, set_filename_appendix, get_dimension_size
   use mpp_mod,                 only: mpp_error, FATAL, NOTE, WARNING, mpp_root_pe, &
                                      mpp_sync, mpp_pe, mpp_declare_pelist, mpp_get_current_pelist, &
                                      mpp_npes
@@ -125,6 +125,12 @@ module fv_io_mod
 
   integer ::grid_xtdimid, grid_ytdimid, haloid, pfullid !For writing BCs
   integer ::grid_xtstagdimid, grid_ytstagdimid, oneid
+
+#ifdef OVERLOAD_R4
+  character(len=5), parameter :: axis_type = 'float'
+#else
+  character(len=6), parameter :: axis_type = 'double'
+#endif
 
 contains
 
@@ -163,7 +169,7 @@ contains
       axisname = 'xaxis_'//suffix
       call register_axis(file_obj, axisname, 'X', domain_position=xpos(i))
       if (.not. file_obj%is_readonly) then !if writing file
-        call register_field(file_obj, axisname, "double", (/axisname/))
+        call register_field(file_obj, axisname, axis_type, (/axisname/))
         call register_variable_attribute(file_obj,axisname, "axis", "X", str_len=1)
         call get_global_io_domain_indices(file_obj, axisname, is, ie, buffer)
         call write_data(file_obj, axisname, buffer)
@@ -177,7 +183,7 @@ contains
       axisname = 'yaxis_'//suffix
       call register_axis(file_obj, axisname, 'Y', domain_position=ypos(i))
       if (.not. file_obj%is_readonly) then !if writing file
-        call register_field(file_obj, axisname, "double", (/axisname/))
+        call register_field(file_obj, axisname, axis_type, (/axisname/))
         call register_variable_attribute(file_obj,axisname, "axis", "Y", str_len=1)
         call get_global_io_domain_indices(file_obj, axisname, is, ie, buffer)
         call write_data(file_obj, axisname, buffer)
@@ -191,7 +197,7 @@ contains
         axisname = 'zaxis_'//suffix
         call register_axis(file_obj, axisname, zsize(i))
         if (.not. file_obj%is_readonly) then !if writing file
-          call register_field(file_obj, axisname, "double", (/axisname/))
+          call register_field(file_obj, axisname, axis_type, (/axisname/))
           call register_variable_attribute(file_obj,axisname, "axis", "Z", str_len=1)
           if (allocated(buffer)) deallocate(buffer)
           allocate(buffer(zsize(i)))
@@ -206,7 +212,7 @@ contains
 
     call register_axis(file_obj, "Time", unlimited)
     if (.not. file_obj%is_readonly) then !if writing file
-       call register_field(file_obj, "Time", "double", (/"Time"/))
+       call register_field(file_obj, "Time", axis_type, (/"Time"/))
        call register_variable_attribute(file_obj, "Time", "cartesian_axis", "T", str_len=1)
        call register_variable_attribute(file_obj, "Time", "units", "time level", &
                                         str_len=len("time level"))
@@ -217,6 +223,36 @@ contains
 
   end subroutine fv_io_register_axis
   ! </SUBROUTINE> NAME="fv_io_register_axis"
+
+  !#####################################################################
+  ! <SUBROUTINE NAME="get_dim_chunksizes">
+  !
+  ! <DESCRIPTION>
+  ! Returns chunk sizes for given dimensions.
+  ! Chunk size is equal to dimension size.
+  ! </DESCRIPTION>
+  !
+  subroutine get_dim_chunksizes(file_obj, dimnames, chunksizes)
+    type(FmsNetcdfDomainFile_t), intent(inout) ::  file_obj
+    character(len=*), dimension(:), intent(in) :: dimnames
+    integer, dimension(:), intent(out) :: chunksizes
+
+    integer :: i
+
+    if (size(dimnames) /= size(chunksizes)) then
+       call mpp_error(FATAL, 'size(dimnames) /= size(chunksizes)')
+    endif
+
+    do i=1,size(dimnames)
+       if (dimnames(i)(1:6) == 'xaxis_' .or. dimnames(i)(1:6) == 'yaxis_' ) then
+          call get_dimension_size(file_obj, dimnames(i), chunksizes(i))
+       else
+          chunksizes(i)=1
+       endif
+    end do
+
+  end subroutine get_dim_chunksizes
+  ! </SUBROUTINE> NAME="get_dim_chunksizes"
 
 !#####################################################################
   ! <SUBROUTINE NAME="fv_io_register_restart">
@@ -232,6 +268,10 @@ contains
     character(len=8), dimension(2)  :: dim_names_2d
     character(len=8), dimension(4)  :: dim_names_4d, dim_names_4d2, dim_names_4d3
     character(len=8), dimension(3)  :: dim_names_3d, dim_names_3d2
+    integer, dimension(1)  :: chunksizes
+    integer, dimension(2)  :: chunksizes_2d
+    integer, dimension(4)  :: chunksizes_4d, chunksizes_4d2, chunksizes_4d3
+    integer, dimension(3)  :: chunksizes_3d, chunksizes_3d2
     integer           :: i, j
     integer           :: nt, ntracers, ntprog, ntdiag
     integer, dimension(:), allocatable :: buffer
@@ -273,7 +313,7 @@ contains
        call register_axis(Atm%Fv_restart, "xaxis_1", size(Atm%ak(:), 1))
        call register_axis(Atm%Fv_restart, "Time", unlimited)
        if (.not. Atm%Fv_restart%is_readonly) then !if writing file
-          call register_field(Atm%Fv_restart, "xaxis_1", "double", (/"xaxis_1"/))
+          call register_field(Atm%Fv_restart, "xaxis_1", axis_type, (/"xaxis_1"/))
           call register_variable_attribute(Atm%Fv_restart,"xaxis_1", "axis", "X", str_len=1)
           if (allocated(buffer)) deallocate(buffer)
           allocate(buffer(size(Atm%ak(:), 1)))
@@ -282,7 +322,7 @@ contains
           end do
           call write_data(Atm%Fv_restart, "xaxis_1", buffer)
           deallocate(buffer)
-          call register_field(Atm%Fv_restart, "Time", "double", (/"Time"/))
+          call register_field(Atm%Fv_restart, "Time", axis_type, (/"Time"/))
           call register_variable_attribute(Atm%Fv_restart, dim_names_2d(2), "cartesian_axis", "T", str_len=1)
           call register_variable_attribute(Atm%Fv_restart, dim_names_2d(2), "units", "time level", str_len=len("time level"))
           call register_variable_attribute(Atm%Fv_restart, dim_names_2d(2), "long_name", dim_names_2d(2), str_len=len(dim_names_2d(2)))
@@ -295,57 +335,70 @@ contains
     elseif (Atm%Fv_restart_tile_is_open) then
        zsize = (/size(Atm%u,3)/)
        call fv_io_register_axis(Atm%Fv_restart_tile, numx=numx_2d, numy=numy_2d, xpos=xpos_2d, ypos=ypos_2d, numz=numz, zsize=zsize)
-       call register_restart_field(Atm%Fv_restart_tile, 'u', Atm%u, dim_names_4d)
-       call register_restart_field(Atm%Fv_restart_tile, 'v', Atm%v, dim_names_4d2)
+       call get_dim_chunksizes(Atm%Fv_restart_tile, dim_names_3d, chunksizes_3d)
+       call get_dim_chunksizes(Atm%Fv_restart_tile, dim_names_4d, chunksizes_4d)
+       call get_dim_chunksizes(Atm%Fv_restart_tile, dim_names_4d2, chunksizes_4d2)
+       call get_dim_chunksizes(Atm%Fv_restart_tile, dim_names_4d3, chunksizes_4d3)
+
+       call register_restart_field(Atm%Fv_restart_tile, 'u', Atm%u, dim_names_4d, chunksizes=chunksizes_4d)
+       call register_restart_field(Atm%Fv_restart_tile, 'v', Atm%v, dim_names_4d2, chunksizes=chunksizes_4d2)
 
        if (.not.Atm%flagstruct%hydrostatic) then
           if (Atm%flagstruct%make_nh) then ! Hydrostatic restarts dont have these variables
-               call register_restart_field(Atm%Fv_restart_tile,  'W', Atm%w, dim_names_4d3, is_optional=.true.)
-               call register_restart_field(Atm%Fv_restart_tile,  'DZ', Atm%delz, dim_names_4d3, is_optional=.true.)
+               call register_restart_field(Atm%Fv_restart_tile,  'W', Atm%w, dim_names_4d3, chunksizes=chunksizes_4d3, is_optional=.true.)
+               call register_restart_field(Atm%Fv_restart_tile,  'DZ', Atm%delz, dim_names_4d3, chunksizes=chunksizes_4d3, is_optional=.true.)
                if ( Atm%flagstruct%hybrid_z ) then
-                   call register_restart_field(Atm%Fv_restart_tile,  'ZE0', Atm%ze0, dim_names_4d3, is_optional=.true.)
+                   call register_restart_field(Atm%Fv_restart_tile,  'ZE0', Atm%ze0, dim_names_4d3, chunksizes=chunksizes_4d3, is_optional=.true.)
                endif
           else !The restart file has the non-hydrostatic variables
-               call register_restart_field(Atm%Fv_restart_tile,  'W', Atm%w, dim_names_4d3)
-               call register_restart_field(Atm%Fv_restart_tile,  'DZ', Atm%delz, dim_names_4d3)
+               call register_restart_field(Atm%Fv_restart_tile,  'W', Atm%w, dim_names_4d3, chunksizes=chunksizes_4d3)
+               call register_restart_field(Atm%Fv_restart_tile,  'DZ', Atm%delz, dim_names_4d3, chunksizes=chunksizes_4d3)
                if ( Atm%flagstruct%hybrid_z ) then
-                   call register_restart_field(Atm%Fv_restart_tile,  'ZE0', Atm%ze0, dim_names_4d3)
+                   call register_restart_field(Atm%Fv_restart_tile,  'ZE0', Atm%ze0, dim_names_4d3, chunksizes=chunksizes_4d3)
                endif
           endif
        endif
-       call register_restart_field(Atm%Fv_restart_tile,  'T', Atm%pt, dim_names_4d3)
-       call register_restart_field(Atm%Fv_restart_tile,  'delp', Atm%delp, dim_names_4d3)
-       call register_restart_field(Atm%Fv_restart_tile,  'phis', Atm%phis, dim_names_3d)
+       call register_restart_field(Atm%Fv_restart_tile,  'T', Atm%pt, dim_names_4d3, chunksizes=chunksizes_4d3)
+       call register_restart_field(Atm%Fv_restart_tile,  'delp', Atm%delp, dim_names_4d3, chunksizes=chunksizes_4d3)
+       call register_restart_field(Atm%Fv_restart_tile,  'phis', Atm%phis, dim_names_3d, chunksizes=chunksizes_3d)
 
        !--- include agrid winds in restarts for use in data assimilation
         if (Atm%flagstruct%agrid_vel_rst) then
-          call register_restart_field(Atm%Fv_restart_tile,  'ua', Atm%ua, dim_names_4d3)
-          call register_restart_field(Atm%Fv_restart_tile,  'va', Atm%va, dim_names_4d3)
+          call register_restart_field(Atm%Fv_restart_tile,  'ua', Atm%ua, dim_names_4d3, chunksizes=chunksizes_4d3)
+          call register_restart_field(Atm%Fv_restart_tile,  'va', Atm%va, dim_names_4d3, chunksizes=chunksizes_4d3)
        endif
 
     ! fname = 'fv_srf_wnd.res'//trim(stile_name)//'.nc
     elseif (Atm%Rsf_restart_is_open) then
        call fv_io_register_axis(Atm%Rsf_restart, numx=numx, numy=numy, xpos=xpos, ypos=ypos)
-       call register_restart_field(Atm%Rsf_restart, 'u_srf', Atm%u_srf, dim_names_3d2)
-       call register_restart_field(Atm%Rsf_restart, 'v_srf', Atm%v_srf, dim_names_3d2)
+       call get_dim_chunksizes(Atm%Rsf_restart, dim_names_3d2, chunksizes_3d2)
+
+       call register_restart_field(Atm%Rsf_restart, 'u_srf', Atm%u_srf, dim_names_3d2, chunksizes=chunksizes_3d2)
+       call register_restart_field(Atm%Rsf_restart, 'v_srf', Atm%v_srf, dim_names_3d2, chunksizes=chunksizes_3d2)
 #ifdef SIM_PHYS
-       call register_restart_field(Atm%Rsf_restart, 'ts', Atm%ts, dim_names_3d2)
+       call register_restart_field(Atm%Rsf_restart, 'ts', Atm%ts, dim_names_3d2, chunksizes=chunksizes_3d2)
 #endif
 
     ! fname = 'mg_drag.res'//trim(stile_name)//'.nc'
     elseif (Atm%Mg_restart_is_open) then
        call fv_io_register_axis(Atm%Mg_restart, numx=numx, numy=numy, xpos=xpos, ypos=ypos)
-       call register_restart_field (Atm%Mg_restart, 'ghprime', Atm%sgh, dim_names_3d2)
+       call get_dim_chunksizes(Atm%Mg_restart, dim_names_3d2, chunksizes_3d2)
+
+       call register_restart_field (Atm%Mg_restart, 'ghprime', Atm%sgh, dim_names_3d2, chunksizes=chunksizes_3d2)
 
     ! fname = 'fv_land.res'//trim(stile_name)//'.nc'
     elseif (Atm%Lnd_restart_is_open) then
        call fv_io_register_axis(Atm%Lnd_restart, numx=numx, numy=numy, xpos=xpos, ypos=ypos)
-       call register_restart_field (Atm%Lnd_restart, 'oro', Atm%oro, dim_names_3d2)
+       call get_dim_chunksizes(Atm%Lnd_restart, dim_names_3d2, chunksizes_3d2)
+
+       call register_restart_field (Atm%Lnd_restart, 'oro', Atm%oro, dim_names_3d2, chunksizes=chunksizes_3d2)
 
     ! fname = 'fv_tracer.res'//trim(stile_name)//'.nc'
     elseif (Atm%Tra_restart_is_open) then
        zsize = (/size(Atm%q,3)/)
        call fv_io_register_axis(Atm%Tra_restart, numx=numx, numy=numy, xpos=xpos, ypos=ypos, numz=numz, zsize=zsize)
+       call get_dim_chunksizes(Atm%Tra_restart, dim_names_4d, chunksizes_4d)
+
        do nt = 1, ntprog
           call get_tracer_names(MODEL_ATMOS, nt, tracer_name)
           if(Atm%Tra_restart%is_readonly) then !if reading file (don't do this if writing)
@@ -353,7 +406,7 @@ contains
              call set_tracer_profile (MODEL_ATMOS, nt, Atm%q(:,:,:,nt)  )
           endif
           call register_restart_field(Atm%Tra_restart, tracer_name, Atm%q(:,:,:,nt), &
-                       dim_names_4d, is_optional=.true.)
+                       dim_names_4d, chunksizes=chunksizes_4d, is_optional=.true.)
        enddo
        do nt = ntprog+1, ntracers
           call get_tracer_names(MODEL_ATMOS, nt, tracer_name)
@@ -362,7 +415,7 @@ contains
              call set_tracer_profile (MODEL_ATMOS, nt, Atm%qdiag(:,:,:,nt)  )
           endif
           call register_restart_field(Atm%Tra_restart, tracer_name, Atm%qdiag(:,:,:,nt), &
-                       dim_names_4d, is_optional=.true.)
+                       dim_names_4d, chunksizes=chunksizes_4d, is_optional=.true.)
        enddo
     endif
   end subroutine  fv_io_register_restart
@@ -643,8 +696,9 @@ contains
           call read_restart(Atm(1)%Rsf_restart, ignore_checksum=Atm(1)%flagstruct%ignore_rst_cksum)
           call close_file(Atm(1)%Rsf_restart)
           Atm(1)%Rsf_restart_is_open = .false.
-         call mpp_error(NOTE,'==> Warning from remap_restart: Expected file '//trim(fname)//' does not exist')
-         Atm%flagstruct%srf_init = .false.
+       else
+          call mpp_error(NOTE,'==> Warning from remap_restart: Expected file '//trim(fname)//' does not exist')
+          Atm%flagstruct%srf_init = .false.
        endif
 
        if ( Atm(1)%flagstruct%fv_land ) then
@@ -654,6 +708,7 @@ contains
          if (Atm(1)%Mg_restart_is_open) then
             call read_data(Atm(1)%Mg_restart, 'ghprime', Atm(1)%sgh)
             call close_file(Atm(1)%Mg_restart)
+            Atm(1)%Mg_restart_is_open = .false.
          else
            call mpp_error(NOTE,'==> Warning from remap_restart: Expected file '//trim(fname)//' does not exist')
          endif
@@ -663,6 +718,7 @@ contains
          if (Atm(1)%Lnd_restart_is_open) then
            call read_data(Atm(1)%Lnd_restart, 'oro', Atm(1)%oro)
            call close_file(Atm(1)%Lnd_restart)
+           Atm(1)%Lnd_restart_is_open = .false.
          else
            call mpp_error(NOTE,'==> Warning from remap_restart: Expected file '//trim(fname)//' does not exist')
          endif
@@ -1247,11 +1303,13 @@ contains
     if (Atm%neststruct%BCfile_sw_is_open) then
       call write_restart_bc(Atm%neststruct%BCfile_sw)
       call close_file(Atm%neststruct%BCfile_sw)
+      Atm%neststruct%BCfile_sw_is_open = .false.
     endif
 
     if (Atm%neststruct%BCfile_ne_is_open) then
      call write_restart_bc(Atm%neststruct%BCfile_ne)
      call close_file(Atm%neststruct%BCfile_ne)
+     Atm%neststruct%BCfile_ne_is_open = .false.
     endif
 
     deallocate(all_pelist)
@@ -1281,11 +1339,13 @@ contains
     if (Atm%neststruct%BCfile_sw_is_open) then
       call read_restart_bc(Atm%neststruct%BCfile_sw, ignore_checksum=Atm%flagstruct%ignore_rst_cksum)
       call close_file(Atm%neststruct%BCfile_sw)
+      Atm%neststruct%BCfile_sw_is_open = .false.
     endif
 
     if (Atm%neststruct%BCfile_ne_is_open) then
      call read_restart_bc(Atm%neststruct%BCfile_ne, ignore_checksum=Atm%flagstruct%ignore_rst_cksum)
      call close_file(Atm%neststruct%BCfile_ne)
+     Atm%neststruct%BCfile_ne_is_open = .false.
     endif
 
 
