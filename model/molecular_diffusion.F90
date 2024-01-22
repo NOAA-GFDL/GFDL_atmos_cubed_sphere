@@ -41,7 +41,7 @@ module molecular_diffusion_mod
       use constants_mod,      only: rdgas, cp_air
       use fv_mp_mod,          only: is_master
       use mpp_mod,            only: stdlog, input_nml_file
-      use fms_mod,            only: check_nml_error, open_namelist_file, close_file
+      use fms_mod,            only: check_nml_error
       use fv_grid_utils_mod,  only: g_sum
       use mpp_domains_mod,    only: domain2d
       use fv_arrays_mod,      only: fv_grid_type, fv_grid_bounds_type
@@ -128,20 +128,10 @@ module molecular_diffusion_mod
 
       unit = stdlog()
 
-#ifdef INTERNAL_FILE_NML
-
       ! Read molecular_diffusion namelist
-        read (input_nml_file,molecular_diffusion_nml,iostat=ios)
-        ierr = check_nml_error(ios,'molecular_diffusion_nml')
+      read (input_nml_file,molecular_diffusion_nml,iostat=ios)
+      ierr = check_nml_error(ios,'molecular_diffusion_nml')
 
-#else
-      ! Read molecular_diffusion namelist
-        f_unit = open_namelist_file(nml_filename)
-        rewind (f_unit)
-        read (f_unit,molecular_diffusion_nml,iostat=ios)
-        ierr = check_nml_error(ios,'molecular_diffusion_nml')
-        call close_file(f_unit)
-#endif
       write(unit, nml=molecular_diffusion_nml)
       call molecular_diffusion_init(ncnst,nwat)
 
