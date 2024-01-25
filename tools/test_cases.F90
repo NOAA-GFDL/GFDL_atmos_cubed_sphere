@@ -4743,7 +4743,12 @@ end subroutine terminator_tracers
         acapS                         => gridstruct%acapS
         globalarea                    => gridstruct%globalarea
 
-        f0_const = 2.*omega*sin(flagstruct%deglat/180.*pi)
+        if (do_coriolis==1) then
+           f0_const = 2.*omega*sin(flagstruct%deglat/180.*pi)
+        else
+           f0_const = 0.0
+        endif
+
         f0(:,:) = f0_const
         fC(:,:) = f0_const
 
