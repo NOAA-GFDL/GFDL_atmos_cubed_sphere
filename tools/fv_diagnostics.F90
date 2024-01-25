@@ -964,6 +964,10 @@ contains
           !            'Relative Humidity', '%', missing_value=missing_value, range=rhrange )
           id_delp = register_diag_field ( trim(field), 'delp', axes(1:3), Time,        &
                'pressure thickness'//massdef_str, 'pa', missing_value=missing_value )
+#ifdef GFS_PHYS
+          id_delp_total = register_diag_field ( trim(field), 'delp_total', axes(1:3), Time,        &
+               'FV3 pressure thickness (dry air + all water species)', 'pa', missing_value=missing_value )
+#endif
           if ( .not. Atm(n)%flagstruct%hydrostatic )                                        &
                id_delz = register_diag_field ( trim(field), 'delz', axes(1:3), Time,        &
                'height thickness', 'm', missing_value=missing_value )
@@ -3016,7 +3020,6 @@ contains
           endif
        endif
 
-
 #ifdef GFS_PHYS
        if(id_delp > 0 .or. id_cape > 0 .or. id_cin > 0 .or. &
             ((.not. Atm(n)%flagstruct%hydrostatic) .and. (id_pfnh > 0 .or. id_ppnh > 0)) .or. &
@@ -3030,6 +3033,7 @@ contains
           enddo
           if (id_delp > 0) used=send_data(id_delp, wk, Time)
        endif
+       if(id_delp_total > 0) used=send_data(id_delp_total, Atm(n)%delp(isc:iec,jsc:jec,:), Time)
 #else
        if(id_delp > 0) used=send_data(id_delp, Atm(n)%delp(isc:iec,jsc:jec,:), Time)
 #endif
