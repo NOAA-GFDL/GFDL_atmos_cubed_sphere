@@ -165,7 +165,7 @@ use mpp_mod,                only: mpp_error, stdout, FATAL, WARNING, NOTE, &
                                   mpp_npes, mpp_pe, mpp_chksum,   &
                                   mpp_get_current_pelist,         &
                                   mpp_set_current_pelist,         &
-                                  mpp_sync, mpp_sync_self, mpp_send, mpp_recv
+                                  mpp_sync, mpp_sync_self, mpp_send, mpp_recv, mpp_broadcast
 use mpp_parameter_mod,      only: EUPDATE, WUPDATE, SUPDATE, NUPDATE
 use mpp_domains_mod,        only: CENTER, CORNER, NORTH, EAST, WEST, SOUTH
 use mpp_domains_mod,        only: domain2d, mpp_update_domains, mpp_global_field
@@ -2499,7 +2499,6 @@ contains
     logical, intent(in), optional :: proc_in
 
     real, allocatable :: g_dat(:,:,:)
-    integer :: p, sending_proc
     integer :: isd_p, ied_p, jsd_p, jed_p
     integer :: isg, ieg, jsg, jeg
     integer :: isc, iec, jsc, jec
@@ -2519,31 +2518,22 @@ contains
     allocate( g_dat(isg:ieg, jsg:jeg, 1) )
 
     call timing_on('COMM_TOTAL')
-    sending_proc = Atm(this_grid)%parent_grid%pelist(1) + &
-                   ( Atm(this_grid)%neststruct%parent_tile-tile_fine(Atm(this_grid)%parent_grid%grid_number)+ &
-                     Atm(this_grid)%parent_grid%flagstruct%ntiles-1 )*Atm(this_grid)%parent_grid%npes_per_tile
-   !if (Atm(this_grid)%neststruct%parent_proc .and. Atm(this_grid)%neststruct%parent_tile == Atm(this_grid)%parent_grid%global_tile) then
     if (Atm(this_grid)%neststruct%parent_tile == Atm(this_grid)%parent_grid%global_tile) then
       call mpp_global_field(Atm(this_grid)%parent_grid%domain, &
                             Atm(this_grid)%parent_grid%parent2nest_2d(isd_p:ied_p,jsd_p:jed_p), &
                             g_dat(isg:,jsg:,1), position=CENTER)
-      if (mpp_pe() == sending_proc) then
-        do p=1,size(Atm(this_grid)%pelist)
-          call mpp_send(g_dat, size(g_dat), Atm(this_grid)%pelist(p))
-        enddo
-      endif
     endif
-    if (any(Atm(this_grid)%pelist == mpp_pe())) then
-      call mpp_recv(g_dat, size(g_dat), sending_proc)
+
+    if(Atm(this_grid)%BcastMember) then
+      call mpp_broadcast(g_dat, size(g_dat),Atm(this_grid)%Bcast_ranks(1), Atm(this_grid)%Bcast_ranks)
     endif
+
     call timing_off('COMM_TOTAL')
     if (process) then
       call fill_nested_grid(Atm(this_grid)%parent2nest_2d, g_dat(isg:,jsg:,1), &
                             Atm(this_grid)%neststruct%ind_h, Atm(this_grid)%neststruct%wt_h, &
                             0, 0, isg, ieg, jsg, jeg, Atm(this_grid)%bd)
     endif
-
-    call mpp_sync_self
     deallocate(g_dat)
 
   end subroutine fill_nested_grid_cpl

@@ -42,7 +42,7 @@ module multi_gases_mod
       use constants_mod,     only: rdgas, rvgas, cp_air
       use     fv_mp_mod,     only: is_master
       use mpp_mod,           only: stdlog, input_nml_file
-      use fms_mod,           only: check_nml_error, open_namelist_file, close_file
+      use fms_mod,           only: check_nml_error
 
 
       implicit none
@@ -154,25 +154,15 @@ module multi_gases_mod
        ri(1)  = rvgas
        cpi(0) = cp_air
        cpi(1) = 4*cp_air
-#ifdef INTERNAL_FILE_NML
 
-      ! Read multi_gases namelist
-        read (input_nml_file,multi_gases_nml,iostat=ios)
-        ierr = check_nml_error(ios,'multi_gases_nml')
+       ! Read multi_gases namelist
+       read (input_nml_file,multi_gases_nml,iostat=ios)
+       ierr = check_nml_error(ios,'multi_gases_nml')
 
-#else
-      ! Read multi_gases namelist
-        f_unit = open_namelist_file(nml_filename)
+       write(unit, nml=multi_gases_nml)
+       call multi_gases_init(ncnst,nwat)
 
-        rewind (f_unit)
-        read (f_unit,multi_gases_nml,iostat=ios)
-        ierr = check_nml_error(ios,'multi_gases_nml')
-        call close_file(f_unit)
-#endif
-      write(unit, nml=multi_gases_nml)
-      call multi_gases_init(ncnst,nwat)
-
-      return
+       return
       end subroutine read_namelist_multi_gases_nml
 
 
