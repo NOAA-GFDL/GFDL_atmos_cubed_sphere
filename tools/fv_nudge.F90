@@ -1459,13 +1459,13 @@ module fv_nwp_nudge_mod
 
 ! x1y for monitoring nudging
    id_q_adj = register_diag_field ( mod_name, 'q_adj', axes(1:3), time, &
-                'ada q increments', 'g/kg', missing_value=missing_value )
+                'nudging q increments', 'g/kg', missing_value=missing_value )
    id_q_adj_bias = register_diag_field ( mod_name, 'q_adj_bias', axes(1:3), time, &
-                'ada q increments', 'g/kg', missing_value=missing_value )
+                'nudging q increments', 'g/kg', missing_value=missing_value )
    id_t_adj = register_diag_field ( mod_name, 't_adj', axes(1:3), time, &
-                'ada t increments', 'K', missing_value=missing_value )
+                'nudging t increments', 'K', missing_value=missing_value )
    id_t_adj_bias = register_diag_field ( mod_name, 't_adj_bias', axes(1:3), time, &
-                'ada t increments', 'K', missing_value=missing_value )
+                'nudging t increments', 'K', missing_value=missing_value )
 
 
 ! Initialize remapping coefficients:
