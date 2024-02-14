@@ -452,7 +452,6 @@ module fv_control_mod
      allocate(global_pelist(npes))
      call mpp_get_current_pelist(global_pelist, commID=global_commID) ! for commID
 
-
      allocate(grids_master_procs(ngrids))
      pecounter = 0
      allocate(grids_on_this_pe(ngrids))
@@ -733,6 +732,27 @@ module fv_control_mod
      enddo
      Atm(this_grid)%neststruct%parent_proc = ANY(Atm(this_grid)%neststruct%child_grids) !ANY(tile_coarse == Atm(this_grid)%global_tile)
      Atm(this_grid)%neststruct%child_proc = ASSOCIATED(Atm(this_grid)%parent_grid) !this means a nested grid
+
+     if(n>1) then
+       call mpp_set_current_pelist( global_pelist )
+       do n=2,ngrids
+        ! Construct the MPI communicators that are used in fill_nested_grid_cpl()
+          allocate(Atm(n)%Bcast_ranks(1+size(Atm(n)%pelist)))
+          ! parent grid sending rank within Bcast_ranks array
+          Atm(n)%Bcast_ranks(1)=Atm(n)%parent_grid%pelist(1) + &
+                     ( Atm(n)%neststruct%parent_tile-tile_fine(Atm(n)%parent_grid%grid_number)+ &
+                       Atm(n)%parent_grid%flagstruct%ntiles-1 )*Atm(n)%parent_grid%npes_per_tile
+
+          Atm(n)%Bcast_ranks(2:(1+size(Atm(n)%pelist)))=Atm(n)%pelist ! Receivers
+          Atm(n)%BcastMember=.false.
+          if(any(mpp_pe() == Atm(n)%Bcast_ranks)) then
+            Atm(n)%BcastMember=.true.
+          endif
+
+          call mpp_declare_pelist(Atm(n)%Bcast_ranks(:))
+       enddo
+       call mpp_set_current_pelist(Atm(this_grid)%pelist)
+     endif
 
      if (ngrids > 1) call setup_update_regions
      if (Atm(this_grid)%neststruct%nestbctype > 1) then
