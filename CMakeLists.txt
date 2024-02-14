@@ -254,7 +254,7 @@ set(TESTING ON)
 if(${TESTING})
   set(hash a71a77233ee56f8533df1fc5c6d551472d42165d86313004edb3b70ddb5e82c7)
   download_file(
-    https://epic-sandbox-srw.s3.amazonaws.com/inc-test-files.tar.gz
+    https://s3.amazonaws.com/epic.sandbox.srw/inc-test-files.tar.gz
     ${hash}
   )
   file(ARCHIVE_EXTRACT INPUT ${CMAKE_BINARY_DIR}/_deps/download_${hash}-src/inc-test-files.tar.gz DESTINATION ${CMAKE_CURRENT_BINARY_DIR} )
