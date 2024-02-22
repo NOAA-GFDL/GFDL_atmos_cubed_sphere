@@ -177,7 +177,7 @@ use tracer_manager_mod,     only: get_tracer_index, get_number_tracers, &
 use DYCORE_typedefs,        only: DYCORE_data_type
 #ifdef GFS_TYPES
 use GFS_typedefs,           only: IPD_data_type => GFS_data_type, IPD_control_type => GFS_control_type, kind_phys
-use GFS_typedefs,           only: GFS_statein_type, GFS_stateout_type
+use GFS_typedefs,           only: GFS_statein_type, GFS_stateout_type, GFS_sfcprop_type
 #else
 use IPD_typedefs,           only: IPD_data_type, IPD_control_type, kind_phys => IPD_kind_phys
 #endif
@@ -2371,12 +2371,12 @@ contains
 !! communicate and fill the nested grid(s) for coupling variables from its parent.
 !! After that the updated coupling field(s) is put back to the IPD_data structure.
 !! Note: Currently, only sea surface temperature is passed down into the nest(s).
-  subroutine atmosphere_fill_nest_cpl(Atm_block, IPD_control, IPD_data)
+  subroutine atmosphere_fill_nest_cpl(Atm_block, IPD_control, Sfcprop)
     type(block_control_type), intent(in) :: Atm_block     !< Physics block layout
     type(IPD_control_type), intent(in)   :: IPD_control   !< Physics metadata
-    type(IPD_data_type), intent(inout)   :: IPD_data(:)   !< Physics variable data
+    type(GFS_sfcprop_type), intent(inout)   :: Sfcprop    !< Physics variable data
 
-    integer :: nb, blen, ix, i, j, n
+    integer :: nb, blen, ix, i, j, n, im
     character*255 :: message
 
     ! Deal with tsfco (sea surface temperature)
@@ -2387,7 +2387,8 @@ contains
         do ix = 1, blen
           i = Atm_block%index(nb)%ii(ix)
           j = Atm_block%index(nb)%jj(ix)
-          Atm(mygrid)%parent2nest_2d(i,j) = IPD_Data(nb)%Sfcprop%tsfco(ix)
+          im = IPD_control%chunk_begin(nb)+ix-1
+          Atm(mygrid)%parent2nest_2d(i,j) = Sfcprop%tsfco(im)
         enddo
       enddo
       ! Loop through and fill all nested grids
@@ -2403,8 +2404,9 @@ contains
           do ix = 1, blen
             i = Atm_block%index(nb)%ii(ix)
             j = Atm_block%index(nb)%jj(ix)
-            if (IPD_data(nb)%Sfcprop%oceanfrac(ix) > 0.) then
-              IPD_data(nb)%Sfcprop%tsfco(ix) = Atm(mygrid)%parent2nest_2d(i,j)
+            im = IPD_control%chunk_begin(nb)+ix-1
+            if (Sfcprop%oceanfrac(im) > 0.) then
+              Sfcprop%tsfco(im) = Atm(mygrid)%parent2nest_2d(i,j)
             endif
           enddo
         enddo
@@ -2419,7 +2421,8 @@ contains
         do ix = 1, blen
           i = Atm_block%index(nb)%ii(ix)
           j = Atm_block%index(nb)%jj(ix)
-          Atm(mygrid)%parent2nest_2d(i,j) = IPD_Data(nb)%Sfcprop%zorlwav(ix)
+          im = IPD_control%chunk_begin(nb)+ix-1
+          Atm(mygrid)%parent2nest_2d(i,j) = Sfcprop%zorlwav(im)
         enddo
       enddo
       ! Loop through and fill all nested grids
@@ -2435,9 +2438,10 @@ contains
           do ix = 1, blen
             i = Atm_block%index(nb)%ii(ix)
             j = Atm_block%index(nb)%jj(ix)
-            if (IPD_data(nb)%Sfcprop%oceanfrac(ix) > 0.) then
-              IPD_data(nb)%Sfcprop%zorlwav(ix) = Atm(mygrid)%parent2nest_2d(i,j)
-            ! IPD_data(nb)%Sfcprop%zorlw(ix) = Atm(mygrid)%parent2nest_2d(i,j)
+            im = IPD_control%chunk_begin(nb)+ix-1
+            if (Sfcprop%oceanfrac(im) > 0.) then
+              Sfcprop%zorlwav(im) = Atm(mygrid)%parent2nest_2d(i,j)
+            ! Sfcprop%zorlw(im) = Atm(mygrid)%parent2nest_2d(i,j)
             endif
           enddo
         enddo
