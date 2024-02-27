@@ -84,6 +84,11 @@ CONTAINS
         !write(unit, nml=fv_diagnostics_nml)
         !!end hailcast nml
 
+
+        ! need to set a default value for istatus because of it's intent(out) status
+        ! this value is not checked on return
+        istatus = 0
+
         if (mpp_pe() == mpp_root_pe()) then
             print*, 'do_hailcast = ', do_hailcast
         end if
