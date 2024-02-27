@@ -110,7 +110,11 @@ module atmosphere_mod
 !   </tr>
 !   <tr>
 !     <td>IPD_typedefs_mod</td>
-!     <td>IPD_data_type, kind_phys => IPD_kind_phys</td>
+!     <td>IPD_control_type, kind_phys</td>
+!   </tr>
+!   <tr>
+!     <td>GFS_typedefs_mod</td>
+!     <td>GFS_statein_type, GFS_stateout_type, GFS_sfcprop_type</td>
 !   </tr>
 !   <tr>
 !     <td>mpp_mod</td>
@@ -176,7 +180,7 @@ use tracer_manager_mod,     only: get_tracer_index, get_number_tracers, &
                                   NO_TRACER, get_tracer_names
 use DYCORE_typedefs,        only: DYCORE_data_type
 #ifdef GFS_TYPES
-use GFS_typedefs,           only: IPD_data_type => GFS_data_type, IPD_control_type => GFS_control_type, kind_phys
+use GFS_typedefs,           only: IPD_control_type => GFS_control_type, kind_phys
 use GFS_typedefs,           only: GFS_statein_type, GFS_stateout_type, GFS_sfcprop_type
 #else
 use IPD_typedefs,           only: IPD_data_type, IPD_control_type, kind_phys => IPD_kind_phys
@@ -2366,10 +2370,10 @@ contains
 !>@brief The subroutine 'atmosphere_fill_grid_cpl' is to downscale/pass the
 !! coupling variables (e.g., sea surface temperature) received by the parent grid
 !! down into the nested grid(s).
-!>@details First the coupling field(s) is retreived from the IPD_data structure,
+!>@details First the coupling field(s) is retreived from the Sfcprop structure,
 !! and then loops through nested grids and call the fill_nest_grid_cpl to actually
 !! communicate and fill the nested grid(s) for coupling variables from its parent.
-!! After that the updated coupling field(s) is put back to the IPD_data structure.
+!! After that the updated coupling field(s) is put back to the Sfcprop structure.
 !! Note: Currently, only sea surface temperature is passed down into the nest(s).
   subroutine atmosphere_fill_nest_cpl(Atm_block, IPD_control, Sfcprop)
     type(block_control_type), intent(in) :: Atm_block     !< Physics block layout
