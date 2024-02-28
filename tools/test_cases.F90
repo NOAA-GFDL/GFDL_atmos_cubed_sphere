@@ -5683,7 +5683,7 @@ end subroutine terminator_tracers
 
  call mpp_error(FATAL, 'SuperCell sounding cannot perform with GFS Physics.')
  tp=0.
- qb=0.
+ qp=0.
 
 #else
 
