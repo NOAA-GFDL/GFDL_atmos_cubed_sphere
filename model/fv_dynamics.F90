@@ -365,7 +365,7 @@ contains
 !---------------------
       if ( (consv_te > 0. .or. idiag%id_te>0)  .and. (.not.do_adiabatic_init) ) then
            call compute_total_energy(is, ie, js, je, isd, ied, jsd, jed, npz,        &
-                                     u, v, w, delz, pt, delp, q, dp1, pe, peln, phis, &
+                                     u, v, w, delz, pt, delp, q, dp1, q_con, pe, peln, phis, &
                                      gridstruct%rsin2, gridstruct%cosa_s, &
                                      zvir, cp_air, rdgas, hlv, te_2d, ua, va, teq,        &
                                      flagstruct%moist_phys, nwat, sphum, liq_wat, rainwat,   &
