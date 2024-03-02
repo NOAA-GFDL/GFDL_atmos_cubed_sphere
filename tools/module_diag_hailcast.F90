@@ -1092,8 +1092,7 @@ CONTAINS
       IF (D.GT.0.254) D = 0.  !just consider missing for now if > 10 in
 
       !assign hail size in mm for output
-      !dhails(i) = D * 1000
-      dhails(i) = D
+      dhails(i) = D * 1000
 
     ENDDO  !end embryo size loop
 
