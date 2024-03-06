@@ -2425,7 +2425,8 @@ contains
         do ix = 1, blen
           i = Atm_block%index(nb)%ii(ix)
           j = Atm_block%index(nb)%jj(ix)
-          Atm(mygrid)%parent2nest_2d(i,j) = IPD_Data(nb)%Sfcprop%usfco(ix)
+          im = IPD_control%chunk_begin(nb)+ix-1
+          Atm(mygrid)%parent2nest_2d(i,j) = Sfcprop%usfco(im)
         enddo
       enddo
       ! Loop through and fill all nested grids
@@ -2441,10 +2442,11 @@ contains
           do ix = 1, blen
             i = Atm_block%index(nb)%ii(ix)
             j = Atm_block%index(nb)%jj(ix)
-            if (IPD_data(nb)%Sfcprop%oceanfrac(ix) > 0.) then
-              IPD_data(nb)%Sfcprop%usfco(ix) = Atm(mygrid)%parent2nest_2d(i,j)
+            im = IPD_control%chunk_begin(nb)+ix-1
+            if (Sfcprop%oceanfrac(im) > 0.) then
+              Sfcprop%usfco(im) = Atm(mygrid)%parent2nest_2d(i,j)
             else
-              IPD_data(nb)%Sfcprop%usfco(ix) = 0.0_kind_phys
+              Sfcprop%usfco(im) = 0.0_kind_phys
             endif
           enddo
         enddo
@@ -2456,7 +2458,8 @@ contains
         do ix = 1, blen
           i = Atm_block%index(nb)%ii(ix)
           j = Atm_block%index(nb)%jj(ix)
-          Atm(mygrid)%parent2nest_2d(i,j) = IPD_Data(nb)%Sfcprop%vsfco(ix)
+          im = IPD_control%chunk_begin(nb)+ix-1
+          Atm(mygrid)%parent2nest_2d(i,j) = Sfcprop%vsfco(im)
         enddo
       enddo
       ! Loop through and fill all nested grids
@@ -2472,10 +2475,11 @@ contains
           do ix = 1, blen
             i = Atm_block%index(nb)%ii(ix)
             j = Atm_block%index(nb)%jj(ix)
-            if (IPD_data(nb)%Sfcprop%oceanfrac(ix) > 0.) then
-              IPD_data(nb)%Sfcprop%vsfco(ix) = Atm(mygrid)%parent2nest_2d(i,j)
+            im = IPD_control%chunk_begin(nb)+ix-1
+            if (Sfcprop%oceanfrac(im) > 0.) then
+              Sfcprop%vsfco(im) = Atm(mygrid)%parent2nest_2d(i,j)
             else
-              IPD_data(nb)%Sfcprop%vsfco(ix) = 0.0_kind_phys
+              Sfcprop%vsfco(im) = 0.0_kind_phys
             endif
           enddo
         enddo
