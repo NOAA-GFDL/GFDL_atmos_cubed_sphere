@@ -1229,7 +1229,7 @@ subroutine mpdrv (hydrostatic, ua, va, wa, delp, pt, qv, ql, qr, qi, qs, qg, &
     ! unit convert to mm/day
     ! -----------------------------------------------------------------------
 
-    convt = 86400. * rgrav / dts
+    convt = 86400. * rgrav / dtm
 
     do i = is, ie
 
@@ -1395,7 +1395,7 @@ subroutine mpdrv (hydrostatic, ua, va, wa, delp, pt, qv, ql, qr, qi, qs, qg, &
         if (fix_negative) &
             call neg_adj (ks, ke, tz, dp, qvz, qlz, qrz, qiz, qsz, qgz, cond)
 
-        condensation (i) = condensation (i) + cond * convt * ntimes
+        condensation (i) = condensation (i) + cond * convt
 
         ! -----------------------------------------------------------------------
         ! fast microphysics loop
