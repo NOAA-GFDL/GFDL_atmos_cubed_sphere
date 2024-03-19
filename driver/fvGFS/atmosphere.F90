@@ -864,17 +864,18 @@ contains
  end subroutine atmosphere_pref
 
 
- subroutine atmosphere_control_data (i1, i2, j1, j2, kt, p_hydro, hydro, tile_num)
+ subroutine atmosphere_control_data (i1, i2, j1, j2, kt, p_hydro, hydro, tile_of_mosaic, global_tile_num)
    integer, intent(out)           :: i1, i2, j1, j2, kt
    logical, intent(out), optional :: p_hydro, hydro
-   integer, intent(out), optional :: tile_num
+   integer, intent(out), optional :: tile_of_mosaic, global_tile_num
    i1 = Atm(mygrid)%bd%isc
    i2 = Atm(mygrid)%bd%iec
    j1 = Atm(mygrid)%bd%jsc
    j2 = Atm(mygrid)%bd%jec
    kt = Atm(mygrid)%npz
 
-   if (present(tile_num)) tile_num = Atm(mygrid)%tile_of_mosaic
+   if (present(global_tile_num)) global_tile_num = Atm(mygrid)%global_tile
+   if (present(tile_of_mosaic)) tile_of_mosaic = Atm(mygrid)%tile_of_mosaic
    if (present(p_hydro)) p_hydro   = Atm(mygrid)%flagstruct%phys_hydrostatic
    if (present(  hydro))   hydro   = Atm(mygrid)%flagstruct%hydrostatic
 
