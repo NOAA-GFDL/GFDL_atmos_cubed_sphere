@@ -1528,6 +1528,7 @@ end subroutine dealloc_nested_buffers
    rainwat = get_tracer_index (MODEL_ATMOS, 'rainwat')
    snowwat = get_tracer_index (MODEL_ATMOS, 'snowwat')
    graupel = get_tracer_index (MODEL_ATMOS, 'graupel')
+   hailwat = get_tracer_index (MODEL_ATMOS, 'hailwat')
 
    if (is == 1) then
       if (.not. allocated(dum_West)) then
