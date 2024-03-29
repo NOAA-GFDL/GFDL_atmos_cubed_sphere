@@ -2273,6 +2273,10 @@ module fv_nwp_nudge_mod
       real :: kappax(is:ie,js:je,npz)
 #endif
 
+#if defined (BYPASS_BREED_SLP_INLINE)
+    peln = 0.0 ! to silence compiler warning. A dummy argument with an explicit INTENT(OUT) declaration is not given an explicit value.
+    call mpp_error(fatal, "breed_slp_inline routine has been disabled")
+#else
       if ( forecast_mode ) return
 
       agrid => gridstruct%agrid_64
@@ -2715,6 +2719,7 @@ module fv_nwp_nudge_mod
 
     nullify(agrid)
     nullify(area)
+#endif
 
   end subroutine breed_slp_inline
 
