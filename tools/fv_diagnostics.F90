@@ -1146,7 +1146,6 @@ contains
             'Vertically Integrated Snow', 'kg/m**2', missing_value=missing_value )
        id_intqg = register_diag_field ( trim(field), 'intqg', axes(1:2), Time,        &
             'Vertically Integrated Graupel', 'kg/m**2', missing_value=missing_value )
-       ! Tim M. mod
        id_inthght = register_diag_field ( trim(field), 'inthght', axes(1:2), Time,        &
             'Vertically Integrated Height', 'kg/m', missing_value=missing_value )
        id_inttemp = register_diag_field ( trim(field), 'inttemp', axes(1:2), Time,        &
@@ -2290,7 +2289,6 @@ contains
           if (id_hght3d > 0) then
              used = send_data(id_hght3d, 0.5*(wz(isc:iec,jsc:jec,1:npz)+wz(isc:iec,jsc:jec,2:npz+1)), Time)
           endif
-          ! Tim M. addition of integrated hght for MSE
           if ( id_inthght>0 ) then
              a2 = 0.
              do k=1,npz
@@ -2904,7 +2902,6 @@ contains
           used = send_data(id_intqg, a2*ginv, Time)
        endif
 
-       ! Tim M. addition of integrated temperature for MSE
        if ( id_inttemp>0 ) then
           a2 = 0.
           do k=1,npz
