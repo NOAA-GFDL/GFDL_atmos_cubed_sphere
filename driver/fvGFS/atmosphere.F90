@@ -446,8 +446,20 @@ contains
    ! First, read atmos_model_nml namelist section - this is a workaround to avoid
    ! unnecessary additional changes to the input namelists, in anticipation of the
    ! implementation of a generic interface for GFDL and CCPP fast physics soon
+#ifdef __INTEL_LLVM_COMPILER
+! FIXME
+! Workaround for IntelLLVM (ifx) ICE
+! /work/noaa/fv3-cam/djovic/ufs/ifx/ufs-weather-model/FV3/atmos_cubed_sphere/driver/fvGFS/atmosphere.F90(449): error #5623: **Internal compiler error: internal abort** Please report this error along with the circumstances in which it occurred in a Software Problem Report.  Note: File and line given may not be explicit cause of this error.
+!    read(input_nml_file, nml=atmos_model_nml, iostat=io)
+! --------^
+   open(newunit=nlunit, file=trim(fn_nml), status='old')
+   read(nlunit, nml=atmos_model_nml, iostat=io)
+   close(nlunit)
+   ierr = check_nml_error(io, 'atmos_model_nml')
+#else
    read(input_nml_file, nml=atmos_model_nml, iostat=io)
    ierr = check_nml_error(io, 'atmos_model_nml')
+#endif
    !write(0,'(a)') "It's me, and my physics suite is '" // trim(ccpp_suite) // "'"
    ! *DH 20210326
 
