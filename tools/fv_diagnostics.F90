@@ -1153,7 +1153,7 @@ contains
        id_inthght = register_diag_field ( trim(field), 'inthght', axes(1:2), Time,        &
             'Vertically Integrated Height', 'kg/m', missing_value=missing_value )
        id_inttemp = register_diag_field ( trim(field), 'inttemp', axes(1:2), Time,        &
-            'Vertically Integrated Temperautre', 'K kg/m**2', missing_value=missing_value )       
+            'Vertically Integrated Temperature', 'K kg/m**2', missing_value=missing_value )       
        id_acl = register_diag_field ( trim(field), 'acl', axes(1:2), Time,        &
             'Column-averaged Cl mixing ratio', 'kg/kg', missing_value=missing_value )
        id_acl2 = register_diag_field ( trim(field), 'acl2', axes(1:2), Time,        &
@@ -1682,12 +1682,6 @@ contains
 
 
         endif
-        if ( .not. Atm(n)%flagstruct%hydrostatic )   &
-          call nh_total_energy(isc, iec, jsc, jec, isd, ied, jsd, jed, npz,  &
-                               Atm(n)%w, Atm(n)%delz, Atm(n)%pt, Atm(n)%delp,  &
-                               Atm(n)%q, Atm(n)%phis, Atm(n)%gridstruct%area, Atm(n)%domain, &
-                               sphum, liq_wat, rainwat, ice_wat, snowwat, graupel, Atm(n)%flagstruct%nwat,     &
-                               Atm(n)%ua, Atm(n)%va, Atm(n)%flagstruct%moist_phys, a2)
 #endif
         call prt_mxm('UA_Top (m/s): ', Atm(n)%ua(isc:iec,jsc:jec,1),    &
                         isc, iec, jsc, jec, 0, 1, 1., Atm(n)%gridstruct%area_64, Atm(n)%domain)
