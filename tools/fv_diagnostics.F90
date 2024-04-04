@@ -1260,6 +1260,8 @@ contains
                         '100-m AGL u-wind', 'm/s', missing_value=missing_value )
        id_v100m = register_diag_field ( trim(field), 'v100m', axes(1:2), Time,       &
                         '100-m AGL v-wind', 'm/s', missing_value=missing_value )
+       id_wind100m = register_diag_field ( trim(field), 'wind100m', axes(1:2), Time,       &
+                        '100-m AGL windspeed', 'm/s', missing_value=missing_value )
 !--------------------------
 ! relative humidity (physics definition):
 !--------------------------
@@ -3191,7 +3193,7 @@ contains
             used=send_data(id_pmaskv2, a2, Time)
        endif
 
-       if ( id_u100m>0 .or. id_v100m>0 .or.  id_w100m>0 .or. id_w5km>0 .or. id_w2500m>0 &
+       if ( id_u100m>0 .or. id_v100m>0 .or. id_wind100m>0 .or.  id_w100m>0 .or. id_w5km>0 .or. id_w2500m>0 &
             & .or. id_w1km>0 .or. id_basedbz>0 .or. id_dbz4km>0) then
           if (.not.allocated(wz)) allocate ( wz(isc:iec,jsc:jec,npz+1) )
           if ( Atm(n)%flagstruct%hydrostatic) then
@@ -3252,15 +3254,29 @@ contains
             used=send_data(id_w100m, a2, Time)
             if(prt_minmax) call prt_mxm('w100m', a2, isc, iec, jsc, jec, 0, 1, 1., Atm(n)%gridstruct%area_64, Atm(n)%domain)
        endif
-       if ( id_u100m>0 ) then
-            call interpolate_z(isc, iec, jsc, jec, npz, 100., wz, Atm(n)%ua(isc:iec,jsc:jec,:), a2)
-            used=send_data(id_u100m, a2, Time)
-            if(prt_minmax) call prt_mxm('u100m', a2, isc, iec, jsc, jec, 0, 1, 1., Atm(n)%gridstruct%area_64, Atm(n)%domain)
+
+       if ( id_u100m>0 .or. id_wind100m>0 ) then
+            call interpolate_z(isc, iec, jsc, jec, npz, 100., wz, Atm(n)%ua(isc:iec,jsc:jec,:), u2)
+            if (id_u100m>0) then
+               used=send_data(id_u100m, u2, Time)
+               if(prt_minmax) call prt_mxm('u100m', u2, isc, iec, jsc, jec, 0, 1, 1., Atm(n)%gridstruct%area_64, Atm(n)%domain)
+            endif
        endif
-       if ( id_v100m>0 ) then
-            call interpolate_z(isc, iec, jsc, jec, npz, 100., wz, Atm(n)%va(isc:iec,jsc:jec,:), a2)
-            used=send_data(id_v100m, a2, Time)
-            if(prt_minmax) call prt_mxm('v100m', a2, isc, iec, jsc, jec, 0, 1, 1., Atm(n)%gridstruct%area_64, Atm(n)%domain)
+       if ( id_v100m>0 .or. id_wind100m>0 ) then
+            call interpolate_z(isc, iec, jsc, jec, npz, 100., wz, Atm(n)%va(isc:iec,jsc:jec,:), v2)
+            if (id_v100m > 0) then
+               used=send_data(id_v100m, v2, Time)
+               if(prt_minmax) call prt_mxm('v100m', v2, isc, iec, jsc, jec, 0, 1, 1., Atm(n)%gridstruct%area_64, Atm(n)%domain)
+            endif
+       endif
+       if ( id_wind100m > 0) then
+          do j=jsc,jec
+             do i=isc,iec
+                a2(i,j) = sqrt(u2(i,j)**2 + v2(i,j)**2)
+             enddo
+          enddo
+          used=send_data(id_wind100m, a2, Time)
+          if(prt_minmax) call prt_mxm('wind100m', a2, isc, iec, jsc, jec, 0, 1, 1., Atm(n)%gridstruct%area_64, Atm(n)%domain)
        endif
 
        if ( rainwat > 0 .and. (id_dbz>0 .or. id_maxdbz>0 .or. id_basedbz>0 .or. id_dbz4km>0 &
