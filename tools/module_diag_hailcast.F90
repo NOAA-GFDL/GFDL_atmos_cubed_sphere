@@ -84,6 +84,11 @@ CONTAINS
         !write(unit, nml=fv_diagnostics_nml)
         !!end hailcast nml
 
+
+        ! need to set a default value for istatus because of it's intent(out) status
+        ! this value is not checked on return
+        istatus = 0
+
         if (mpp_pe() == mpp_root_pe()) then
             print*, 'do_hailcast = ', do_hailcast
         end if
@@ -1092,8 +1097,7 @@ CONTAINS
       IF (D.GT.0.254) D = 0.  !just consider missing for now if > 10 in
 
       !assign hail size in mm for output
-      !dhails(i) = D * 1000
-      dhails(i) = D
+      dhails(i) = D * 1000
 
     ENDDO  !end embryo size loop
 
