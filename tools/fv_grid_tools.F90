@@ -2655,23 +2655,23 @@ contains
             !Nesting position information
             !BUG multiply by 180 not 90....
             write(*,*) 'NESTED GRID ', Atm%grid_number
-            ic = p_ind(1,1,1) ; jc = p_ind(1,1,1)
+            ic = p_ind(1,1,1) ; jc = p_ind(1,1,2)
             write(*,'(A, 2I5, 4F10.4)') 'SW CORNER: ', ic, jc, grid_global(1,1,:,1)*90./pi
-            ic = p_ind(1,npy,1) ; jc = p_ind(1,npy,1)
+            ic = p_ind(1,npy,1) ; jc = p_ind(1,npy,2)
             write(*,'(A, 2I5, 4F10.4)') 'NW CORNER: ', ic, jc, grid_global(1,npy,:,1)*90./pi
-            ic = p_ind(npx,npy,1) ; jc = p_ind(npx,npy,1)
+            ic = p_ind(npx,npy,1) ; jc = p_ind(npx,npy,2)
             write(*,'(A, 2I5, 4F10.4)') 'NE CORNER: ', ic, jc, grid_global(npx,npy,:,1)*90./pi
-            ic = p_ind(npx,1,1) ; jc = p_ind(npx,1,1)
+            ic = p_ind(npx,1,1) ; jc = p_ind(npx,1,2)
             write(*,'(A, 2I5, 4F10.4)') 'SE CORNER: ', ic, jc, grid_global(npx,1,:,1)*90./pi
          else
             write(*,*) 'PARENT GRID ', Atm%parent_grid%grid_number, Atm%parent_grid%global_tile
-            ic = p_ind(1,1,1) ; jc = p_ind(1,1,1)
+            ic = p_ind(1,1,1) ; jc = p_ind(1,1,2)
             write(*,'(A, 2I5, 4F10.4)') 'SW CORNER: ', ic, jc, Atm%parent_grid%grid_global(ic,jc,:,parent_tile)*90./pi
-            ic = p_ind(1,npy,1) ; jc = p_ind(1,npy,1)
+            ic = p_ind(1,npy,1) ; jc = p_ind(1,npy,2)
             write(*,'(A, 2I5, 4F10.4)') 'NW CORNER: ', ic, jc, Atm%parent_grid%grid_global(ic,jc,:,parent_tile)*90./pi
-            ic = p_ind(npx,npy,1) ; jc = p_ind(npx,npy,1)
+            ic = p_ind(npx,npy,1) ; jc = p_ind(npx,npy,2)
             write(*,'(A, 2I5, 4F10.4)') 'NE CORNER: ', ic, jc, Atm%parent_grid%grid_global(ic,jc,:,parent_tile)*90./pi
-            ic = p_ind(npx,1,1) ; jc = p_ind(npx,1,1)
+            ic = p_ind(npx,1,1) ; jc = p_ind(npx,1,2)
             write(*,'(A, 2I5, 4F10.4)') 'SE CORNER: ', ic, jc, Atm%parent_grid%grid_global(ic,jc,:,parent_tile)*90./pi
          endif
       end if
