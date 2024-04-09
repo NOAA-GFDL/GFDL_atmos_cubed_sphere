@@ -872,7 +872,7 @@ contains
         if (id_t_dt_phys_plev_ave > 0 .and. .not. allocated(Atm(n)%phys_diag%phys_t_dt) ) allocate(Atm(n)%phys_diag%phys_t_dt(isc:iec,jsc:jec,npz))
 
       ! flag for calculation of geopotential
-      if ( any(id_h > 0) .or. id_h_plev>0 .or. id_hght3d>0 .or. id_inthght .or. id_uz .or. id_iuz .or. id_vz .or. id_ivz ) then
+      if ( any(id_h > 0) .or. id_h_plev>0 .or. id_hght3d>0 .or. id_inthght>0 .or. id_uz>0 .or. id_iuz>0 .or. id_vz>0 .or. id_ivz>0 ) then
            id_any_hght = 1
       else
            id_any_hght = 0
@@ -2287,7 +2287,7 @@ contains
           if (id_hght3d > 0) then
              used = send_data(id_hght3d, 0.5*(wz(isc:iec,jsc:jec,1:npz)+wz(isc:iec,jsc:jec,2:npz+1)), Time)
           endif
-          if ( id_inthght>0 ) then
+          if (id_inthght > 0) then
              a2 = 0.
              do k=1,npz
              do j=jsc,jec
