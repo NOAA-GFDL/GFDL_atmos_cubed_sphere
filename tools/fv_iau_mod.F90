@@ -38,6 +38,7 @@
 module fv_iau_mod
 
   use fms2_io_mod,         only: file_exists
+  use fms_mod,             only: file_exist
   use mpp_mod,             only: mpp_error, FATAL, NOTE, mpp_pe
   use mpp_domains_mod,     only: domain2d
 
