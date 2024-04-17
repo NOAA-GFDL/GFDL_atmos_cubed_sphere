@@ -51,88 +51,7 @@ module module_get_cubed_sphere_inc
     write(6,*) 'diff is ',abs(a - b),compvals
 
   end function
-  logical function is_tracer(varname,tracer_idx)
-    character(*), intent(in)      ::     varname
-    integer, intent(out)          ::    tracer_idx 
-    select case (varname)
-      case("liq_wat")
-        is_tracer = .true.
-        tracer_idx = get_tracer_index(MODEL_ATMOS, 'liq_wat')
-      case("ice_wat")
-        is_tracer = .true.
-        tracer_idx = get_tracer_index(MODEL_ATMOS, 'ice_wat')
-      case("rainwat")
-        is_tracer = .true.
-        tracer_idx = get_tracer_index(MODEL_ATMOS, 'rainwat')
-      case("snowwat")
-        is_tracer = .true.
-        tracer_idx = get_tracer_index(MODEL_ATMOS, 'snowwat')
-      case("spfh")
-        is_tracer = .true.
-        tracer_idx = get_tracer_index(MODEL_ATMOS, 'sphum')
-      case("sphum")
-        is_tracer = .true.
-        tracer_idx = get_tracer_index(MODEL_ATMOS, 'sphum')
-      case("spo3")
-        is_tracer = .true.
-        tracer_idx = get_tracer_index(MODEL_ATMOS, 'spo3')
-      case("o3mr")
-        is_tracer = .true.
-        tracer_idx = get_tracer_index(MODEL_ATMOS, 'o3mr')
-      case("graupel")
-        is_tracer = .true.
-        tracer_idx = get_tracer_index(MODEL_ATMOS, 'graupel')
-      case("dust1")
-        is_tracer = .true.
-        tracer_idx = get_tracer_index(MODEL_ATMOS, 'dust1')
-      case("dust2")
-        is_tracer = .true.
-        tracer_idx = get_tracer_index(MODEL_ATMOS, 'dust2')
-      case("dust3")
-        is_tracer = .true.
-        tracer_idx = get_tracer_index(MODEL_ATMOS, 'dust3')
-      case("dust4")
-        is_tracer = .true.
-        tracer_idx = get_tracer_index(MODEL_ATMOS, 'dust4')
-      case("dust5")
-        is_tracer = .true.
-        tracer_idx = get_tracer_index(MODEL_ATMOS, 'dust5')
-      case("seas1")
-        is_tracer = .true.
-        tracer_idx = get_tracer_index(MODEL_ATMOS, 'seas1')
-      case("seas2")
-        is_tracer = .true.
-        tracer_idx = get_tracer_index(MODEL_ATMOS, 'seas2')
-      case("seas3")
-        is_tracer = .true.
-        tracer_idx = get_tracer_index(MODEL_ATMOS, 'seas3')
-      case("seas4")
-        is_tracer = .true.
-        tracer_idx = get_tracer_index(MODEL_ATMOS, 'seas4')
-      case("seas5")
-        is_tracer = .true.
-        tracer_idx = get_tracer_index(MODEL_ATMOS, 'seas5')
-      case("so4")
-        is_tracer = .true.
-        tracer_idx = get_tracer_index(MODEL_ATMOS, 'so4')
-      case("bc1")
-        is_tracer = .true.
-        tracer_idx = get_tracer_index(MODEL_ATMOS, 'bc1')
-      case("bc2")
-        is_tracer = .true.
-        tracer_idx = get_tracer_index(MODEL_ATMOS, 'bc2')
-      case("oc1")
-        is_tracer = .true.
-        tracer_idx = get_tracer_index(MODEL_ATMOS, 'oc1')
-      case("oc2")
-        is_tracer = .true.
-        tracer_idx = get_tracer_index(MODEL_ATMOS, 'oc2')
-      case default
-        tracer_idx = get_tracer_index(MODEL_ATMOS, trim(varname))
-        write(6,*) 'tracer index is ',tracer_idx,' and name is ',trim(varname)
-        is_tracer = .false.
-      end select
-  end function
+
   subroutine read_netcdf_inc(filename, increment_data, Atm, mygrid, &
                           testing, im_ret, jm_ret, pf_ret, tileCount, tests_passed,rc)
     character(*), intent(in)                         :: filename
@@ -218,7 +137,6 @@ module module_get_cubed_sphere_inc
       if(.not.(testing)) then
         idx_val = get_tracer_index(MODEL_ATMOS, trim(incvars(i)%varname))
         if((idx_val > 0 ).and.(idx_val <= nvar)) then
-!       if( is_tracer(incvars(i)%varname,idx_val)) then 
            num_tracers = num_tracers + 1
            ! store tracer_idx by tracer number so we can iterate through 1,num_tracers later
            tracer_idx(num_tracers) = idx_val
@@ -289,7 +207,7 @@ module module_get_cubed_sphere_inc
       write(6,*) 'test varid is ',varids(2),' tracer_idx is ',tracer_idx(2)
       write(6,*) 'test varid is ',varids(3),' tracer_idx is ',tracer_idx(3)
       write(6,*) 'test varid is ',varids(4),' tracer_idx is ',tracer_idx(4)
-      ! for non-testing, indices were returned from check for is_tracer
+      ! for non-testing, indices were returned from check for get_tracer_index
     endif
     ! allocate temporary array to hold variables
     ! TODO read only what we need instead of the whole field
@@ -401,7 +319,7 @@ module module_get_cubed_sphere_inc
       call mpp_get_current_pelist(Atm(mygrid)%pelist, commID=mpi_comm)
     endif
     par = .false.
-    call read_netcdf_inc(filename, increment_data,Atm, mygrid, testing,im_ret=im, jm_ret=jm, pf_ret=pf, tileCount=tileCount, tests_passed=tests_passed, rc=rc)
+    call read_netcdf_inc(filename, increment_data, Atm, mygrid, testing,im_ret=im, jm_ret=jm, pf_ret=pf, tileCount=tileCount, tests_passed=tests_passed, rc=rc)
     if(testing) then
       ! allocate 6 tiles for Atm
       write(6,*) "im, jm, etc are",im,jm,pf

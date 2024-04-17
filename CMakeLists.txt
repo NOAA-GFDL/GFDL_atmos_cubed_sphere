@@ -250,7 +250,7 @@ install(EXPORT FV3Exports
   FILE fv3-targets.cmake
   DESTINATION ${CONFIG_INSTALL_DESTINATION})
 
-if(${TESTING})
+if(${CTESTS})
   set(hash a71a77233ee56f8533df1fc5c6d551472d42165d86313004edb3b70ddb5e82c7)
   download_file(
     https://s3.amazonaws.com/epic.sandbox.srw/inc-test-files.tar.gz
