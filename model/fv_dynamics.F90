@@ -233,7 +233,7 @@ contains
 
         reg_bc_update_time=current_time_in_seconds
         call set_regional_BCs          & !<-- Insert values into the boundary region valid for the start of this large timestep.
-              (delp,delz,w,pt                                     &
+              (delp,w,pt                                          &
 #ifdef USE_COND
                ,q_con                                             &
 #endif

@@ -94,6 +94,7 @@ module fv_regional_mod
       integer,parameter :: bc_time_interval=3                           &
                           ,nhalo_data =4                                &
                           ,nhalo_model=3
+      integer, public, parameter :: int_init_default = -9999999
 !
       integer, public, parameter :: H_STAGGER = 1
       integer, public, parameter :: U_STAGGER = 2
@@ -4033,7 +4034,7 @@ subroutine remap_scalar_nggps_regional_bc(Atm                         &
 !+++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++
 !---------------------------------------------------------------------
 
-      subroutine set_regional_BCs(delp,delz,w,pt                      &
+      subroutine set_regional_BCs(delp,w,pt                           &
 #ifdef USE_COND
                                  ,q_con                               &
 #endif
@@ -4042,7 +4043,7 @@ subroutine remap_scalar_nggps_regional_bc(Atm                         &
 #endif
                                  ,q                                   &
                                  ,u,v,uc,vc                           &
-                                 ,bd, nlayers                        &
+                                 ,bd, nlayers                         &
                                  ,fcst_time )
 !
 !---------------------------------------------------------------------
@@ -4074,7 +4075,6 @@ subroutine remap_scalar_nggps_regional_bc(Atm                         &
                                                                ,pt
 !
       real,dimension(bd%isd:,bd%jsd:,1:),intent(out) :: w
-      real,dimension(bd%is:,bd%js:,1:),intent(out) :: delz
 #ifdef USE_COND
       real,dimension(bd%isd:,bd%jsd:,1:),intent(out) :: q_con
 #endif
@@ -4363,7 +4363,7 @@ subroutine remap_scalar_nggps_regional_bc(Atm                         &
 !
       integer,intent(in) :: is,ie,js,je                               &  !<-- Compute limits
                            ,isd,ied,jsd,jed                           &  !<-- Memory limits
-                           ,it                                           !<-- Acoustic step 
+                           ,it                                           !<-- Acoustic step
 !
       integer,intent(in),optional :: index4                              !<-- Index for the 4-D tracer array.
 !
@@ -4453,7 +4453,7 @@ subroutine remap_scalar_nggps_regional_bc(Atm                         &
             endif
             j1_blend=js
             j2_blend=js+nrows_blend_user-1
-            i_bc=-9e9
+            i_bc=int_init_default
             j_bc=j2
 !
           endif
@@ -4503,7 +4503,7 @@ subroutine remap_scalar_nggps_regional_bc(Atm                         &
               j2_blend=je+1
             endif
             j1_blend=j2_blend-nrows_blend_user+1
-            i_bc=-9e9
+            i_bc=int_init_default
             j_bc=j1
 !
           endif
@@ -4560,7 +4560,7 @@ subroutine remap_scalar_nggps_regional_bc(Atm                         &
               j2_blend=j2_blend+1
             endif
             i_bc=i2
-            j_bc=-9e9
+            j_bc=int_init_default
 !
           endif
         endif
@@ -4619,7 +4619,7 @@ subroutine remap_scalar_nggps_regional_bc(Atm                         &
               j2_blend=j2_blend+1
             endif
             i_bc=i1
-            j_bc=-9e9
+            j_bc=int_init_default
 !
           endif
         endif
