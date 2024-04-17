@@ -441,7 +441,7 @@ contains
 
     allocate(pes(mpp_npes()))
     call mpp_get_current_pelist(pes)
-
+    Atm(1)%flagstruct%ignore_rst_cksum = .true.
     suffix = ''
     fname = 'INPUT/fv_core.res.nc'
     Atm(1)%Fv_restart_is_open = open_file(Atm(1)%Fv_restart,fname,"read", is_restart=.true., pelist=pes)
