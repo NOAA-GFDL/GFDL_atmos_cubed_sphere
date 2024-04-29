@@ -101,7 +101,8 @@ list(APPEND tools_srcs
   tools/module_diag_hailcast.F90
   tools/sim_nc_mod.F90
   tools/sorted_index.F90
-  tools/test_cases.F90)
+  tools/test_cases.F90
+  tools/module_get_cubed_sphere_inc.F90)
 
 list(APPEND tools_srcs_extra
   tools/fv_iau_mod.F90)

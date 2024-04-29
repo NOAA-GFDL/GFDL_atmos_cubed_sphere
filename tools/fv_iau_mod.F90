@@ -66,6 +66,7 @@ module fv_iau_mod
   use fv_treat_da_inc_mod, only: remap_coef
   use tracer_manager_mod,  only: get_tracer_names,get_tracer_index, get_number_tracers
   use field_manager_mod,   only: MODEL_ATMOS
+  use module_get_cubed_sphere_inc, only : read_netcdf_inc, iau_internal_data_type
   implicit none
 
   private
@@ -84,14 +85,6 @@ module fv_iau_mod
   integer, allocatable :: tracer_indicies(:)
 
   real(kind=4), allocatable:: wk3(:,:,:)
-  type iau_internal_data_type
-    real,allocatable :: ua_inc(:,:,:)
-    real,allocatable :: va_inc(:,:,:)
-    real,allocatable :: temp_inc(:,:,:)
-    real,allocatable :: delp_inc(:,:,:)
-    real,allocatable :: delz_inc(:,:,:)
-    real,allocatable :: tracer_inc(:,:,:,:)
-  end type iau_internal_data_type
   type iau_external_data_type
     real,allocatable :: ua_inc(:,:,:)
     real,allocatable :: va_inc(:,:,:)
@@ -114,10 +107,11 @@ module fv_iau_mod
   public iau_external_data_type,IAU_initialize,getiauforcing
 
 contains
-subroutine IAU_initialize (IPD_Control, IAU_Data,Init_parm)
+subroutine IAU_initialize (IPD_Control, IAU_Data, Init_parm, Atm)
     type (IPD_control_type), intent(in) :: IPD_Control
     type (IAU_external_data_type), intent(inout) :: IAU_Data
     type (IPD_init_type),    intent(in) :: Init_parm
+    type (fv_atmos_type), intent(inout) :: Atm
     ! local
 
     character(len=128) :: fname
@@ -274,7 +268,11 @@ subroutine IAU_initialize (IPD_Control, IAU_Data,Init_parm)
        enddo
        iau_state%wt_normfact = (2*nstep+1)/normfact
     endif
-    call read_iau_forcing(IPD_Control,iau_state%inc1,'INPUT/'//trim(IPD_Control%iau_inc_files(1)))
+    if ( Atm%flagstruct%gaussian_increment ) then
+       call read_iau_forcing(IPD_Control,iau_state%inc1,'INPUT/'//trim(IPD_Control%iau_inc_files(1)))
+    else
+       call read_netcdf_inc('INPUT/'//trim(IPD_Control%iau_inc_files(1)), iau_state%inc1, Atm)
+    endif
     if (nfiles.EQ.1) then  ! only need to get incrments once since constant forcing over window
        call setiauforcing(IPD_Control,IAU_Data,iau_state%wt)
     endif
@@ -286,18 +284,23 @@ subroutine IAU_initialize (IPD_Control, IAU_Data,Init_parm)
        allocate (iau_state%inc2%delz_inc (is:ie, js:je, km))
        allocate (iau_state%inc2%tracer_inc(is:ie, js:je, km,ntracers))
        iau_state%hr2=IPD_Control%iaufhrs(2)
-       call read_iau_forcing(IPD_Control,iau_state%inc2,'INPUT/'//trim(IPD_Control%iau_inc_files(2)))
+       if ( Atm%flagstruct%gaussian_increment ) then
+          call read_iau_forcing(IPD_Control,iau_state%inc2,'INPUT/'//trim(IPD_Control%iau_inc_files(2)))
+       else
+          call read_netcdf_inc('INPUT/'//trim(IPD_Control%iau_inc_files(2)), iau_state%inc2, Atm)
+       endif
     endif
 !   print*,'in IAU init',dt,rdt
     IAU_data%drymassfixer = IPD_control%iau_drymassfixer
 
 end subroutine IAU_initialize
 
-subroutine getiauforcing(IPD_Control,IAU_Data)
+subroutine getiauforcing(IPD_Control,IAU_Data,Atm)
 
    implicit none
    type (IPD_control_type), intent(in) :: IPD_Control
    type(IAU_external_data_type),  intent(inout) :: IAU_Data
+   type (fv_atmos_type), intent(inout) :: Atm
    real(kind=kind_phys) t1,t2,sx,wx,wt,dtp
    integer n,i,j,k,sphum,kstep,nstep,itnext
 
@@ -371,7 +374,11 @@ subroutine getiauforcing(IPD_Control,IAU_Data)
             iau_state%hr2=IPD_Control%iaufhrs(itnext)
             iau_state%inc1=iau_state%inc2
             if (is_master()) print *,'reading next increment file',trim(IPD_Control%iau_inc_files(itnext))
-            call read_iau_forcing(IPD_Control,iau_state%inc2,'INPUT/'//trim(IPD_Control%iau_inc_files(itnext)))
+            if ( Atm%flagstruct%gaussian_increment ) then
+               call read_iau_forcing(IPD_Control,iau_state%inc2,'INPUT/'//trim(IPD_Control%iau_inc_files(itnext)))
+            else
+               call read_netcdf_inc('INPUT/'//trim(IPD_Control%iau_inc_files(itnext)), iau_state%inc2, Atm)
+            endif
          endif
          call updateiauforcing(IPD_Control,IAU_Data,iau_state%wt)
       endif

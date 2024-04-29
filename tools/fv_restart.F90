@@ -166,7 +166,7 @@ module fv_restart_mod
   use mpp_mod,             only: mpp_send, mpp_recv, mpp_sync_self, mpp_set_current_pelist, mpp_get_current_pelist, mpp_npes, mpp_pe, mpp_sync
   use mpp_domains_mod,     only: CENTER, CORNER, NORTH, EAST,  mpp_get_C2F_index, WEST, SOUTH
   use mpp_domains_mod,     only: mpp_global_field
-  use fv_treat_da_inc_mod, only: read_da_inc
+  use fv_treat_da_inc_mod, only: read_da_inc, read_da_inc_cubed_sphere
   use fms2_io_mod,         only: file_exists, set_filename_appendix, FmsNetcdfFile_t, open_file, close_file
   use coarse_grained_restart_files_mod, only: fv_io_write_restart_coarse
   use fv_regional_mod,     only: write_full_fields
@@ -372,9 +372,15 @@ contains
                    j = (Atm(n)%bd%jsc + Atm(n)%bd%jec)/2
                    k = Atm(n)%npz/2
                    if( is_master() ) write(*,*) 'Calling read_da_inc',Atm(n)%pt(i,j,k)
-                   call read_da_inc(Atm(n), Atm(n)%domain, Atm(n)%bd, Atm(n)%npz, Atm(n)%ncnst, &
-                        Atm(n)%u, Atm(n)%v, Atm(n)%q, Atm(n)%delp, Atm(n)%pt, Atm(n)%delz, isd, jsd, ied, jed, &
-                        isc, jsc, iec, jec )
+                   if ( Atm(n)%flagstruct%gaussian_increment ) then
+                      call read_da_inc(Atm(n), Atm(n)%domain, Atm(n)%bd, Atm(n)%npz, Atm(n)%ncnst, &
+                           Atm(n)%u, Atm(n)%v, Atm(n)%q, Atm(n)%delp, Atm(n)%pt, Atm(n)%delz, isd, jsd, ied, jed, &
+                           isc, jsc, iec, jec )
+                   else
+                      call read_da_inc_cubed_sphere(Atm(n), Atm(n)%domain, Atm(n)%bd, Atm(n)%npz, Atm(n)%ncnst, &
+                           Atm(n)%u, Atm(n)%v, Atm(n)%q, Atm(n)%delp, Atm(n)%pt, Atm(n)%delz, isd, jsd, ied, jed, &
+                           isc, jsc, iec, jec )
+                   endif
                    if( is_master() ) write(*,*) 'Back from read_da_inc',Atm(n)%pt(i,j,k)
                 endif
                 !====== end PJP added DA functionailty======
