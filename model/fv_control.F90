@@ -1072,7 +1072,7 @@ module fv_control_mod
             do_schmidt, do_cube_transform, &
             hord_mt, hord_vt, hord_tm, hord_dp, hord_tr, shift_fac, stretch_fac, target_lat, target_lon, &
             kord_mt, kord_wz, kord_tm, kord_tr, fv_debug, fv_timers, fv_land, nudge, do_sat_adj, do_inline_mp, do_f3d, &
-            external_ic, read_increment, gaussian_increment, ncep_ic, nggps_ic, hrrrv3_ic, ecmwf_ic, use_new_ncep, use_ncep_phy, fv_diag_ic, &
+            external_ic, read_increment, ncep_ic, nggps_ic, hrrrv3_ic, ecmwf_ic, use_new_ncep, use_ncep_phy, fv_diag_ic, &
             external_eta, res_latlon_dynamics, res_latlon_tracers, scale_z, w_max, z_min, lim_fac, &
             dddmp, d2_bg, d4_bg, vtdm4, trdm2, d_ext, delt_max, beta, non_ortho, n_sponge, &
             warm_start, adjust_dry_mass, mountain, d_con, ke_bg, nord, nord_tr, convert_ke, use_old_omega, &
@@ -1093,7 +1093,7 @@ module fv_control_mod
             write_coarse_restart_files,&
             write_coarse_diagnostics,&
             write_only_coarse_intermediate_restarts, &
-            write_coarse_agrid_vel_rst, write_coarse_dgrid_vel_rst, ignore_rst_cksum
+            write_coarse_agrid_vel_rst, write_coarse_dgrid_vel_rst, ignore_rst_cksum, gaussian_increment
 
 
        ! Read FVCORE namelist
