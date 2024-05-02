@@ -33,58 +33,40 @@ module module_get_cubed_sphere_inc
       type(fv_atmos_type), intent(in)             :: Atm
 
       type(FmsNetcdfFile_t) :: fileobj
-      integer               :: isd, ied, jsd, jed, isc, iec, jsc, jec, ng, npz, itracer, &
-                               ntracers, itile, i
+      integer               :: isc, iec, jsc, jec, npz, itracer, ntracers, itile
       integer, dimension(4) :: corner, edge_lengths
       character(len=64)     :: tracer_name
       
       ! Get various dimensions
       call get_number_tracers(MODEL_ATMOS, num_tracers=ntracers)
-      isd = Atm%bd%isd
-      jsd = Atm%bd%jsd
-      ied = Atm%bd%ied
-      jed = Atm%bd%jed
       isc = Atm%bd%isc
-      jsc = Atm%bd%jsc
       iec = Atm%bd%iec
+      jsc = Atm%bd%jsc
       jec = Atm%bd%jec
-      ng  = Atm%bd%ng
       npz = Atm%npz
       itile = Atm%tile_of_mosaic
-      
+
       ! Open increment file
       if ( open_file(fileobj, trim(filename), 'read', pelist=Atm%pelist) ) then
-
-         if ( .not. allocated(increment_data%ua_inc) ) then
-            allocate(increment_data%ua_inc(isd:ied,jsd:jed,npz))
-            allocate(increment_data%va_inc(isd:ied,jsd:jed,npz))
-            allocate(increment_data%temp_inc(isd:ied,jsd:jed,npz))
-            allocate(increment_data%delp_inc(isd:ied,jsd:jed,npz))
-            allocate(increment_data%delz_inc(isc:iec,jsc:jec,npz))
-            allocate(increment_data%tracer_inc(isd:ied,jsd:jed,npz,ntracers))
-         end if
          
          !
-         corner       = (/ isd+ng,         jsd+ng,         1,   itile /)
-         edge_lengths = (/ ied-isd-2*ng+1, jed-jsd-2*ng+1, npz, 1 /)
+         corner       = (/ isc,       jsc,       1,   itile /)
+         edge_lengths = (/ iec-isc+1, jec-jsc+1, npz, 1 /)
 
-         write(*,*) 'corner ', corner
-         write(*,*) 'edge_lengths ', edge_lengths
-         
          ! Read increments
-         call read_data(fileobj, 'u_inc',    increment_data%ua_inc(isd:ied,jsd:jed,:),   corner=corner, edge_lengths=edge_lengths)
-         call read_data(fileobj, 'v_inc',    increment_data%va_inc(isd:ied,jsd:jed,:),   corner=corner, edge_lengths=edge_lengths)
-         call read_data(fileobj, 'T_inc',    increment_data%temp_inc(isd:ied,jsd:jed,:), corner=corner, edge_lengths=edge_lengths)
-         call read_data(fileobj, 'delp_inc', increment_data%delp_inc(isd:ied,jsd:jed,:), corner=corner, edge_lengths=edge_lengths)
-         call read_data(fileobj, 'delz_inc', increment_data%delz_inc(isc:iec,jsc:jec,:), corner=corner, edge_lengths=edge_lengths)
+         call read_data(fileobj, 'u_inc',    increment_data%ua_inc,   corner=corner, edge_lengths=edge_lengths)
+         call read_data(fileobj, 'v_inc',    increment_data%va_inc,   corner=corner, edge_lengths=edge_lengths)
+         call read_data(fileobj, 'T_inc',    increment_data%temp_inc, corner=corner, edge_lengths=edge_lengths)
+         call read_data(fileobj, 'delp_inc', increment_data%delp_inc, corner=corner, edge_lengths=edge_lengths)
+         if ( .not. Atm%flagstruct%hydrostatic ) then
+            call read_data(fileobj, 'delz_inc', increment_data%delz_inc, corner=corner, edge_lengths=edge_lengths)
+         endif
 
          ! Read tracer increments
-         do i = 1,ntracers
-            call get_tracer_names(MODEL_ATMOS, i, tracer_name)
-            itracer = get_tracer_index(MODEL_ATMOS, trim(tracer_name))
+         do itracer = 1,ntracers
+            call get_tracer_names(MODEL_ATMOS, itracer, tracer_name)
             if ( variable_exists(fileobj, trim(tracer_name)//'_inc') ) then
-               write(*,*) itracer, ' '//trim(tracer_name)//'_inc '
-               call read_data(fileobj, trim(tracer_name)//'_inc', increment_data%tracer_inc(isd:ied,jsd:jed,:,itracer), &
+               call read_data(fileobj, trim(tracer_name)//'_inc', increment_data%tracer_inc(:,:,:,itracer), &
                     corner=corner, edge_lengths=edge_lengths)
             end if
          end do

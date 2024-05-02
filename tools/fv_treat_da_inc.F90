@@ -468,7 +468,8 @@ contains
     !---------------------------------------------------------------------------
   end subroutine read_da_inc
 
-  subroutine read_da_inc_cubed_sphere(Atm, fv_domain, bd, npz_in, nq, u, v, q, delp, pt, delz, &
+  subroutine read_da_inc_cubed_sphere(Atm, fv_domain, bd, npz_in, nq, &
+                                      u, v, q, delp, pt, delz, &
                                       is_in, js_in, ie_in, je_in, isc_in, jsc_in, iec_in, jec_in)
     type(fv_atmos_type),       intent(in)    :: Atm
     type(domain2d),            intent(inout) :: fv_domain
@@ -478,104 +479,126 @@ contains
     real, intent(inout) :: v(is_in:ie_in+1, js_in:je_in, npz_in)  ! D grid meridional wind (m/s)
     real, intent(inout) :: delp(is_in:ie_in, js_in:je_in, npz_in)  ! pressure thickness (pascal)
     real, intent(inout) :: pt(  is_in:ie_in, js_in:je_in, npz_in)  ! temperature (K)
-    real, intent(inout) :: q(   is_in:ie_in, js_in:je_in, npz_in, nq)  !
-    real, intent(inout) :: delz(isc_in:iec_in, jsc_in:jec_in, npz_in)  !
+    real, intent(inout) :: q(   is_in:ie_in, js_in:je_in, npz_in, nq)  ! tracers
+    real, intent(inout) :: delz(isc_in:iec_in, jsc_in:jec_in, npz_in)  ! layer thickness
     
     character(len=128)           :: fname
-    integer                      :: sphum, liq_wat, spo, spo2, spo3, o3mr, i,j, k
+    integer                      :: sphum, liq_wat, spo, spo2, spo3, o3mr, i, j, k, itracer
     type(iau_internal_data_type) :: increment_data
     type(group_halo_update_type) :: i_pack(2)
+    real                         :: ua_inc(is_in:ie_in, js_in:je_in, npz_in)
+    real                         :: va_inc(is_in:ie_in, js_in:je_in, npz_in)
 
     ! Get increment filename
     fname = 'INPUT/'//Atm%flagstruct%res_latlon_dynamics
 
     ! Ensure file exists
     if ( .not. file_exists(fname) ) then
-      call mpp_error(FATAL,'==> Error in read_da_inc: Expected file '&
+      call mpp_error(FATAL,'==> Error in read_da_inc_cubed_sphere: Expected file '&
           //trim(fname)//' for DA increment does not exist')
     endif
 
+    ! Allocate increments
+    allocate(increment_data%ua_inc(isc_in:iec_in,jsc_in:jec_in,npz_in))
+    allocate(increment_data%va_inc(isc_in:iec_in,jsc_in:jec_in,npz_in))
+    allocate(increment_data%temp_inc(isc_in:iec_in,jsc_in:jec_in,npz_in))
+    allocate(increment_data%delp_inc(isc_in:iec_in,jsc_in:jec_in,npz_in))
+    if ( .not. Atm%flagstruct%hydrostatic ) then
+       allocate(increment_data%delz_inc(isc_in:iec_in,jsc_in:jec_in,npz_in))
+    endif
+    allocate(increment_data%tracer_inc(isc_in:iec_in,jsc_in:jec_in,npz_in,nq))
+    
     ! Read increments
     call read_netcdf_inc(fname, increment_data, Atm)
 
     ! Wind increments
     ! ---------------
 
+    ! Put u and v increments on grid that includes halo points
+    do k = 1,npz_in
+       do j = jsc_in,jec_in
+          do i = isc_in,iec_in
+             ua_inc(i,j,k) = increment_data%ua_inc(i,j,k)
+             va_inc(i,j,k) = increment_data%va_inc(i,j,k)
+          enddo
+       enddo
+    enddo
+
     ! Start halo update
     if ( Atm%gridstruct%square_domain ) then
-       call start_group_halo_update(i_pack(1), increment_data%ua_inc, fv_domain, whalo=1, ehalo=1, shalo=1, nhalo=1, complete=.false.)
-       call start_group_halo_update(i_pack(1), increment_data%va_inc, fv_domain, whalo=1, ehalo=1, shalo=1, nhalo=1, complete=.true.)
+       call start_group_halo_update(i_pack(1), ua_inc, fv_domain, whalo=1, ehalo=1, shalo=1, nhalo=1, complete=.false.)
+       call start_group_halo_update(i_pack(1), va_inc, fv_domain, whalo=1, ehalo=1, shalo=1, nhalo=1, complete=.true.)
     else
-       call start_group_halo_update(i_pack(1), increment_data%ua_inc, fv_domain, complete=.false.)
-       call start_group_halo_update(i_pack(1), increment_data%va_inc, fv_domain, complete=.true.)
+       call start_group_halo_update(i_pack(1), ua_inc, fv_domain, complete=.false.)
+       call start_group_halo_update(i_pack(1), va_inc, fv_domain, complete=.true.)
     endif
 
     if ( Atm%flagstruct%dwind_2d ) then
        ! Apply A-grid wind increments to D-grid winds for case of dwind_2d
-       call update2d_dwinds_phys(is_in, ie_in, js_in, je_in, bd%isd, bd%ied, bd%jsd, bd%jed, &
-                                 1., increment_data%ua_inc, increment_data%va_inc, u, v, &
+       call update2d_dwinds_phys(isc_in, iec_in, jsc_in, jec_in, is_in, ie_in, js_in, je_in, &
+                                 1., ua_inc, va_inc, u, v, &
                                  Atm%gridstruct, Atm%npx, Atm%npy, npz_in, fv_domain)
     else
        ! Complete halo update
        call complete_group_halo_update(i_pack(1), fv_domain)
 
-       ! Treat increment boundary conditions for case of regional grid                                                                         
-       if (Atm%gridstruct%regional) then
+       ! Treat increment boundary conditions for case of regional grid
+       if ( Atm%gridstruct%regional ) then
           ! Edges
-          if (is_in == 1) then
-             do k=1,npz_in
-                do j = js_in,je_in
-                   increment_data%ua_inc(is_in-1,j,k) = increment_data%ua_inc(is_in,j,k)
-                   increment_data%va_inc(is_in-1,j,k) = increment_data%va_inc(is_in,j,k)
+          if ( isc_in == 1 ) then
+             do k = 1,npz_in
+                do j = jsc_in,jec_in
+                   ua_inc(isc_in-1,j,k) = ua_inc(isc_in,j,k)
+                   va_inc(isc_in-1,j,k) = va_inc(isc_in,j,k)
                 enddo
              enddo
           endif
-          if (ie_in == Atm%npx) then
-             do k=1,npz_in
-                do j = js_in,je_in
-                   increment_data%ua_inc(ie_in+1,j,k) = increment_data%ua_inc(ie_in,j,k)
-                   increment_data%va_inc(ie_in+1,j,k) = increment_data%va_inc(ie_in,j,k)
+          if ( iec_in == Atm%npx ) then
+             do k = 1,npz_in
+                do j = jsc_in,jec_in
+                   ua_inc(iec_in+1,j,k) = ua_inc(iec_in,j,k)
+                   va_inc(iec_in+1,j,k) = va_inc(iec_in,j,k)
                 enddo
              enddo
           endif
-          if (js_in == 1) then
-             do k=1,npz_in
-                do i = is_in,ie_in
-                   increment_data%ua_inc(i,js_in-1,k) = increment_data%ua_inc(i,js_in,k)
-                   increment_data%va_inc(i,js_in-1,k) = increment_data%va_inc(i,js_in,k)
+          if ( jsc_in == 1 ) then
+             do k = 1,npz_in
+                do i = isc_in,iec_in
+                   ua_inc(i,jsc_in-1,k) = ua_inc(i,jsc_in,k)
+                   va_inc(i,jsc_in-1,k) = va_inc(i,jsc_in,k)
                 enddo
              enddo
           endif
-          if (je_in == Atm%npy) then
-             do k=1,npz_in
-                do i = is_in,ie_in
-                   increment_data%ua_inc(i,je_in+1,k) = increment_data%ua_inc(i,je_in,k)
-                   increment_data%va_inc(i,je_in+1,k) = increment_data%va_inc(i,je_in,k)
+          if ( jec_in == Atm%npy ) then
+             do k = 1,npz_in
+                do i = isc_in,iec_in
+                   ua_inc(i,jec_in+1,k) = ua_inc(i,jec_in,k)
+                   va_inc(i,jec_in+1,k) = va_inc(i,jec_in,k)
                 enddo
              enddo
           endif
 
           ! corners
-          do k=1,npz_in
-             if (is_in == 1 .and. js_in == 1) then
-                increment_data%ua_inc(is_in-1,js_in-1,k) = increment_data%ua_inc(is_in,js_in,k)
-                increment_data%va_inc(is_in-1,js_in-1,k) = increment_data%va_inc(is_in,js_in,k)
-             elseif (is_in == 1 .and. je_in == Atm%npy) then
-                increment_data%ua_inc(is_in-1,je_in+1,k) = increment_data%ua_inc(is_in,je_in,k)
-                increment_data%va_inc(is_in-1,je_in+1,k) = increment_data%va_inc(is_in,je_in,k)
-             elseif (ie_in == Atm%npx .and. js_in == 1) then
-                increment_data%ua_inc(ie_in+1,js_in-1,k) = increment_data%ua_inc(ie_in,je_in,k)
-                increment_data%va_inc(ie_in+1,js_in-1,k) = increment_data%va_inc(ie_in,je_in,k)
-             elseif (ie_in == Atm%npx .and. je_in == Atm%npy) then
-                increment_data%ua_inc(ie_in+1,je_in+1,k) = increment_data%ua_inc(ie_in,je_in,k)
-                increment_data%va_inc(ie_in+1,je_in+1,k) = increment_data%va_inc(ie_in,je_in,k)
+          do k = 1,npz_in
+             if ( isc_in == 1 .and. jsc_in == 1 ) then
+                ua_inc(isc_in-1,jsc_in-1,k) = ua_inc(isc_in,jsc_in,k)
+                va_inc(isc_in-1,jsc_in-1,k) = va_inc(isc_in,jsc_in,k)
+             elseif ( isc_in == 1 .and. jec_in == Atm%npy ) then
+                ua_inc(isc_in-1,jec_in+1,k) = ua_inc(isc_in,jec_in,k)
+                va_inc(isc_in-1,jec_in+1,k) = va_inc(isc_in,jec_in,k)
+             elseif ( iec_in == Atm%npx .and. jsc_in == 1 ) then
+                ua_inc(iec_in+1,jsc_in-1,k) = ua_inc(iec_in,jec_in,k)
+                va_inc(iec_in+1,jsc_in-1,k) = va_inc(iec_in,jec_in,k)
+             elseif ( iec_in == Atm%npx .and. jec_in == Atm%npy ) then
+                ua_inc(iec_in+1,jec_in+1,k) = ua_inc(iec_in,jec_in,k)
+                va_inc(iec_in+1,jec_in+1,k) = va_inc(iec_in,jec_in,k)
              endif
           enddo
        endif
 
        ! Apply A-grid wind increments to D-grid winds
-       call update_dwinds_phys(is_in, ie_in, js_in, je_in, bd%isd, bd%ied, bd%jsd, bd%jed, &
-                               1., increment_data%ua_inc, increment_data%va_inc, u, v, &
+       call update_dwinds_phys(isc_in, iec_in, jsc_in, jec_in, is_in, ie_in, js_in, je_in, &
+                               1., ua_inc, va_inc, u, v, &
                                Atm%gridstruct, Atm%npx, Atm%npy, npz_in, fv_domain)
     endif
        
@@ -594,20 +617,26 @@ contains
 #endif
 
     ! Apply increments
-    pt   = pt   + increment_data%temp_inc
-    delp = delp + increment_data%delp_inc
-    if ( .not. Atm%flagstruct%hydrostatic ) then
-       delz = delz + increment_data%delz_inc
-    endif
-    q(:,:,:,sphum)   = q(:,:,:,sphum)   + increment_data%tracer_inc(:,:,:,sphum)
-    q(:,:,:,liq_wat) = q(:,:,:,liq_wat) + increment_data%tracer_inc(:,:,:,liq_wat)
+    do k = 1,npz_in
+       do j = jsc_in,jec_in
+          do i = isc_in,iec_in
+             pt(i,j,k)   = pt(i,j,k)   + increment_data%temp_inc(i,j,k)
+             delp(i,j,k) = delp(i,j,k) + increment_data%delp_inc(i,j,k)
+             if ( .not. Atm%flagstruct%hydrostatic ) then
+                delz(i,j,k) = delz(i,j,k) + increment_data%delz_inc(i,j,k)
+             endif
+             q(i,j,k,sphum)   = q(i,j,k,sphum)   + increment_data%tracer_inc(i,j,k,sphum)
+             q(i,j,k,liq_wat) = q(i,j,k,liq_wat) + increment_data%tracer_inc(i,j,k,liq_wat)
 #ifdef MULTI_GASES
-    q(:,:,:,spo)     = q(:,:,:,spo)     + increment_data%tracer_inc(:,:,:,spo)
-    q(:,:,:,spo2)    = q(:,:,:,spo2)    + increment_data%tracer_inc(:,:,:,spo2)
-    q(:,:,:,spo3)    = q(:,:,:,spo3)    + increment_data%tracer_inc(:,:,:,spo3)
+             q(i,j,k,spo)     = q(i,j,k,spo)     + increment_data%tracer_inc(i,j,k,spo)
+             q(i,j,k,spo2)    = q(i,j,k,spo2)    + increment_data%tracer_inc(i,j,k,spo2)
+             q(i,j,k,spo3)    = q(i,j,k,spo3)    + increment_data%tracer_inc(i,j,k,spo3)
 #else
-    q(:,:,:,o3mr)    = q(:,:,:,o3mr)    + increment_data%tracer_inc(:,:,:,o3mr)
+             q(i,j,k,o3mr)    = q(i,j,k,o3mr)    + increment_data%tracer_inc(i,j,k,o3mr)
 #endif
+          enddo
+       enddo
+    enddo
 
   end subroutine read_da_inc_cubed_sphere
           
