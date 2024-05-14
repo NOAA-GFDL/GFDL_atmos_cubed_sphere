@@ -39,10 +39,10 @@ module molecular_diffusion_mod
 ! </table>
 
       use constants_mod,      only: rdgas, cp_air
-      use fv_mp_mod,          only: is_master
+      use fv_mp_mod,          only: is_master, mp_reduce_max
       use mpp_mod,            only: FATAL, mpp_error, stdlog, input_nml_file
       use fms_mod,            only: check_nml_error, open_namelist_file, close_file
-      use fv_grid_utils_mod,  only: g_sum
+      use fv_grid_utils_mod,  only: g_sum, cubed_to_latlon, update_dwinds_phys
       use mpp_domains_mod,    only: domain2d
       use fv_arrays_mod,      only: fv_grid_type, fv_grid_bounds_type, fv_flags_type
       use fv_mp_mod,          only: is_master
@@ -52,6 +52,8 @@ module molecular_diffusion_mod
       use fv_timing_mod,      only: timing_on, timing_off
       use tp_core_mod,        only: copy_corners, &
                               deln_flux_explm, deln_flux_explm_udvd
+
+      use fv_diagnostics_mod,  only: prt_mxm
 
 #ifdef MULTI_GASES
       use multi_gases_mod,   only: ind_gas, num_gas, virqd, vicpqd, vicvq, vicvqd, virq
@@ -64,9 +66,7 @@ module molecular_diffusion_mod
       integer :: md_layers, md_tadj_layers
       real tau_visc, tau_cond, tau_diff
       real md_consv_te
-      real md_wait_hr
-      real md_wait_sec
-      logical md_time
+      logical md_subcycle
       real, parameter:: amo=15.9994, amo2=31.9999, amo3=47.9982     !g/mol
       real, parameter::              amn2=28.013,  amh2o=18.0154    !g/mol
 !< muo3 and muh2o are not precise, correct later
@@ -98,13 +98,11 @@ module molecular_diffusion_mod
 !--------------------------------------------
       integer, intent(in):: ncnst, nwat
 !
-      md_wait_sec = md_wait_hr * 3600.0
-      md_time = .false.
 
       if( is_master() ) then
         write(*,*) ' molecular_diffusion is on'
-        write(*,*) ' molecular_diffusion initial wait seconds ',md_wait_sec
         write(*,*) ' molecular_diffusion number of layers ',md_layers
+        write(*,*) ' molecular_diffusion subcycling ',md_subcycle
         write(*,*) ' thermosphere adjustment number of layers ',md_tadj_layers
         write(*,*) ' energy conservation of MD (0:off, 1:on) ',md_consv_te
         write(*,*) ' viscosity    day ',tau_visc,' with effect ',tau_visc
@@ -132,7 +130,7 @@ module molecular_diffusion_mod
 
       namelist /molecular_diffusion_nml/ tau_visc, tau_cond, tau_diff, &
                                          md_layers, md_tadj_layers, &
-                                         md_wait_hr, md_consv_te
+                                         md_consv_te, md_subcycle
 
       unit = stdlog()
 
@@ -239,15 +237,15 @@ module molecular_diffusion_mod
 
         mur(n) = mu * t69 / rho
         lam(n) = la * t69 / rho / cvx
-!       lam(n) = la * t69 / rho / cpx
+!        lam(n) = la * t69 / rho / cpx
 
 !reasonable assured
-         mur(n) = min(mur(n),1.0e15)    ! viscosity
-         lam(n) = min(lam(n),1.0e15)    ! conductivity
-         d12(n) = min(d12(n),1.0e15)    ! diffusivity
+!         mur(n) = min(mur(n),1.0e15)    ! viscosity
+!         lam(n) = min(lam(n),1.0e15)    ! conductivity
+!         d12(n) = min(d12(n),1.0e15)    ! diffusivity
 
       enddo
-
+     
       return
       end subroutine molecular_diffusion_coefs
       subroutine thermosphere_adjustment(domain,gridstruct,npz,bd,ng,pt)
@@ -332,59 +330,120 @@ module molecular_diffusion_mod
   return
   end subroutine thermosphere_adjustment
 
-! d_md :: D-Grid 2D molecular diffusion
+  subroutine molecular_diffusion_run(u,v,w,delp,pt,pkz,cappa,q,bd,   &
+                            gridstruct,flagstruct,domain,npx,npy,npz, &
+                            nq,dt,it,akap,zvir,cv_air,ng,delz)
+  type(fv_grid_bounds_type), intent(IN) :: bd
+  real, intent(inout):: pt(bd%isd:bd%ied,bd%jsd:bd%jed,npz)
+  real, intent(in):: pkz(bd%is:bd%ie,bd%js:bd%je,npz)
+  real, intent(in):: delp(bd%isd:bd%ied,bd%jsd:bd%jed,npz)
+  real, intent(in):: delz(bd%is:,bd%js:,1:)
+  real, intent(in):: cappa(bd%isd:bd%ied,bd%jsd:bd%jed,npz)
+  real, intent(inout):: w(bd%isd:bd%ied,bd%jsd:bd%jed,npz)
+  real, intent(inout):: u(bd%isd:bd%ied,bd%jsd:bd%jed+1,npz)
+  real, intent(inout):: v(bd%isd:bd%ied+1,bd%jsd:bd%jed,npz)
+  real, intent(inout):: q( bd%isd:bd%ied,bd%jsd:bd%jed,npz, nq)
 
-!>@brief The subroutine 'd_md' peforms D-grid molecular diffusion
-   subroutine d_md(p, t,  u,  v, w, q,  &
-                   it, nq, k, km, dt,   &
-                   gridstruct, flagstruct, bd)
+  integer, intent(in):: npx,npy,npz,nq,it,ng
+  real, intent(in)::akap,zvir,dt,cv_air
+  type(fv_grid_type),  intent(INOUT), target :: gridstruct
+  type(fv_flags_type), intent(IN),    target :: flagstruct
+  type(domain2d), intent(inout) :: domain
 
-      integer, intent(IN):: nq, k, km, it
-      real   , intent(IN):: dt
-      type(fv_grid_bounds_type), intent(IN) :: bd
-      real, intent(INOUT), dimension(bd%isd:bd%ied,  bd%jsd:bd%jed  ):: p, t
-      real, intent(INOUT), dimension(bd%isd:      ,  bd%jsd:        ):: w
-      real, intent(INOUT), dimension(bd%isd:bd%ied  ,bd%jsd:bd%jed+1):: u
-      real, intent(INOUT), dimension(bd%isd:bd%ied+1,bd%jsd:bd%jed  ):: v
-      real, intent(INOUT):: q(bd%isd:bd%ied,bd%jsd:bd%jed,km,nq)
-      type(fv_grid_type), intent(IN), target :: gridstruct
-      type(fv_flags_type), intent(IN), target :: flagstruct
-!---
-      real, dimension(bd%isd:bd%ied,bd%jsd:bd%jed,1:nq)::  qtra
-      real, dimension(bd%isd:bd%ied,bd%jsd:bd%jed):: temp, plyr
-      real, dimension(bd%isd:bd%ied,bd%jsd:bd%jed):: visc, cond, diff
+  type(group_halo_update_type) :: i_pack(6)
+  real, dimension (bd%isd:bd%ied,bd%jsd:bd%jed,md_layers) :: p, t, e, wh
+  real, dimension (bd%isd:bd%ied,bd%jsd:bd%jed+1,md_layers) :: uh
+  real, dimension (bd%isd:bd%ied+1,bd%jsd:bd%jed,md_layers) :: vh
+  real, dimension (bd%isd:bd%ied,bd%jsd:bd%jed,md_layers,nq) :: qh
+  real, dimension (bd%isd:bd%ied,bd%jsd:bd%jed) :: plyr, temp, visc, cond, diff
+  real, dimension (bd%isd:bd%ied,bd%jsd:bd%jed,md_layers) :: cond3d, diff3d, visc3d_loc
+  real, dimension (bd%isd:bd%ied,bd%jsd:bd%jed,nq) :: qtra
+  real, dimension (bd%isd:bd%ied,bd%jsd:bd%jed,npz) :: ua, va
+  integer :: i, j, k, ijm
+  integer :: is,  ie,  js,  je
+  integer :: isd, ied, jsd, jed
+  integer :: nord
+  integer :: idir, iq, iter, ii
+  real :: coefmax, tst, mx
 
-      real :: coefmax
+  is  = bd%is
+  ie  = bd%ie
+  js  = bd%js
+  je  = bd%je
+  isd = bd%isd
+  ied = bd%ied
+  jsd = bd%jsd
+  jed = bd%jed
+  ijm = (ied-isd+1)*(jed-jsd+1)
+  nord = 0
 
-      integer :: i, j, iq, n
-      integer :: ijm,idir
+                                       call timing_on('d_md')
 
-      integer :: is,  ie,  js,  je
-      integer :: isd, ied, jsd, jed
-      integer :: npx, npy, nord
+    t = 0.
 
-      is  = bd%is
-      ie  = bd%ie
-      js  = bd%js
-      je  = bd%je
-      isd = bd%isd
-      ied = bd%ied
-      jsd = bd%jsd
-      jed = bd%jed
-      ijm = (ied-isd+1)*(jed-jsd+1)
+    do k=1, md_layers
+      uh(:,:,k) = u(:,:,k)
+      vh(:,:,k) = v(:,:,k)
+      wh(:,:,k) = w(:,:,k)
+      qh(:,:,k,:) = q(:,:,k,:)
+      do j=js,je
+        do i=is,ie
 
-      npx      = flagstruct%npx
-      npy      = flagstruct%npy
-      nord     = flagstruct%nord
+          t(i,j,k) = pt(i,j,k)
+#ifdef MOIST_CAPPA
+          p(i,j,k) = exp( log(pkz(i,j,k)) / cappa(i,j,k) )
+#else
+#ifdef MULTI_GASES
+          p(i,j,k) = exp( log(pkz(i,j,k)) / &
+                   (akap*virqd(q(i,j,k,:))/vicpqd(q(i,j,k,:))) )
+#else
+          p(i,j,k) = exp( log(pkz(i,j,k)) / akap )
+#endif
+#endif
+          if( md_consv_te .gt. 0.0 ) &
+            e(i,j,k) = 0.5*(w(i,j,k)**2 + 0.5*gridstruct%rsin2(i,j)*(         &
+                     u(i,j,k)**2+u(i,j+1,k)**2 + v(i,j,k)**2+v(i+1,j,k)**2 -&
+                     (u(i,j,k)+u(i,j+1,k))*(v(i,j,k)+v(i+1,j,k))*            &
+                     gridstruct%cosa_s(i,j)))
 
+        enddo
+      enddo
+    enddo
+
+! ------- update halo to prepare for diffusion -------
+                             call timing_on('COMM_TOTAL')
+    call start_group_halo_update(i_pack(1), p, domain)
+    call start_group_halo_update(i_pack(2), t, domain)
+    call start_group_halo_update(i_pack(3), wh, domain)
+    call start_group_halo_update(i_pack(4), uh, vh, domain, gridtype=DGRID_NE)
+    if ( nq > 0 ) then
+                                       call timing_on('COMM_TRACER')
+                    call start_group_halo_update(i_pack(5), qh, domain)
+                                       call timing_off('COMM_TRACER')
+    endif
+
+    call complete_group_halo_update(i_pack(1), domain)
+    call complete_group_halo_update(i_pack(2), domain)
+    call complete_group_halo_update(i_pack(3), domain)
+    call complete_group_halo_update(i_pack(4), domain)
+    if ( nq>0 ) then
+                                       call timing_on('COMM_TRACER')
+         call complete_group_halo_update(i_pack(5), domain)
+                                       call timing_off('COMM_TRACER')
+    endif
+                             call timing_off('COMM_TOTAL')
+
+    mx = 0.
+    coefmax=0.125*min(gridstruct%da_min,gridstruct%da_min_c)/abs(dt)
+    do k=1,md_layers
 !
 ! prepare molecular diffusion coefficients
 !
       do j=jsd,jed
          do i=isd,ied
-            plyr(i,j) = p(i,j)
-            temp(i,j) = t(i,j)
-            qtra(i,j,1:nq) = q(i,j,k,1:nq)
+            plyr(i,j) = p(i,j,k)
+            temp(i,j) = t(i,j,k)
+            qtra(i,j,1:nq) = qh(i,j,k,1:nq)
           enddo
       enddo
 
@@ -409,221 +468,109 @@ module molecular_diffusion_mod
                                          qtra(isd,jsd,1),visc(isd,jsd),&
                                          cond(isd,jsd  ),diff(isd,jsd))
 
-      visc3d(:,:,k) = visc(:,:)
+      visc3d_loc(:,:,k) = visc(:,:)
+      cond3d(:,:,k) = cond(:,:)
+      diff3d(:,:,k) = diff(:,:)
 
-! time scale  and options
+      if(md_subcycle)then
+        do j=jsd,jed
+          do i=isd,ied
+            tst = max(visc(i,j),cond(i,j),diff(i,j))/coefmax
+            if(tst>mx) mx = tst
+          enddo
+        enddo
+      endif
+    enddo
 
-      coefmax=0.125*min(gridstruct%da_min,gridstruct%da_min_c)/abs(dt)
-!     if( is_master() ) &
-!        write(*,'(a,i5,5g13.6)') &
-!             ' k coefmax da_c da dx dy',k,coefmax,gridstruct%da_min_c,&
-!           gridstruct%da_min,gridstruct%dx(is,js),gridstruct%dy(is,js)
+    if(md_subcycle)then
+      call mp_reduce_max(mx)
+      iter = ceiling(mx)
+      if( is_master() ) write(*,*) ' Number of MD subcycles ', iter, mx, coefmax
+    else
+      iter = 1
+    endif
+    
+    do ii=1,iter
+      if(ii>1)then
+        call complete_group_halo_update(i_pack(2), domain)
+        call complete_group_halo_update(i_pack(3), domain)
+        call complete_group_halo_update(i_pack(4), domain)
+        if ( nq>0 ) then
+                                           call timing_on('COMM_TRACER')
+             call complete_group_halo_update(i_pack(5), domain)
+                                           call timing_off('COMM_TRACER')
+        endif
+                                 call timing_off('COMM_TOTAL')
+      endif
 
-      do j=jsd,jed
-         do i=isd,ied
-            visc(i,j) = min(coefmax,visc(i,j))*abs(dt)*tau_visc
-            cond(i,j) = min(coefmax,cond(i,j))*abs(dt)*tau_cond
-            diff(i,j) = min(coefmax,diff(i,j))*abs(dt)*tau_diff
-         enddo
-      enddo
+      do k=1,md_layers
 
-!
-! compute diffusion with dimensional split alternatively for implicit
-! explicit diffusion has direct computation not dimensional splitting.
-      idir = mod(it-1,2)+1
+        if(md_subcycle)then
+          visc(:,:) = (visc3d_loc(:,:,k)/iter)*abs(dt)*tau_visc
+          cond(:,:) = (cond3d(:,:,k)/iter)*abs(dt)*tau_cond
+          diff(:,:) = (diff3d(:,:,k)/iter)*abs(dt)*tau_diff
+        else
+          do j=jsd,jed
+            do i=isd,ied
+              visc(i,j) = min(coefmax,visc3d_loc(i,j,k))*abs(dt)*tau_visc
+              cond(i,j) = min(coefmax,cond3d(i,j,k))*abs(dt)*tau_cond
+              diff(i,j) = min(coefmax,diff3d(i,j,k))*abs(dt)*tau_diff
+            enddo
+          enddo
+        endif
 
 ! t
-        call deln_flux_explm(nord,is,ie,js,je,npx,npy,cond,t,gridstruct,bd)
+        call deln_flux_explm(nord,is,ie,js,je,npx,npy,cond,t(isd,jsd,k),gridstruct,bd)
 
 ! q
         do iq=1,nq
-          call deln_flux_explm(nord,is,ie,js,je,npx,npy,diff,q(isd,jsd,k,iq),gridstruct,bd)
+          call deln_flux_explm(nord,is,ie,js,je,npx,npy,diff,qh(isd,jsd,k,iq),gridstruct,bd)
         enddo
 
-! u v
+! u v 
         call deln_flux_explm_udvd(nord,is,ie,js,je,npx,npy,visc, &
-                                     u,v,gridstruct,bd)
+                                  uh(isd,jsd,k),vh(isd,jsd,k),gridstruct,bd)
 ! w
-        call deln_flux_explm(nord,is,ie,js,je,npx,npy,visc,w,gridstruct,bd)
-
-      return
-
- end subroutine d_md
-
-  subroutine molecular_diffusion_run(u,v,w,delp,pt,pkz,cappa,q,bd,   &
-                            gridstruct,flagstruct,domain,i_pack,npx,npy,npz, &
-                            nq,dt,it,akap,zvir,cv_air)
-  type(fv_grid_bounds_type), intent(IN) :: bd
-  real, intent(inout):: pkz(bd%is:bd%ie,bd%js:bd%je,npz)
-  real, intent(inout):: pt(bd%isd:bd%ied,bd%jsd:bd%jed,npz)
-  real, intent(inout):: delp(bd%isd:bd%ied,bd%jsd:bd%jed,npz)
-  real, intent(inout):: cappa(bd%isd:bd%ied,bd%jsd:bd%jed,npz)
-  real, intent(inout):: w(bd%isd:bd%ied,bd%jsd:bd%jed,npz)
-  real, intent(inout):: u(bd%isd:bd%ied,bd%jsd:bd%jed+1,npz)
-  real, intent(inout):: v(bd%isd:bd%ied+1,bd%jsd:bd%jed,npz)
-  real, intent(inout):: q( bd%isd:bd%ied,bd%jsd:bd%jed,npz, nq)
-
-  integer, intent(in):: npx,npy,npz,nq,it
-  real, intent(in)::akap,zvir,dt,cv_air
-  type(fv_grid_type),  intent(INOUT), target :: gridstruct
-  type(fv_flags_type), intent(IN),    target :: flagstruct
-  type(domain2d), intent(inout) :: domain
-  type(group_halo_update_type), intent(inout) :: i_pack(*)
-
-  real :: pkzf(bd%isd:bd%ied,bd%jsd:bd%jed,npz)
-  real, dimension (bd%isd:bd%ied,bd%jsd:bd%jed) :: p, t, e
-  integer :: i, j, k
-  integer :: is,  ie,  js,  je
-  integer :: isd, ied, jsd, jed
-
-      is  = bd%is
-      ie  = bd%ie
-      js  = bd%js
-      je  = bd%je
-      isd = bd%isd
-      ied = bd%ied
-      jsd = bd%jsd
-      jed = bd%jed
-
-                                       call timing_on('d_md')
-! -----------------------------------------------------
-! ------- update halo to prepare for diffusion -------
-    pkzf = 0.0
-    do k=1,npz
-       do j=js,je
-          pkzf(is:ie,j,k) = pkz(is:ie,j,k)
-       enddo
+        call deln_flux_explm(nord,is,ie,js,je,npx,npy,visc,wh(isd,jsd,k),gridstruct,bd)
+      enddo
+      
+      if(iter>1 .and. ii<iter)then
+                                 call timing_on('COMM_TOTAL')
+        call start_group_halo_update(i_pack(2), t, domain)
+        call start_group_halo_update(i_pack(3), wh, domain)
+        call start_group_halo_update(i_pack(4), uh, vh, domain, gridtype=DGRID_NE)
+        if ( nq > 0 ) then
+                                           call timing_on('COMM_TRACER')
+                        call start_group_halo_update(i_pack(5), qh, domain)
+                                           call timing_off('COMM_TRACER')
+        endif
+      endif
     enddo
 
-                             call timing_on('COMM_TOTAL')
-    call start_group_halo_update(i_pack(1),delp,  domain, complete=.false.)
-    call start_group_halo_update(i_pack(1), pt,   domain, complete=.true.)
-    call start_group_halo_update(i_pack(2),pkzf,  domain)
-    call start_group_halo_update(i_pack(7), w, domain)
-    call start_group_halo_update(i_pack(8), u, v, domain, gridtype=DGRID_NE)
-    if ( nq > 0 ) then
-                                       call timing_on('COMM_TRACER')
-                    call start_group_halo_update(i_pack(10), q, domain)
-                                       call timing_off('COMM_TRACER')
-    endif
-#ifdef MOIST_CAPPA
-    call start_group_halo_update(i_pack(12), cappa, domain)
-#endif
+    do k=1,md_layers
+      pt(:,:,k) = t(:,:,k)
+      u(:,:,k) = uh(:,:,k)
+      v(:,:,k) = vh(:,:,k)
+      w(:,:,k) = wh(:,:,k)
+      q(:,:,k,:) = qh(:,:,k,:)
+    enddo
 
-    call complete_group_halo_update(i_pack(1), domain)  ! delp. pt
-    call complete_group_halo_update(i_pack(2), domain)  ! pkzf
-    call complete_group_halo_update(i_pack(7), domain)  ! w
-    call complete_group_halo_update(i_pack(8), domain)
-    if ( nq>0 ) then
-                                       call timing_on('COMM_TRACER')
-         call complete_group_halo_update(i_pack(10), domain)
-                                       call timing_off('COMM_TRACER')
-    endif
-#ifdef MOIST_CAPPA
-    call complete_group_halo_update(i_pack(12), domain)
-#endif
-                             call timing_off('COMM_TOTAL')
-
-    if( flagstruct%nord>0 .and. (.not. (flagstruct%regional))) then
-        i=mod(it-1,2)+1        ! alternatively to avoid bias
-        do k=1,npz
-        call copy_corners(pt(isd,jsd,k), npx, npy, i, gridstruct%nested, bd, &
-                          gridstruct%sw_corner, gridstruct%se_corner, &
-                          gridstruct%nw_corner, gridstruct%ne_corner)
-        call copy_corners(pkzf(isd,jsd,k), npx, npy, i, gridstruct%nested, bd, &
-                          gridstruct%sw_corner, gridstruct%se_corner, &
-                          gridstruct%nw_corner, gridstruct%ne_corner)
-        call copy_corners(cappa(isd,jsd,k), npx, npy, i, gridstruct%nested,bd, &
-                          gridstruct%sw_corner, gridstruct%se_corner, &
-                          gridstruct%nw_corner, gridstruct%ne_corner)
-        enddo
-    endif
-
-!$OMP parallel do default(none) shared(npz,flagstruct,gridstruct,bd,      &
-!$OMP                                  it,dt,is,ie,js,je,isd,ied,jsd,jed, &
-!$OMP                                  pt,u,v,w,q,pkz,pkzf,cappa,akap,nq, &
-!$OMP                                  zvir,cv_air,md_layers,md_consv_te) &
-!$OMP                          private(k,i,j,p,t,e)
-! ----------------
-    do k=1, md_layers
-! ----------------
-
-! ------- prepare p and t for molecular diffusion coefficients
-
-       do j=jsd,jed
-          do i=isd,ied
-             t(i,j) = pt(i,j,k) * pkzf(i,j,k)
-#ifdef MULTI_GASES
-             t(i,j) = t(i,j) / virq(q(i,j,k,:))
-#else
-             t(i,j) = t(i,j) / (1+zvir*q(i,j,k,1))
-#endif
-#ifdef MOIST_CAPPA
-             p(i,j) = exp( log(pkzf(i,j,k)) / cappa(i,j,k) )
-#else
-#ifdef MULTI_GASES
-             p(i,j) = exp( log(pkzf(i,j,k)) / &
-                      (akap*virqd(q(i,j,k,:))/vicpqd(q(i,j,k,:))) )
-#else
-             p(i,j) = exp( log(pkzf(i,j,k)) / akap )
-#endif
-#endif
-             if( md_consv_te .gt. 0.0 ) &
-               e(i,j) = 0.5*(w(i,j,k)**2 + 0.5*gridstruct%rsin2(i,j)*(         &
-                        u(i,j,k)**2+u(i,j+1,k)**2 + v(i,j,k)**2+v(i+1,j,k)**2 -&
-                       (u(i,j,k)+u(i,j+1,k))*(v(i,j,k)+v(i+1,j,k))*            &
-                        gridstruct%cosa_s(i,j)))
-          enddo
-       enddo
-
-! compute molecular diffusion with implicit time and dimensional splits
-
-       call d_md( p(isd,jsd), t(isd,jsd),         &
-                  u(isd,jsd,k), v(isd,jsd,k), w(isd:,jsd:,k), q, &
-                  it, nq, k, npz, dt,                            &
-                  gridstruct, flagstruct, bd)
-
-       do j=js,je
+    if( md_consv_te .gt. 0.0 ) then
+      do k=1,md_layers
+        do j=js,je
           do i=is,ie
-             if( md_consv_te .gt. 0.0 ) then
-               e(i,j) = e(i,j) -  &
-                        0.5*(w(i,j,k)**2 + 0.5*gridstruct%rsin2(i,j)*(         &
-                        u(i,j,k)**2+u(i,j+1,k)**2 + v(i,j,k)**2+v(i+1,j,k)**2 -&
-                       (u(i,j,k)+u(i,j+1,k))*(v(i,j,k)+v(i+1,j,k))*            &
-                        gridstruct%cosa_s(i,j)))
-#ifdef MOIST_CAPPA
-               t(i,j) = t(i,j) + e(i,j) / &
-#ifdef MULTI_GASES
-                     (rdgas* virq(q(i,j,k,:))  *(1./cappa(i,j,k)-1.))
-#else
-                     (rdgas*(1+zvir*q(i,j,k,1))*(1./cappa(i,j,k)-1.))
-#endif
-             endif
-             pkz(i,j,k) = exp( log(p(i,j)) * cappa(i,j,k) )
-#else
-#ifdef MULTI_GASES
-               t(i,j) = t(i,j) + e(i,j) / (cv_air*vicvqd(q(i,j,k,:)))
-             endif
-             pkz(i,j,k) = exp( log(p(i,j)) * &
-                          (akap*virqd(q(i,j,k,:))/vicpqd(q(i,j,k,:))) )
-#else
-               t(i,j) = t(i,j) + e(i,j)/cv_air
-             endif
-             pkz(i,j,k) = exp( log(p(i,j)) * akap )
-#endif
-#endif
-#ifdef MULTI_GASES
-             t(i,j) = t(i,j) * virq(q(i,j,k,:))
-#else
-             t(i,j) = t(i,j) * (1+zvir*q(i,j,k,1))
-#endif
-            pt(i,j,k) = t(i,j) / pkz(i,j,k)
-          enddo
-       enddo
+              e(i,j,k) = e(i,j,k) -  &
+                         0.5*(w(i,j,k)**2 + 0.5*gridstruct%rsin2(i,j)*(         &
+                         u(i,j,k)**2+u(i,j+1,k)**2 + v(i,j,k)**2+v(i+1,j,k)**2 -&
+                         (u(i,j,k)+u(i,j+1,k))*(v(i,j,k)+v(i+1,j,k))*            &
+                         gridstruct%cosa_s(i,j)))
 
-! -------------------------------------------------
-    enddo       ! k loop of 2d molecular diffusion
-! -------------------------------------------------
+              pt(i,j,k) = pt(i,j,k) + e(i,j,k)/cv_air
+          enddo
+        enddo
+      enddo
+    endif
+
                                        call timing_off('d_md')
  return
  end subroutine molecular_diffusion_run

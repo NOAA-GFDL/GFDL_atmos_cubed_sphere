@@ -200,7 +200,7 @@ contains
     use CCPP_data,         only: cdata => cdata_tile
     use CCPP_data,         only: GFDL_interstitial
 
-    use molecular_diffusion_mod, only: md_time, md_wait_sec, md_tadj_layers,          &
+    use molecular_diffusion_mod, only: md_tadj_layers,          &
                                        thermosphere_adjustment, &
                                        molecular_diffusion_run
 
@@ -290,7 +290,6 @@ contains
 !      real, allocatable :: mol_kt(:,:,:)   
 !      real, allocatable :: mol_vu(:,:,:)    
 #endif
-      real, save :: time_offset = -1.00
       real t(bd%isd:bd%ied,bd%jsd:bd%jed)
       real       :: correct, aave_t1, ttsave, tdsave
       real:: akap, rdg, ph1, ph2, mdt, gam, amdt, u0
@@ -361,12 +360,6 @@ contains
 !      call init_ijk_mem(isd,ied, jsd,jed, npz+1, mol_kt, 3.9e-5)
 	
 #endif
-
-      if (flagstruct%molecular_diffusion ) then
-         call get_time(fv_time, seconds, days)
-         time_total = seconds + 86400. * days
-         if( time_offset .lt. 0.0) time_offset = time_total
-      endif
 
       !We call this BEFORE converting pt to virtual potential temperature,
       !since we interpolate on (regular) temperature rather than theta.
@@ -673,6 +666,7 @@ contains
       call start_group_halo_update(i_pack(12), cappa, domain)
 #endif
 #endif
+
 #ifdef MULTI_GASES
       call start_group_halo_update(i_pack(13), kapad, domain)
 #endif
@@ -709,6 +703,7 @@ contains
                                            call timing_off('COMM_TOTAL')
 #endif
 #ifdef MULTI_GASES
+
      call complete_group_halo_update(i_pack(13), domain)
 
      if ( ind_trkap > 1 ) then
@@ -833,120 +828,194 @@ contains
      
                                                   call timing_off('Remapping')
 
-#ifdef MULTI_GASES
-!
-! fv3wam kap_cor of pt before remapping
-!					     					     
-     if ( ind_trkap > 1 ) then
-!$OMP parallel do default(none) shared(is,ie,js,je, npz, ind_trkap, scal_kapcor,pe, peln, wam_kappain, q, pt, kappa, kapad)	
-         do k=1,npz
-          do j=js,je
-             do i=is,ie   
-                  
-!	     scal_kapcor=.5*( log(pe(i,k,j))+log(pe(i,k+1,j)) ) *(-wam_kappain(i,j,k)+q(i,j,k,ind_trkap))	     
-             scal_kapcor=.5*( peln(i,k,j)+ peln(i,k+1,j) ) *( q(i,j,k,ind_trkap)-wam_kappain(i,j,k)) 
-     
-             pt(i,j,k) = pt(i,j,k) * (1.0 - scal_kapcor)
-!	     	     	     
-!	     kap_cor(i,j,k) =scal_kapcor    
-!			      
-             enddo
-          enddo
-         enddo
- 
-!	  if( is_master() ) then 
-!	   write(6,*) ' fv_dyn_kap_cor ', maxval(kap_cor(is:ie, js:je,1:npz)), &
-!	                                minval(kap_cor(is:ie, js:je,1:npz))
-!	   write(6,*) 'fv_dyn kap_cor-pt2 ', maxval(pt(is:ie, js:je,1:npz)),  minval(pt(is:ie, js:je,1:npz))
-!	   write(6,*) 'fv_dyn kap_cor-pe2 ', maxval(pe(is:ie, 1:npz, js:je)),  minval(pe(is:ie, 1:npz+1, js:je))		
-!       endif	
-     
-     endif
-#endif
-     
+     if(last_step)then 
 #ifdef __GFORTRAN__
-!$OMP parallel do default(none) shared(is,ie,js,je,isd,ied,jsd,jed,npz,zvir,q,q_con,sphum,pkz,flagstruct,&
+!$OMP parallel do default(none) shared(is,ie,js,je,isd,ied,jsd,jed,npz,zvir,q,q_con,sphum,liq_wat, &
 #else
-!$OMP parallel do default(none) shared(is,ie,js,je,isd,ied,jsd,jed,npz,dp1,zvir,q,q_con,sphum,pkz,flagstruct,&
+!$OMP parallel do default(none) shared(is,ie,js,je,isd,ied,jsd,jed,npz,dp1,zvir,q,q_con,sphum,liq_wat, &
 #endif
-!$OMP                              kappa,liq_wat,rainwat,ice_wat,snowwat,graupel,hailwat, &
+!$OMP                                  rainwat,ice_wat,snowwat,graupel,hailwat,pkz,flagstruct, &
 #ifdef MULTI_GASES
-!$OMP                              kapad,nq,pe,num_gas, &
+!$OMP                                  kapad, nq, pe,    num_gas, ind_trkap,   &
 #endif
 #ifdef __GFORTRAN__
-!$OMP                                  rdg,delp,pt,delz,nwat)                    &
+!$OMP                                  kappa,rdg,delp,pt,delz,nwat)                    &
 #else
-!$OMP                                  cappa,rdg,delp,pt,delz,nwat)              &
+!$OMP                                  cappa,kappa,rdg,delp,pt,delz,nwat)              &
 #endif
 !$OMP                          private(cvm,i,j,k)
-
-      do k=1,npz
-       
-        if ( flagstruct%moist_phys ) then
-          do j=js,je
+       do k=1,npz
+         if ( flagstruct%moist_phys ) then
+           do j=js,je
 #ifdef MOIST_CAPPA
-            call moist_cv(is,ie,isd,ied,jsd,jed, npz, j, k, nwat, sphum, liq_wat, rainwat,    &
-                          ice_wat, snowwat, graupel, hailwat, q, q_con(is:ie,j,k), cvm)
+             call moist_cv(is,ie,isd,ied,jsd,jed, npz, j, k, nwat, sphum, liq_wat, rainwat,    &
+                           ice_wat, snowwat, graupel, hailwat, q, q_con(is:ie,j,k), cvm)
 #endif
-            do i=is,ie
+             do i=is,ie
 #ifdef MULTI_GASES
-              dp1(i,j,k) = virq(q(i,j,k,1:num_gas))-1.
-              kapad(i,j,k)= kappa * (virqd(q(i,j,k,1:num_gas))/vicpqd(q(i,j,k,1:num_gas)))
+               dp1(i,j,k) = virq(q(i,j,k,1:num_gas))-1.
+               kapad(i,j,k)= kappa * (virqd(q(i,j,k,1:num_gas))/vicpqd(q(i,j,k,1:num_gas)))
 #else
-              dp1(i,j,k) = zvir*q(i,j,k,sphum)
+               dp1(i,j,k) = zvir*q(i,j,k,sphum)
 #endif
 
 #ifdef MOIST_CAPPA
-              cappa(i,j,k) = rdgas/(rdgas + cvm(i)/(1.+dp1(i,j,k)) )
-              pkz(i,j,k) = exp(cappa(i,j,k)*log(rdg*delp(i,j,k)*pt(i,j,k)*    &
+               cappa(i,j,k) = rdgas/(rdgas + cvm(i)/(1.+dp1(i,j,k)) )
+               pkz(i,j,k) = exp(cappa(i,j,k)*log(rdg*delp(i,j,k)*pt(i,j,k)*    &
 #ifdef MULTI_GASES
-                           (1.+dp1(i,j,k))                  /delz(i,j,k)) )
+                            (1.+dp1(i,j,k))                  /delz(i,j,k)) )
 #else
-                           (1.+dp1(i,j,k))*(1.-q_con(i,j,k))/delz(i,j,k)) )
+                            (1.+dp1(i,j,k))*(1.-q_con(i,j,k))/delz(i,j,k)) )
 #endif
 
 #else
-              pkz(i,j,k) = exp( kappa*log(rdg*delp(i,j,k)*pt(i,j,k)*    &
-                           (1.+dp1(i,j,k))/delz(i,j,k)) )
+               pkz(i,j,k) = exp( kappa*log(rdg*delp(i,j,k)*pt(i,j,k)*    &
+                            (1.+dp1(i,j,k))/delz(i,j,k)) )
 !			    
 ! >>>>  Rd_multi = Rdgas*(1.+dp1(i,j,k))=Rdgas*virq(q(i,j,k,:))
 !
 #endif	   
-            enddo
-          enddo
-        else
+             enddo
+           enddo
+         else
 !	 
 ! dry-physics
 !	 
-        do j=js,je
-          do i=is,ie
-            dp1(i,j,k) = 0.
+           do j=js,je
+             do i=is,ie
+               dp1(i,j,k) = 0.
 #ifdef MULTI_GASES
-            kapad(i,j,k)= kappa * (virqd(q(i,j,k,1:num_gas))/vicpqd(q(i,j,k,1:num_gas)))
-            pkz(i,j,k) = exp(kapad(i,j,k)*log(rdg*virqd(q(i,j,k,1:num_gas))*delp(i,j,k)*pt(i,j,k)/delz(i,j,k)))
+               kapad(i,j,k)= kappa * (virqd(q(i,j,k,1:num_gas))/vicpqd(q(i,j,k,1:num_gas)))
+               pkz(i,j,k) = exp(kapad(i,j,k)*log(rdg*virqd(q(i,j,k,1:num_gas))*delp(i,j,k)*pt(i,j,k)/delz(i,j,k)))
 #else
-            pkz(i,j,k) = exp(kappa*log(rdg*delp(i,j,k)*pt(i,j,k)/delz(i,j,k)))
+               pkz(i,j,k) = exp(kappa*log(rdg*delp(i,j,k)*pt(i,j,k)/delz(i,j,k)))
 #endif
-          enddo
-        enddo
-      endif
-    enddo        !k-loop
+             enddo
+           enddo
+         endif
+       enddo        !k-loop
+
+#ifdef __GFORTRAN__
+!$OMP parallel do default(none) shared(is,ie,js,je,npz,pt,pkz,q_con)
+#else
+!$OMP parallel do default(none) shared(is,ie,js,je,npz,pt,dp1,pkz,q_con)
+#endif
+       do k=1,npz
+         do j=js,je
+           do i=is,ie
+
+#ifdef MULTI_GASES
+             pt(i,j,k) = pt(i,j,k)*(1.+dp1(i,j,k))/pkz(i,j,k)
+! Tv = T*Rv/Rd=T*(1.+ dp1)	   
+#else
+#ifdef USE_COND
+             pt(i,j,k) = pt(i,j,k)*(1.+dp1(i,j,k))*(1.-q_con(i,j,k))/pkz(i,j,k)
+#else
+             pt(i,j,k) = pt(i,j,k)*(1.+dp1(i,j,k))/pkz(i,j,k)
+#endif
+#endif
+           enddo
+         enddo
+       enddo
+
+#ifdef MULTI_GASES
+!
+! fv3wam kap_cor of pt
+!					     					     
+       if ( ind_trkap > 1 ) then
+!$OMP parallel do default(none) shared(is,ie,js,je, npz, ind_trkap, scal_kapcor,pe, peln, wam_kappain, q, pt, kappa, kapad)	
+         do k=1,npz
+           do j=js,je
+             do i=is,ie   
+               scal_kapcor=.5*( peln(i,k,j)+ peln(i,k+1,j) ) *( q(i,j,k,ind_trkap)-wam_kappain(i,j,k)) 
+               pt(i,j,k) = pt(i,j,k) * (1.0 - scal_kapcor)
+             enddo
+           enddo
+         enddo
+       endif
+#endif
+
+#ifdef __GFORTRAN__
+!$OMP parallel do default(none) shared(is,ie,js,je,isd,ied,jsd,jed,npz,zvir,q,q_con,sphum,liq_wat, &
+#else
+!$OMP parallel do default(none) shared(is,ie,js,je,isd,ied,jsd,jed,npz,dp1,zvir,q,q_con,sphum,liq_wat, &
+#endif
+!$OMP                                  rainwat,ice_wat,snowwat,graupel,hailwat,pkz,flagstruct, &
+#ifdef MULTI_GASES
+!$OMP                                  kapad, nq, pe,    num_gas, ind_trkap,   &
+#endif
+#ifdef __GFORTRAN__
+!$OMP                                  kappa,rdg,delp,pt,delz,nwat)                    &
+#else
+!$OMP                                  cappa,kappa,rdg,delp,pt,delz,nwat)              &
+#endif
+!$OMP                          private(cvm,i,j,k)
+       do k=1,npz
+         if ( flagstruct%moist_phys ) then
+           do j=js,je
+             do i=is,ie
+#ifdef MOIST_CAPPA
+               pkz(i,j,k) = exp((cappa(i,j,k)/(1.-cappa(i,j,k)))*log(rdg*delp(i,j,k)*pt(i,j,k)/delz(i,j,k)))
+#else
+               pkz(i,j,k) = exp( (kappa/(1.-kappa))*log(rdg*delp(i,j,k)*pt(i,j,k)/delz(i,j,k)))
+#endif	   
+             enddo
+           enddo
+         else
+!	 
+! dry-physics
+!	 
+           do j=js,je
+             do i=is,ie
+#ifdef MULTI_GASES
+               pkz(i,j,k) = exp((kapad(i,j,k)/(1.-kapad(i,j,k)))*log(rdg*delp(i,j,k)*pt(i,j,k)/delz(i,j,k)))
+#else
+               pkz(i,j,k) = exp((kappa/(1.-kappa))*log(rdg*delp(i,j,k)*pt(i,j,k)/delz(i,j,k)))
+#endif
+             enddo
+           enddo
+         endif
+       enddo
+
+#ifdef __GFORTRAN__
+!$OMP parallel do default(none) shared(is,ie,js,je,npz,pt,pkz,q_con)
+#else
+!$OMP parallel do default(none) shared(is,ie,js,je,npz,pt,dp1,pkz,q_con)
+#endif
+       do k=1,npz
+         do j=js,je
+           do i=is,ie
+
+#ifdef MULTI_GASES
+             pt(i,j,k) = (pt(i,j,k)/(1.+dp1(i,j,k)))*pkz(i,j,k)
+! Tv = T*Rv/Rd=T*(1.+ dp1)	   
+#else
+#ifdef USE_COND
+             pt(i,j,k) = (pt(i,j,k)/((1.+dp1(i,j,k))*(1.-q_con(i,j,k))))*pkz(i,j,k)
+#else
+             pt(i,j,k) = (pt(i,j,k)/(1.+dp1(i,j,k)))*pkz(i,j,k)
+#endif
+#endif
+           enddo
+         enddo
+       enddo
 
 ! -----------------------------------------------------
 ! direct explicit molecular diffusion
 ! -----------------------------------------------------
-    if ( flagstruct%molecular_diffusion .and. md_time ) then
-       call molecular_diffusion_run(u, v, w, delp, pt, pkz, cappa, q, bd,   &
-                 gridstruct, flagstruct, domain, i_pack, npx, npy, npz, nq, mdt, n_map, akap, zvir, cv_air)
-    endif
+      if ( flagstruct%molecular_diffusion .and. mdt>0) then
+        call molecular_diffusion_run(u, v, w, delp, pt, pkz, cappa, q, bd,   &
+                 gridstruct, flagstruct, domain, npx, npy, npz, nq, bdt, n_map, akap, zvir, cv_air, ng, delz)
+      endif
 ! -------------------------------------------------
 
-     if ( flagstruct%molecular_diffusion ) then
+       if ( flagstruct%molecular_diffusion ) then
 ! do thermosphere adjustment if it is turned on and at last_step.
-         if( md_tadj_layers .gt.0 .and. md_time .and. last_step ) then
-             call thermosphere_adjustment(domain,gridstruct,npz,bd,ng,pt)
-        endif ! md_tadj_layers>0 and md_time and last_step
-     endif
+         if( md_tadj_layers .gt.0) then
+           call thermosphere_adjustment(domain,gridstruct,npz,bd,ng,pt)
+         endif ! md_tadj_layers>0 and last_step
+       endif
+     endif ! last_step
 
      if ( flagstruct%fv_debug ) then
        if (is_master()) write(*,'(A, I3, A1, I3)') 'finished k_split ', n_map, '/', k_split
@@ -1000,12 +1069,6 @@ contains
 #endif
   enddo    ! n_map loop
                                                   call timing_off('FV_DYN_LOOP')
-  if ( flagstruct%molecular_diffusion ) then
-     if( .not. md_time .and. time_total - time_offset .gt. md_wait_sec ) then
-         md_time= .true.
-         if( is_master() ) write(*,*) 'Molecular diffusion is on with explicit scheme '
-     endif
-  endif
 
   if ( idiag%id_mdt > 0 .and. (.not.do_adiabatic_init) ) then
 ! Output temperature tendency due to inline moist physics:
