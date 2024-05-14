@@ -371,18 +371,18 @@ contains
                    i = (Atm(n)%bd%isc + Atm(n)%bd%iec)/2
                    j = (Atm(n)%bd%jsc + Atm(n)%bd%jec)/2
                    k = Atm(n)%npz/2
-                   if ( Atm(n)%flagstruct%gaussian_increment ) then
-                      if( is_master() ) write(*,*) 'Calling read_da_inc',Atm(n)%pt(i,j,k)
-                      call read_da_inc(Atm(n), Atm(n)%domain, Atm(n)%bd, Atm(n)%npz, Atm(n)%ncnst, &
-                           Atm(n)%u, Atm(n)%v, Atm(n)%q, Atm(n)%delp, Atm(n)%pt, Atm(n)%delz, isd, jsd, ied, jed, &
-                           isc, jsc, iec, jec )
-                      if( is_master() ) write(*,*) 'Back from read_da_inc',Atm(n)%pt(i,j,k)
-                   else
+                   if ( Atm(n)%flagstruct%increment_file_on_native_grid ) then
                       if( is_master() ) write(*,*) 'Calling read_da_inc_cubed_sphere',Atm(n)%pt(i,j,k)
                       call read_da_inc_cubed_sphere(Atm(n), Atm(n)%domain, Atm(n)%bd, Atm(n)%npz, Atm(n)%ncnst, &
                            Atm(n)%u, Atm(n)%v, Atm(n)%q, Atm(n)%delp, Atm(n)%pt, Atm(n)%delz, isd, jsd, ied, jed, &
                            isc, jsc, iec, jec )
                       if( is_master() ) write(*,*) 'Back from read_da_inc_cubed_sphere',Atm(n)%pt(i,j,k)
+                   else
+                      if( is_master() ) write(*,*) 'Calling read_da_inc',Atm(n)%pt(i,j,k)
+                      call read_da_inc(Atm(n), Atm(n)%domain, Atm(n)%bd, Atm(n)%npz, Atm(n)%ncnst, &
+                           Atm(n)%u, Atm(n)%v, Atm(n)%q, Atm(n)%delp, Atm(n)%pt, Atm(n)%delz, isd, jsd, ied, jed, &
+                           isc, jsc, iec, jec )
+                      if( is_master() ) write(*,*) 'Back from read_da_inc',Atm(n)%pt(i,j,k)
                    endif
                 endif
                 !====== end PJP added DA functionailty======

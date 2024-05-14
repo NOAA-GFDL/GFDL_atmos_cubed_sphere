@@ -66,7 +66,7 @@ module fv_iau_mod
   use fv_treat_da_inc_mod, only: remap_coef
   use tracer_manager_mod,  only: get_tracer_names,get_tracer_index, get_number_tracers
   use field_manager_mod,   only: MODEL_ATMOS
-  use module_get_cubed_sphere_inc, only : read_netcdf_inc, iau_internal_data_type
+  use module_cubed_sphere_inc, only : read_cubed_sphere_inc, increment_data_type
   implicit none
 
   private
@@ -96,8 +96,8 @@ module fv_iau_mod
     logical          :: drymassfixer = .false.
   end type iau_external_data_type
   type iau_state_type
-      type(iau_internal_data_type):: inc1
-      type(iau_internal_data_type):: inc2
+      type(increment_data_type)   :: inc1
+      type(increment_data_type)   :: inc2
       real(kind=kind_phys)        :: hr1
       real(kind=kind_phys)        :: hr2
       real(kind=kind_phys)        :: wt
@@ -268,10 +268,10 @@ subroutine IAU_initialize (IPD_Control, IAU_Data, Init_parm, Atm)
        enddo
        iau_state%wt_normfact = (2*nstep+1)/normfact
     endif
-    if ( Atm%flagstruct%gaussian_increment ) then
-       call read_iau_forcing(IPD_Control,iau_state%inc1,'INPUT/'//trim(IPD_Control%iau_inc_files(1)))
+    if ( Atm%flagstruct%increment_file_on_native_grid ) then
+       call read_cubed_sphere_inc('INPUT/'//trim(IPD_Control%iau_inc_files(1)), iau_state%inc1, Atm)
     else
-       call read_netcdf_inc('INPUT/'//trim(IPD_Control%iau_inc_files(1)), iau_state%inc1, Atm)
+       call read_iau_forcing(IPD_Control,iau_state%inc1,'INPUT/'//trim(IPD_Control%iau_inc_files(1)))
     endif
     if (nfiles.EQ.1) then  ! only need to get incrments once since constant forcing over window
        call setiauforcing(IPD_Control,IAU_Data,iau_state%wt)
@@ -284,10 +284,10 @@ subroutine IAU_initialize (IPD_Control, IAU_Data, Init_parm, Atm)
        allocate (iau_state%inc2%delz_inc (is:ie, js:je, km))
        allocate (iau_state%inc2%tracer_inc(is:ie, js:je, km,ntracers))
        iau_state%hr2=IPD_Control%iaufhrs(2)
-       if ( Atm%flagstruct%gaussian_increment ) then
-          call read_iau_forcing(IPD_Control,iau_state%inc2,'INPUT/'//trim(IPD_Control%iau_inc_files(2)))
+       if ( Atm%flagstruct%increment_file_on_native_grid ) then
+          call read_cubed_sphere_inc('INPUT/'//trim(IPD_Control%iau_inc_files(2)), iau_state%inc2, Atm)
        else
-          call read_netcdf_inc('INPUT/'//trim(IPD_Control%iau_inc_files(2)), iau_state%inc2, Atm)
+          call read_iau_forcing(IPD_Control,iau_state%inc2,'INPUT/'//trim(IPD_Control%iau_inc_files(2)))
        endif
     endif
 !   print*,'in IAU init',dt,rdt
@@ -374,10 +374,10 @@ subroutine getiauforcing(IPD_Control,IAU_Data,Atm)
             iau_state%hr2=IPD_Control%iaufhrs(itnext)
             iau_state%inc1=iau_state%inc2
             if (is_master()) print *,'reading next increment file',trim(IPD_Control%iau_inc_files(itnext))
-            if ( Atm%flagstruct%gaussian_increment ) then
-               call read_iau_forcing(IPD_Control,iau_state%inc2,'INPUT/'//trim(IPD_Control%iau_inc_files(itnext)))
+            if ( Atm%flagstruct%increment_file_on_native_grid ) then
+               call read_cubed_sphere_inc('INPUT/'//trim(IPD_Control%iau_inc_files(itnext)), iau_state%inc2, Atm)
             else
-               call read_netcdf_inc('INPUT/'//trim(IPD_Control%iau_inc_files(itnext)), iau_state%inc2, Atm)
+               call read_iau_forcing(IPD_Control,iau_state%inc2,'INPUT/'//trim(IPD_Control%iau_inc_files(itnext)))
             endif
          endif
          call updateiauforcing(IPD_Control,IAU_Data,iau_state%wt)
@@ -441,7 +441,7 @@ subroutine updateiauforcing(IPD_Control,IAU_Data,wt)
 
 subroutine read_iau_forcing(IPD_Control,increments,fname)
     type (IPD_control_type), intent(in) :: IPD_Control
-    type(iau_internal_data_type), intent(inout):: increments
+    type(increment_data_type), intent(inout):: increments
     character(len=*),  intent(in) :: fname
 !locals
     real, dimension(:,:,:), allocatable:: u_inc, v_inc

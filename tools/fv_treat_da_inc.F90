@@ -145,8 +145,8 @@ module fv_treat_da_inc_mod
                                get_var3_r4, &
                                get_var1_real, &
                                check_var_exists
-  use module_get_cubed_sphere_inc, only: read_netcdf_inc, &
-                                         iau_internal_data_type
+  use module_cubed_sphere_inc, only: read_cubed_sphere_inc, &
+                                     increment_data_type
   implicit none
   private
 
@@ -484,7 +484,7 @@ contains
     
     character(len=128)           :: fname
     integer                      :: sphum, liq_wat, spo, spo2, spo3, o3mr, i, j, k, itracer
-    type(iau_internal_data_type) :: increment_data
+    type(increment_data_type)    :: increment_data
     type(group_halo_update_type) :: i_pack(2)
     real                         :: ua_inc(is_in:ie_in, js_in:je_in, npz_in)
     real                         :: va_inc(is_in:ie_in, js_in:je_in, npz_in)
@@ -509,7 +509,7 @@ contains
     allocate(increment_data%tracer_inc(isc_in:iec_in,jsc_in:jec_in,npz_in,nq))
     
     ! Read increments
-    call read_netcdf_inc(fname, increment_data, Atm)
+    call read_cubed_sphere_inc(fname, increment_data, Atm)
 
     ! Wind increments
     ! ---------------

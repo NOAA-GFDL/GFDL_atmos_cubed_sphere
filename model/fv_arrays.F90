@@ -831,7 +831,7 @@ module fv_arrays_mod
                                        !< condition file (if nggps_ic or ecwmf_ic are .true.). This overrides the
                                        !< hard-coded levels in fv_eta. The default is .false.
    logical :: read_increment = .false.   !< read in analysis increment and add to restart
-   logical :: gaussian_increment = .true. !< increment is on Gaussian grid
+   logical :: increment_file_on_native_grid = .false. !< increment is on native cubed sphere grid grid else on Gaussian grid
 ! following are namelist parameters for Stochastic Energy Baskscatter dissipation estimate
    logical :: do_skeb  = .false.         !< save dissipation estimate
    integer :: skeb_npass  = 11           !< Filter dissipation estimate "skeb_npass" times

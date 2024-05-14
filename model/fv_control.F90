@@ -373,7 +373,7 @@ module fv_control_mod
      logical , pointer :: external_ic
      logical , pointer :: external_eta
      logical , pointer :: read_increment
-     logical , pointer :: gaussian_increment
+     logical , pointer :: increment_file_on_native_grid
      logical , pointer :: hydrostatic
      logical , pointer :: phys_hydrostatic
      logical , pointer :: use_hydro_pressure
@@ -950,8 +950,7 @@ module fv_control_mod
        external_ic                   => Atm%flagstruct%external_ic
        external_eta                  => Atm%flagstruct%external_eta
        read_increment                => Atm%flagstruct%read_increment
-       gaussian_increment            => Atm%flagstruct%gaussian_increment
-
+       increment_file_on_native_grid => Atm%flagstruct%increment_file_on_native_grid
        hydrostatic                   => Atm%flagstruct%hydrostatic
        phys_hydrostatic              => Atm%flagstruct%phys_hydrostatic
        use_hydro_pressure            => Atm%flagstruct%use_hydro_pressure
@@ -1093,7 +1092,7 @@ module fv_control_mod
             write_coarse_restart_files,&
             write_coarse_diagnostics,&
             write_only_coarse_intermediate_restarts, &
-            write_coarse_agrid_vel_rst, write_coarse_dgrid_vel_rst, ignore_rst_cksum, gaussian_increment
+            write_coarse_agrid_vel_rst, write_coarse_dgrid_vel_rst, ignore_rst_cksum, increment_file_on_native_grid
 
 
        ! Read FVCORE namelist
