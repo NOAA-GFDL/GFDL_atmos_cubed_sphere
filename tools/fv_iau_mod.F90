@@ -66,7 +66,7 @@ module fv_iau_mod
   use fv_treat_da_inc_mod, only: remap_coef
   use tracer_manager_mod,  only: get_tracer_names,get_tracer_index, get_number_tracers
   use field_manager_mod,   only: MODEL_ATMOS
-  use module_cubed_sphere_inc, only : read_cubed_sphere_inc, increment_data_type
+  use cubed_sphere_inc_mod, only : read_cubed_sphere_inc, increment_data_type
   implicit none
 
   private

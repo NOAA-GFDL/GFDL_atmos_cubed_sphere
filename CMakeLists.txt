@@ -102,7 +102,7 @@ list(APPEND tools_srcs
   tools/sim_nc_mod.F90
   tools/sorted_index.F90
   tools/test_cases.F90
-  tools/module_cubed_sphere_inc.F90)
+  tools/cubed_sphere_inc_mod.F90)
 
 list(APPEND tools_srcs_extra
   tools/fv_iau_mod.F90)

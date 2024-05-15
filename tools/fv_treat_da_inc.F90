@@ -103,6 +103,10 @@ module fv_treat_da_inc_mod
 !     <td>tracer_manager_mod</td>
 !     <td>get_tracer_names, get_number_tracers, get_tracer_index</td>
 !   </tr>
+!   <tr>
+!     <td>cubed_sphere_inc_mod</td>
+!     <td>read_cubed_sphere_inc, increment_data_type</td>
+!   </tr>  
 ! </table>
 
   use fms2_io_mod,       only: file_exists
@@ -145,8 +149,8 @@ module fv_treat_da_inc_mod
                                get_var3_r4, &
                                get_var1_real, &
                                check_var_exists
-  use module_cubed_sphere_inc, only: read_cubed_sphere_inc, &
-                                     increment_data_type
+  use cubed_sphere_inc_mod, only: read_cubed_sphere_inc, &
+                                  increment_data_type
   implicit none
   private
 
@@ -601,7 +605,7 @@ contains
                                1., ua_inc, va_inc, u, v, &
                                Atm%gridstruct, Atm%npx, Atm%npy, npz_in, fv_domain)
     endif
-       
+
     ! Remaining increments
     ! --------------------
     
