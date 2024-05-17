@@ -45,7 +45,7 @@ module cubed_sphere_inc_mod
       ! Read increments
       call get_var5_r4( ncid, 'u_inc', isc,iec, jsc,jec, 1,npz, itile, 1, increment_data%ua_inc )
       call get_var5_r4( ncid, 'v_inc', isc,iec, jsc,jec, 1,npz, itile, 1, increment_data%va_inc )
-      call get_var5_r4( ncid, 'temp_inc', isc,iec, jsc,jec, 1,npz, itile, 1, increment_data%temp_inc )
+      call get_var5_r4( ncid, 'T_inc', isc,iec, jsc,jec, 1,npz, itile, 1, increment_data%temp_inc )
       call get_var5_r4( ncid, 'delp_inc', isc,iec, jsc,jec, 1,npz, itile, 1, increment_data%delp_inc )
       if ( .not. Atm%flagstruct%hydrostatic ) then
          call get_var5_r4( ncid, 'delz_inc', isc,iec, jsc,jec, 1,npz, itile, 1, increment_data%delz_inc )

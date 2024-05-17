@@ -159,7 +159,7 @@ module fv_treat_da_inc_mod
 contains
   !=============================================================================
   !>@brief The subroutine 'read_da_inc' reads the increments of the diagnostic variables
-  !! from the DA-generated files.
+  !! from the DA-generated files on a lot-lon grid.
   !>@details Additional support of prognostic variables such as tracers can be assessed
   !! and added upon request.
   !>@author Xi.Chen <xi.chen@noaa.gov>
@@ -472,6 +472,11 @@ contains
     !---------------------------------------------------------------------------
   end subroutine read_da_inc
 
+  !=============================================================================
+  !>@brief The subroutine 'read_da_inc_cubed_sphere' reads increments of diagnostic variables
+  !! from DA-generated files on the native cubed-sphere grid.
+  !>@author David.New <david.new@noaa.gov>     
+  !>@date 05/16/2024  
   subroutine read_da_inc_cubed_sphere(Atm, fv_domain, bd, npz_in, nq, &
                                       u, v, q, delp, pt, delz, &
                                       is_in, js_in, ie_in, je_in, isc_in, jsc_in, iec_in, jec_in)
