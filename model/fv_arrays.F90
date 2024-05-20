@@ -698,6 +698,9 @@ module fv_arrays_mod
                          !< considered; and for non-hydrostatic models values of 10 or less should be
                          !< considered, with smaller values for higher-resolution.
    real    :: rf_cutoff = 30.E2   !< Pressure below which no Rayleigh damping is applied if tau > 0.
+   real    :: fast_tau_w_sec = 0.0 !< Time scale (seconds) for Rayleigh damping applied to vertical velocity only.
+                                   !< Values of 0.2 are very effective at eliminating spurious vertical motion in
+                                   !< the stratosphere. Default is 0.0, which disables this.
    logical :: filter_phys = .false.
    logical :: dwind_2d = .false.   !< Whether to use a simpler & faster algorithm for interpolating
                                    !< the A-grid (cell-centered) wind tendencies computed from the physics
@@ -1298,6 +1301,11 @@ module fv_arrays_mod
     integer, pointer :: npx, npy, npz, ncnst, ng
 
      integer, allocatable, dimension(:) :: pelist
+
+    ! These are set in fv_control_init() and used in fill_nested_grid_cpl()
+    ! to replace numerous p2p MPI transfers with a single mpp_broadcast()
+    integer, allocatable :: Bcast_ranks(:)
+    logical :: BcastMember
 
      type(fv_grid_bounds_type) :: bd
 
@@ -2060,7 +2068,7 @@ contains
           call deallocate_fv_nest_BC_type(Atm%neststruct%delz_BC)
        endif
 #endif
-
+       if(allocated(Atm%Bcast_ranks)) deallocate(Atm%Bcast_ranks)
     end if
 
     if (Atm%flagstruct%grid_type < 4) then

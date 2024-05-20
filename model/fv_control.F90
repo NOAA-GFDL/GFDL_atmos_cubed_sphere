@@ -331,6 +331,7 @@ module fv_control_mod
      real    , pointer :: consv_te
      real    , pointer :: tau
      real    , pointer :: tau_w
+     real    , pointer :: fast_tau_w_sec
      real    , pointer :: rf_cutoff
      logical , pointer :: filter_phys
      logical , pointer :: dwind_2d
@@ -450,7 +451,6 @@ module fv_control_mod
 
      allocate(global_pelist(npes))
      call mpp_get_current_pelist(global_pelist, commID=global_commID) ! for commID
-
 
      allocate(grids_master_procs(ngrids))
      pecounter = 0
@@ -733,6 +733,27 @@ module fv_control_mod
      Atm(this_grid)%neststruct%parent_proc = ANY(Atm(this_grid)%neststruct%child_grids) !ANY(tile_coarse == Atm(this_grid)%global_tile)
      Atm(this_grid)%neststruct%child_proc = ASSOCIATED(Atm(this_grid)%parent_grid) !this means a nested grid
 
+     if(n>1) then
+       call mpp_set_current_pelist( global_pelist )
+       do n=2,ngrids
+        ! Construct the MPI communicators that are used in fill_nested_grid_cpl()
+          allocate(Atm(n)%Bcast_ranks(1+size(Atm(n)%pelist)))
+          ! parent grid sending rank within Bcast_ranks array
+          Atm(n)%Bcast_ranks(1)=Atm(n)%parent_grid%pelist(1) + &
+                     ( Atm(n)%neststruct%parent_tile-tile_fine(Atm(n)%parent_grid%grid_number)+ &
+                       Atm(n)%parent_grid%flagstruct%ntiles-1 )*Atm(n)%parent_grid%npes_per_tile
+
+          Atm(n)%Bcast_ranks(2:(1+size(Atm(n)%pelist)))=Atm(n)%pelist ! Receivers
+          Atm(n)%BcastMember=.false.
+          if(any(mpp_pe() == Atm(n)%Bcast_ranks)) then
+            Atm(n)%BcastMember=.true.
+          endif
+
+          call mpp_declare_pelist(Atm(n)%Bcast_ranks(:))
+       enddo
+       call mpp_set_current_pelist(Atm(this_grid)%pelist)
+     endif
+
      if (ngrids > 1) call setup_update_regions
      if (Atm(this_grid)%neststruct%nestbctype > 1) then
         call mpp_error(FATAL, 'nestbctype > 1 not yet implemented')
@@ -887,6 +908,7 @@ module fv_control_mod
        consv_te                      => Atm%flagstruct%consv_te
        tau                           => Atm%flagstruct%tau
        tau_w                         => Atm%flagstruct%tau_w
+       fast_tau_w_sec                => Atm%flagstruct%fast_tau_w_sec
        rf_cutoff                     => Atm%flagstruct%rf_cutoff
        filter_phys                   => Atm%flagstruct%filter_phys
        dwind_2d                      => Atm%flagstruct%dwind_2d
@@ -1055,7 +1077,7 @@ module fv_control_mod
             dry_mass, grid_type, do_Held_Suarez, do_reed_physics, reed_cond_only, &
             consv_te, fill, filter_phys, fill_dp, fill_wz, fill_gfs, consv_am, RF_fast, &
             range_warn, dwind_2d, inline_q, z_tracer, reproduce_sum, adiabatic, do_vort_damp, no_dycore,   &
-            tau, tau_w, tau_h2o, rf_cutoff, nf_omega, hydrostatic, fv_sg_adj, sg_cutoff, breed_vortex_inline,  &
+            tau, tau_w, fast_tau_w_sec, tau_h2o, rf_cutoff, nf_omega, hydrostatic, fv_sg_adj, sg_cutoff, breed_vortex_inline,  &
             na_init, nudge_dz, hybrid_z, Make_NH, n_zs_filter, nord_zs_filter, full_zs_filter, reset_eta,         &
             pnats, dnats, dnrts, a2b_ord, remap_t, p_ref, d2_bg_k1, d2_bg_k2,  &
             c2l_ord, dx_const, dy_const, umax, deglat,      &

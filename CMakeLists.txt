@@ -109,6 +109,7 @@ list(APPEND tools_srcs_extra
 list(APPEND driver_srcs
   driver/fvGFS/DYCORE_typedefs.F90
   driver/fvGFS/fv_nggps_diag.F90
+  driver/fvGFS/fv_ufs_restart_io.F90
   driver/fvGFS/atmosphere.F90)
 
 list(APPEND fv3_srcs ${model_srcs}
@@ -177,7 +178,6 @@ add_library(FV3::fv3 ALIAS fv3)
 
 set_property(SOURCE model/nh_utils.F90 APPEND_STRING PROPERTY COMPILE_FLAGS "${FAST}")
 set_property(SOURCE model/fv_mapz.F90  APPEND_STRING PROPERTY COMPILE_FLAGS "${FAST}")
-set_property(SOURCE tools/fv_diagnostics.F90  APPEND_STRING PROPERTY COMPILE_FLAGS "-O0")
 
 set_target_properties(fv3 PROPERTIES Fortran_MODULE_DIRECTORY ${CMAKE_CURRENT_BINARY_DIR}/include/fv3)
 target_include_directories(fv3 PUBLIC $<BUILD_INTERFACE:${CMAKE_CURRENT_BINARY_DIR}/include/fv3>

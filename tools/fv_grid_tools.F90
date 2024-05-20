@@ -148,7 +148,7 @@ module fv_grid_tools_mod
   use fms2_io_mod,       only: file_exists, variable_exists, open_file, read_data, &
                                get_global_attribute, get_variable_attribute, &
                                close_file, get_mosaic_tile_grid, FmsNetcdfFile_t
-  use mosaic_mod,        only: get_mosaic_ntiles
+  use mosaic2_mod,        only: get_mosaic_ntiles
 
   implicit none
   private
@@ -227,6 +227,11 @@ contains
 
     call get_mosaic_tile_grid(atm_hgrid, atm_mosaic, Atm%domain)
 
+    if (open_file(Grid_input, atm_mosaic, "read")) then
+       ntiles = get_mosaic_ntiles(Grid_input)
+       call close_file(Grid_input)
+    endif
+
     grid_form = "none"
     if (open_file(Grid_input, atm_hgrid, "read")) then
        call get_global_attribute(Grid_input, "history", attvalue)
@@ -234,7 +239,6 @@ contains
     if(grid_form .NE. "gnomonic_ed") call mpp_error(FATAL, &
          "fv_grid_tools(read_grid): the grid should be 'gnomonic_ed' when reading from grid file, contact developer")
 
-    ntiles = get_mosaic_ntiles(atm_mosaic)
     if( .not. Atm%gridstruct%bounded_domain) then  !<-- The regional setup has only 1 tile so do not shutdown in that case.
        if(ntiles .NE. 6) call mpp_error(FATAL, &
             'fv_grid_tools(read_grid): ntiles should be 6 in mosaic file '//trim(atm_mosaic) )
@@ -2651,23 +2655,23 @@ contains
             !Nesting position information
             !BUG multiply by 180 not 90....
             write(*,*) 'NESTED GRID ', Atm%grid_number
-            ic = p_ind(1,1,1) ; jc = p_ind(1,1,1)
+            ic = p_ind(1,1,1) ; jc = p_ind(1,1,2)
             write(*,'(A, 2I5, 4F10.4)') 'SW CORNER: ', ic, jc, grid_global(1,1,:,1)*90./pi
-            ic = p_ind(1,npy,1) ; jc = p_ind(1,npy,1)
+            ic = p_ind(1,npy,1) ; jc = p_ind(1,npy,2)
             write(*,'(A, 2I5, 4F10.4)') 'NW CORNER: ', ic, jc, grid_global(1,npy,:,1)*90./pi
-            ic = p_ind(npx,npy,1) ; jc = p_ind(npx,npy,1)
+            ic = p_ind(npx,npy,1) ; jc = p_ind(npx,npy,2)
             write(*,'(A, 2I5, 4F10.4)') 'NE CORNER: ', ic, jc, grid_global(npx,npy,:,1)*90./pi
-            ic = p_ind(npx,1,1) ; jc = p_ind(npx,1,1)
+            ic = p_ind(npx,1,1) ; jc = p_ind(npx,1,2)
             write(*,'(A, 2I5, 4F10.4)') 'SE CORNER: ', ic, jc, grid_global(npx,1,:,1)*90./pi
          else
             write(*,*) 'PARENT GRID ', Atm%parent_grid%grid_number, Atm%parent_grid%global_tile
-            ic = p_ind(1,1,1) ; jc = p_ind(1,1,1)
+            ic = p_ind(1,1,1) ; jc = p_ind(1,1,2)
             write(*,'(A, 2I5, 4F10.4)') 'SW CORNER: ', ic, jc, Atm%parent_grid%grid_global(ic,jc,:,parent_tile)*90./pi
-            ic = p_ind(1,npy,1) ; jc = p_ind(1,npy,1)
+            ic = p_ind(1,npy,1) ; jc = p_ind(1,npy,2)
             write(*,'(A, 2I5, 4F10.4)') 'NW CORNER: ', ic, jc, Atm%parent_grid%grid_global(ic,jc,:,parent_tile)*90./pi
-            ic = p_ind(npx,npy,1) ; jc = p_ind(npx,npy,1)
+            ic = p_ind(npx,npy,1) ; jc = p_ind(npx,npy,2)
             write(*,'(A, 2I5, 4F10.4)') 'NE CORNER: ', ic, jc, Atm%parent_grid%grid_global(ic,jc,:,parent_tile)*90./pi
-            ic = p_ind(npx,1,1) ; jc = p_ind(npx,1,1)
+            ic = p_ind(npx,1,1) ; jc = p_ind(npx,1,2)
             write(*,'(A, 2I5, 4F10.4)') 'SE CORNER: ', ic, jc, Atm%parent_grid%grid_global(ic,jc,:,parent_tile)*90./pi
          endif
       end if
