@@ -159,7 +159,7 @@ module fv_treat_da_inc_mod
 contains
   !=============================================================================
   !>@brief The subroutine 'read_da_inc' reads the increments of the diagnostic variables
-  !! from the DA-generated files on a lot-lon grid.
+  !! from the DA-generated files on a lat-lon grid.
   !>@details Additional support of prognostic variables such as tracers can be assessed
   !! and added upon request.
   !>@author Xi.Chen <xi.chen@noaa.gov>
