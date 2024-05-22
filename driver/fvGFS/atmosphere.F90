@@ -498,6 +498,7 @@ contains
    ! and thread number are not used; set to safe values
    cdata%blk_no = 1
    cdata%thrd_no = 1
+   cdata%thrd_cnt = 1
 
    ! Create shared data type for fast and slow physics, one for each thread
 #ifdef OPENMP
