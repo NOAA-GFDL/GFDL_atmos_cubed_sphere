@@ -778,6 +778,26 @@ contains
              Atm(n)%nudge_diag%nudge_v_dt(isc:iec,jsc:jec,1:npz) = 0.0
           endif
 
+          id_t_dt_diabatic = register_diag_field ( trim(field), 'T_dt_diabatic', axes(1:3), Time,           &
+               'temperature tendency from diabatic processes (t_dt_phys + t_dt_gfdlmp)', 'K/s', missing_value=missing_value )
+          if (id_t_dt_diabatic > 0) then
+             if (.not. allocated(Atm(n)%phys_diag%phys_t_dt)) then
+                allocate(Atm(n)%phys_diag%phys_t_dt(isc:iec,jsc:jec,npz))
+             endif
+             if (.not. allocated(Atm(n)%inline_mp%t_dt)) then
+                allocate(Atm(n)%inline_mp%t_dt(isc:iec,jsc:jec,npz))
+             endif
+          endif
+          id_qv_dt_diabatic = register_diag_field ( trim(field), 'qv_dt_diabatic', axes(1:3), Time,           &
+               'temperature tendency from diabatic processes (qv_dt_phys + qv_dt_gfdlmp)', 'kg/kg/s', missing_value=missing_value )
+          if (id_qv_dt_diabatic > 0) then
+             if (.not. allocated(Atm(n)%phys_diag%phys_qv_dt)) then
+                allocate(Atm(n)%phys_diag%phys_qv_dt(isc:iec,jsc:jec,npz))
+             endif
+             if (.not. allocated(Atm(n)%inline_mp%qv_dt)) then
+                allocate(Atm(n)%inline_mp%qv_dt(isc:iec,jsc:jec,npz))
+             endif
+          endif
        endif
 
 !
@@ -1810,6 +1830,11 @@ contains
        if (idiag%id_u_dt_sg > 0) used=send_data(idiag%id_u_dt_sg,  Atm(n)%sg_diag%u_dt(isc:iec,jsc:jec,1:npz), Time)
        if (idiag%id_v_dt_sg > 0) used=send_data(idiag%id_v_dt_sg,  Atm(n)%sg_diag%v_dt(isc:iec,jsc:jec,1:npz), Time)
        if (idiag%id_qv_dt_sg > 0) used=send_data(idiag%id_qv_dt_sg,  Atm(n)%sg_diag%qv_dt(isc:iec,jsc:jec,1:npz), Time)
+
+       if (id_t_dt_diabatic > 0) used=send_data(id_t_dt_diabatic, Atm(n)%phys_diag%phys_t_dt(isc:iec,jsc:jec,1:npz) + &
+                                                Atm(n)%inline_mp%t_dt(isc:iec,jsc:jec,1:npz), Time)
+       if (id_qv_dt_diabatic > 0) used=send_data(id_qv_dt_diabatic, Atm(n)%phys_diag%phys_qv_dt(isc:iec,jsc:jec,1:npz) + &
+                                                Atm(n)%inline_mp%qv_dt(isc:iec,jsc:jec,1:npz), Time)
 
        if(id_c15>0 .or. id_c25>0 .or. id_c35>0 .or. id_c45>0) then
           call wind_max(isc, iec, jsc, jec ,isd, ied, jsd, jed, Atm(n)%ua(isc:iec,jsc:jec,npz),   &
