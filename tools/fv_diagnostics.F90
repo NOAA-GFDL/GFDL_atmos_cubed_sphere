@@ -4406,7 +4406,8 @@ contains
       real, intent(in)::    fac
 ! BUG !!!
 !     real, intent(IN)::    area(is-n_g:ie+n_g, js-n_g:je+n_g, km)
-      real(kind=R_GRID), intent(IN)::    area(is-3:ie+3, js-3:je+3)
+!      real(kind=R_GRID), intent(IN)::    area(is-3:ie+3, js-3:je+3)
+      real(kind=R_GRID), intent(IN)::    area(is-n_g:ie+n_g, js-n_g:je+n_g)
       type(domain2d), intent(INOUT) :: domain
 !
       real qmin, qmax, gmean
@@ -4437,7 +4438,7 @@ contains
 
 ! SJL: BUG!!!
 !     gmean = g_sum(domain, q(is,js,km), is, ie, js, je, 3, area, 1)
-      gmean = g_sum(domain, q(is:ie,js:je,km), is, ie, js, je, 3, area, 1)
+      gmean = g_sum(domain, q(is:ie,js:je,km), is, ie, js, je, n_g, area, 1)
 
       if(master) write(6,*) qname, gn, qmax*fac, qmin*fac, gmean*fac
 

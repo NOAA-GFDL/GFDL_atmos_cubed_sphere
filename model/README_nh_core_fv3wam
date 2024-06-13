@@ -1,0 +1,34 @@
+The standard nh_core version has been temporarily separated into two files
+ to work around an Intel bug in which "fast transcendentals" 
+ do not give run-to-run reproducibility 
+ for one subroutine inside of the non-hydrostatic extensions.
+ 
+ nh_core.F90
+ nh_utils.F90
+ 
+ Oct-Nov 2022 SIVAY: updates for FV3WAM #ifdef MULTI_GASES
+ 
+ 1) kappa-correction in fv_dynamics.F90
+ 1a)                    multi_gases.F90, corrections for allocation of cpi, ri, cvi [ncnst-1]  
+    need new:
+    a) diag_table and field_table: ind_trkap = get_tracer_index (MODEL_ATMOS, 'tr_kappa')
+    
+    b) input.nml:  
+&fv_core_nml    
+    ncnst=ncnst_old+1=13  ; update of
+     
+&multi_gases_nml
+  ri= 295.3892,  461.50, 0., 0., 0., 0., 0., 173.2247,  519.674, 259.8370 ,0.,0.,  0.
+  cpi=1031.1083, 1846.00, 0., 0., 0., 0., 0.,  820.2391, 1299.185, 918.0969, 0.,0.,0.
+  
+&wamphys_tracer_cpi
+  ri= 295.3892,  461.50, 0., 0., 0., 0., 0., 173.2247,  519.674, 259.8370 ,0.,0.,0.
+  cpi=1031.1083, 1846.00, 0., 0., 0., 0., 0.,  820.2391, 1299.185, 918.0969, 0.,0.,0.
+  ntrac_wat=6
+  ntrac_nml=12
+
+  
+===========================================  
+ 2) dissipative solver for #ifdef MULTI_GASES FV3WAM
+    on perturbations of "non-hydrostatic pressure" and
+                        vertical winds W
