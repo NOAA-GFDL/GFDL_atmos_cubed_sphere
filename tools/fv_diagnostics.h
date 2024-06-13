@@ -95,6 +95,7 @@
      integer :: id_qr_dt_phys, id_qg_dt_phys, id_qs_dt_phys
      integer :: id_liq_wat_dt_phys, id_ice_wat_dt_phys
      integer :: id_intqv, id_intql, id_intqi, id_intqr, id_intqs, id_intqg
+     integer :: id_t_dt_diabatic, id_qv_dt_diabatic
 
 ! ESM/CM 3-D diagostics
      integer :: id_uq, id_vq, id_wq, id_iuq, id_ivq, id_iwq,   & ! moisture flux & vertical integral
@@ -105,4 +106,7 @@
      integer :: id_uw, id_vw
      integer :: id_lagrangian_tendency_of_hydrostatic_pressure
      integer :: id_t_dt_nudge, id_ps_dt_nudge, id_delp_dt_nudge, id_u_dt_nudge, id_v_dt_nudge
+#ifdef GFS_PHYS
+     integer :: id_delp_total
+#endif
 #endif _FV_DIAG__

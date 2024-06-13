@@ -44,6 +44,8 @@ module coarse_grained_diagnostics_mod
   type data_subtype
     real, dimension(:,:),   pointer :: var2 => null()
     real, dimension(:,:,:), pointer :: var3 => null()
+    real, dimension(:,:,:), pointer :: var3_sum_a => null()
+    real, dimension(:,:,:), pointer :: var3_sum_b => null()
   end type data_subtype
 
   type coarse_diag_type
@@ -787,6 +789,24 @@ contains
     coarse_diagnostics(index)%reduction_method = AREA_WEIGHTED
     coarse_diagnostics(index)%data%var2 => Atm(tile_count)%va(is:ie,js:je,npz)
 
+    index = index + 1
+    coarse_diagnostics(index)%axes = 3
+    coarse_diagnostics(index)%module_name = DYNAMICS
+    coarse_diagnostics(index)%name = 't_dt_diabatic_coarse'
+    coarse_diagnostics(index)%description = 'coarse-grained diabatic temperature tendency (t_dt_phys_coarse + t_dt_gfdlmp_coarse)'
+    coarse_diagnostics(index)%units = 'K/s'
+    coarse_diagnostics(index)%reduction_method = MASS_WEIGHTED
+    coarse_diagnostics(index)%special_case = 'sum_3d'
+
+    index = index + 1
+    coarse_diagnostics(index)%axes = 3
+    coarse_diagnostics(index)%module_name = DYNAMICS
+    coarse_diagnostics(index)%name = 'qv_dt_diabatic_coarse'
+    coarse_diagnostics(index)%description = 'coarse-grained diabatic specific humidity tendency (qv_dt_phys_coarse + qv_dt_gfdlmp_coarse)'
+    coarse_diagnostics(index)%units = 'K/s'
+    coarse_diagnostics(index)%reduction_method = MASS_WEIGHTED
+    coarse_diagnostics(index)%special_case = 'sum_3d'
+
     ! iv =-1: winds
     ! iv = 0: positive definite scalars
     ! iv = 1: temperature
@@ -1125,6 +1145,24 @@ contains
              Atm(tile_count)%sg_diag%qv_dt(is:ie,js:je,1:npz) = 0.0
           endif
           coarse_diagnostic%data%var3 => Atm(tile_count)%sg_diag%qv_dt(is:ie,js:je,1:npz)
+       elseif (trim(coarse_diagnostic%name) .eq. 't_dt_diabatic_coarse') then
+          if (.not. allocated(Atm(tile_count)%phys_diag%phys_t_dt)) then
+             allocate(Atm(tile_count)%phys_diag%phys_t_dt(is:ie,js:je,1:npz))
+          endif
+          if (.not. allocated(Atm(tile_count)%inline_mp%t_dt)) then
+             allocate(Atm(tile_count)%inline_mp%t_dt(is:ie,js:je,1:npz))
+          endif
+          coarse_diagnostic%data%var3_sum_a => Atm(tile_count)%phys_diag%phys_t_dt(is:ie,js:je,1:npz)
+          coarse_diagnostic%data%var3_sum_b => Atm(tile_count)%inline_mp%t_dt(is:ie,js:je,1:npz)
+       elseif (trim(coarse_diagnostic%name) .eq. 'qv_dt_diabatic_coarse') then
+          if (.not. allocated(Atm(tile_count)%phys_diag%phys_qv_dt)) then
+             allocate(Atm(tile_count)%phys_diag%phys_qv_dt(is:ie,js:je,1:npz))
+          endif
+          if (.not. allocated(Atm(tile_count)%inline_mp%qv_dt)) then
+             allocate(Atm(tile_count)%inline_mp%qv_dt(is:ie,js:je,1:npz))
+          endif
+          coarse_diagnostic%data%var3_sum_a => Atm(tile_count)%phys_diag%phys_qv_dt(is:ie,js:je,1:npz)
+          coarse_diagnostic%data%var3_sum_b => Atm(tile_count)%inline_mp%qv_dt(is:ie,js:je,1:npz)
        endif
     endif
   end subroutine maybe_allocate_reference_array
@@ -1315,25 +1353,35 @@ contains
     real, intent(in) :: omega(is:ie,js:je,1:npz)
     real, intent(out) :: result(is_coarse:ie_coarse,js_coarse:je_coarse,1:npz)
 
+    real, allocatable, target :: var3_sum(:,:,:)
+    real, pointer, dimension(:,:,:) :: var3 => null()
     character(len=256) :: error_message
+
+    if (trim(coarse_diag%special_case) .eq. 'sum_3d') then
+       allocate(var3_sum(is:ie,js:je,1:npz))
+       var3_sum = coarse_diag%data%var3_sum_a + coarse_diag%data%var3_sum_b
+       var3 => var3_sum
+    else
+       var3 => coarse_diag%data%var3
+    endif
 
     if (trim(coarse_diag%reduction_method) .eq. AREA_WEIGHTED) then
       call weighted_block_average( &
         area(is:ie,js:je), &
-        coarse_diag%data%var3, &
+        var3, &
         result &
       )
     elseif (trim(coarse_diag%reduction_method) .eq. MASS_WEIGHTED) then
       call weighted_block_average( &
         mass(is:ie,js:je,1:npz), &
-        coarse_diag%data%var3, &
+        var3, &
         result &
       )
     elseif (trim(coarse_diag%reduction_method) .eq. EDDY_COVARIANCE) then
        call eddy_covariance_2d_weights( &
             area(is:ie,js:je), &
             omega(is:ie,js:je,1:npz), &
-            coarse_diag%data%var3, &
+            var3, &
             result &
        )
     else
@@ -1356,12 +1404,22 @@ contains
     real, intent(out) :: result(is_coarse:ie_coarse,js_coarse:je_coarse,1:npz)
 
     real, allocatable, dimension(:,:,:) :: remapped_field, remapped_omega
+    real, allocatable, target :: var3_sum(:,:,:)
+    real, pointer, dimension(:,:,:) :: var3 => null()
     character(len=256) :: error_message
+
+    if (trim(coarse_diag%special_case) .eq. 'sum_3d') then
+       allocate(var3_sum(is:ie,js:je,1:npz))
+       var3_sum = coarse_diag%data%var3_sum_a + coarse_diag%data%var3_sum_b
+       var3 => var3_sum
+    else
+       var3 => coarse_diag%data%var3
+    endif
 
     allocate(remapped_field(is:ie,js:je,1:npz))
     call vertically_remap_field( &
       phalf, &
-      coarse_diag%data%var3, &
+      var3, &
       upsampled_coarse_phalf, &
       ptop, &
       remapped_field)

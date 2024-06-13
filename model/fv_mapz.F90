@@ -155,7 +155,7 @@ contains
   real, dimension(is:ie,km+1):: pe1, pe2, pk1, pk2, pn2, phis
   real, dimension(isd:ied,jsd:jed,km):: pe4
   real, dimension(is:ie+1,km+1):: pe0, pe3
-  real, dimension(is:ie):: gz, cvm
+  real, dimension(is:ie+1):: gz, cvm
   real, dimension(isd:ied,jsd:jed,km):: qnl, qni
 
   real rcp, rg, rrg, bkh, dtmp, k1k, dlnp, tpe
@@ -220,7 +220,7 @@ contains
                  do k=1,km
 #ifdef MOIST_CAPPA
                     call moist_cv(is,ie,isd,ied,jsd,jed, km, j, k, nwat, sphum, liq_wat, rainwat,    &
-                         ice_wat, snowwat, graupel, q, gz, cvm)
+                         ice_wat, snowwat, graupel, q, gz(is:ie), cvm(is:ie))
                     do i=is,ie
                        q_con(i,j,k) = gz(i)
                        cappa(i,j,k) = rdgas / ( rdgas + cvm(i)/(1.+r_vir*q(i,j,k,sphum)) )
@@ -272,7 +272,7 @@ contains
                  enddo
 #ifdef MOIST_CAPPA
                  call moist_cv(is,ie,isd,ied,jsd,jed, km, j, k, nwat, sphum, liq_wat, rainwat,    &
-                      ice_wat, snowwat, graupel, q, gz, cvm)
+                      ice_wat, snowwat, graupel, q, gz(is:ie), cvm(is:ie))
                  do i=is,ie
                     q_con(i,j,k) = gz(i)
                     cappa(i,j,k) = rdgas / ( rdgas + cvm(i)/(1.+r_vir*q(i,j,k,sphum)) )
@@ -366,7 +366,7 @@ contains
                  km,   pe2,  te,       &
                  is, ie, j, isd, ied, jsd, jed, akap, T_VAR=1, conserv=.true.)
          else
-            call map_scalar(km,  peln(is,1,j),  te, gz,   &
+            call map_scalar(km,  peln(is,1,j),  te, gz(is:ie),   &
                  km,  pn2,           te,              &
                  is, ie, j, isd, ied, jsd, jed, 1, abs(kord_tm), cp_air*t_min)
          endif
@@ -374,13 +374,13 @@ contains
       else
          if ( kord_tm<0 ) then
             ! Map t using logp
-            call map_scalar(km,  peln(is,1,j),  pt, gz,   &
+            call map_scalar(km,  peln(is,1,j),  pt, gz(is:ie),   &
                  km,  pn2,           pt,              &
                  is, ie, j, isd, ied, jsd, jed, &
                  1, abs(kord_tm), t_min)
          else
             ! Map pt using pe
-            call map1_ppm (km,  pe1,  pt,  gz,       &
+            call map1_ppm (km,  pe1,  pt,  gz(is:ie),       &
                  km,  pe2,  pt,                  &
                  is, ie, j, isd, ied, jsd, jed, &
                  1, abs(kord_tm))
@@ -423,7 +423,7 @@ contains
                  -2, abs(kord_wz))
          endif
          ! Remap delz for hybrid sigma-p coordinate
-         call map1_ppm (km,   pe1, delz,  gz,   & ! works
+         call map1_ppm (km,   pe1, delz,  gz(is:ie),   & ! works
               km,   pe2, delz,              &
               is, ie, j, is,  ie,  js,  je,  &
               1, abs(kord_tm))
@@ -527,8 +527,8 @@ contains
             ! Note: pt at this stage is T_v or T_m , unless kord_tm > 0
             do k=1,km
 #ifdef MOIST_CAPPA
-               call moist_cv(is,ie,isd,ied,jsd,jed, km, j, k, nwat, sphum, liq_wat, rainwat,    &
-                    ice_wat, snowwat, graupel, q, gz, cvm)
+               call moist_cv(is,ie+1,isd,ied,jsd,jed, km, j, k, nwat, sphum, liq_wat, rainwat,    &
+                    ice_wat, snowwat, graupel, q, gz(is:ie+1), cvm(is:ie+1))
                if ( kord_tm < 0 ) then
                   do i=is,ie
                      q_con(i,j,k) = gz(i)
@@ -613,7 +613,7 @@ contains
       enddo
    enddo
 
-   call map1_ppm( km, pe0(is:ie,:),   u,   gz,   &
+   call map1_ppm( km, pe0(is:ie,:),   u,   gz(is:ie),   &
                   km, pe3(is:ie,:),   u,               &
                   is, ie, j, isd, ied, jsd, jed+1, &
                   -1, kord_mt)
@@ -634,7 +634,7 @@ contains
          enddo
       enddo
 
-      call map1_ppm (km, pe0,  v, gz,    &
+      call map1_ppm (km, pe0,  v, gz(is:ie+1),    &
                      km, pe3,  v, is, ie+1,    &
                      j, isd, ied+1, jsd, jed, -1, kord_mt)
 
@@ -660,7 +660,7 @@ contains
             do k=km,1,-1
 #ifdef MOIST_CAPPA
                call moist_cv(is,ie,isd,ied,jsd,jed, km, j, k, nwat, sphum, liq_wat, rainwat,    &
-                    ice_wat, snowwat, graupel, q, gz, cvm)
+                    ice_wat, snowwat, graupel, q, gz(is:ie), cvm(is:ie))
                do i=is,ie
                   q_con(i,j,k) = gz(i)
                   cappa(i,j,k) = rdgas / ( rdgas + cvm(i)/(1.+r_vir*q(i,j,k,sphum)) )
@@ -759,7 +759,7 @@ contains
                  do k=1,km
 #ifdef USE_COND
                     call moist_cv(is,ie,isd,ied,jsd,jed, km, j, k, nwat, sphum, liq_wat, rainwat,    &
-                         ice_wat, snowwat, graupel, q, gz, cvm)
+                         ice_wat, snowwat, graupel, q, gz(is:ie), cvm(is:ie))
                     do i=is,ie
                        ! KE using 3D winds:
                        q_con(i,j,k) = gz(i)
@@ -870,7 +870,7 @@ contains
            else
 #ifdef USE_COND
               call moist_cv(is,ie,isd,ied,jsd,jed, km, j, k, nwat, sphum, liq_wat, rainwat,    &
-                   ice_wat, snowwat, graupel, q, gz, cvm)
+                   ice_wat, snowwat, graupel, q, gz(is:ie), cvm(is:ie))
               do i=is,ie
                  pt(i,j,k) = (pt(i,j,k)+dtmp/cvm(i)*pkz(i,j,k))/((1.+r_vir*q(i,j,k,sphum))*(1.-gz(i)))
               enddo
@@ -900,7 +900,7 @@ contains
 
 
  subroutine compute_total_energy(is, ie, js, je, isd, ied, jsd, jed, km,       &
-                                 u, v, w, delz, pt, delp, q, qc, pe, peln, hs, &
+                                 u, v, w, delz, pt, delp, q, qc, q_con, pe, peln, hs, &
                                  rsin2_l, cosa_s_l, &
                                  r_vir,  cp, rg, hlv, te_2d, ua, va, teq, &
                                  moist_phys, nwat, sphum, liq_wat, rainwat, ice_wat, snowwat, graupel, hydrostatic, id_te)
@@ -913,7 +913,7 @@ contains
    real, intent(inout), dimension(isd:ied,jsd:jed,km):: ua, va
    real, intent(in), dimension(isd:ied,jsd:jed,km):: pt, delp
    real, intent(in), dimension(isd:ied,jsd:jed,km,*):: q
-   real, intent(in), dimension(isd:ied,jsd:jed,km):: qc
+   real, intent(in), dimension(isd:ied,jsd:jed,km):: qc, q_con
    real, intent(inout)::  u(isd:ied,  jsd:jed+1,km)
    real, intent(inout)::  v(isd:ied+1,jsd:jed,  km)
    real, intent(in)::  w(isd:,jsd:,1:)   ! vertical velocity (m/s)
@@ -939,7 +939,7 @@ contains
 !----------------------
 !  call cubed_to_latlon(u, v, ua, va, dx, dy, rdxa, rdya, km, flagstruct%c2l_ord)
 
-!$OMP parallel do default(none) shared(is,ie,js,je,isd,ied,jsd,jed,km,hydrostatic,hs,pt,qc,rg,peln,te_2d, &
+!$OMP parallel do default(none) shared(is,ie,js,je,isd,ied,jsd,jed,km,hydrostatic,hs,pt,qc,q_con,rg,peln,te_2d, &
 !$OMP                                  pe,delp,cp,rsin2_l,u,v,cosa_s_l,delz,moist_phys,w, &
 !$OMP                                  q,nwat,liq_wat,rainwat,ice_wat,snowwat,graupel,sphum)   &
 !$OMP                          private(phiz, tv, cvm, qd)
@@ -952,7 +952,11 @@ contains
         enddo
         do k=km,1,-1
            do i=is,ie
+#ifdef USE_COND
+                tv(i,k) = pt(i,j,k)*(1.+qc(i,j,k))*(1-q_con(i,j,k))
+#else
                 tv(i,k) = pt(i,j,k)*(1.+qc(i,j,k))
+#endif
               phiz(i,k) = phiz(i,k+1) + rg*tv(i,k)*(peln(i,k+1,j)-peln(i,k,j))
            enddo
         enddo
