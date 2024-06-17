@@ -365,27 +365,6 @@ contains
              else
                 if( is_master() ) write(*,*) 'Warm starting, calling fv_io_restart'
                 call fv_io_read_restart(Atm(n)%domain_for_read,Atm(n:n))
-                !====== PJP added DA functionality ======
-                if (Atm(n)%flagstruct%read_increment) then
-                   ! print point in middle of domain for a sanity check
-                   i = (Atm(n)%bd%isc + Atm(n)%bd%iec)/2
-                   j = (Atm(n)%bd%jsc + Atm(n)%bd%jec)/2
-                   k = Atm(n)%npz/2
-                   if ( Atm(n)%flagstruct%increment_file_on_native_grid ) then
-                      if( is_master() ) write(*,*) 'Calling read_da_inc_cubed_sphere',Atm(n)%pt(i,j,k)
-                      call read_da_inc_cubed_sphere(Atm(n), Atm(n)%domain, Atm(n)%bd, Atm(n)%npz, Atm(n)%ncnst, &
-                           Atm(n)%u, Atm(n)%v, Atm(n)%q, Atm(n)%delp, Atm(n)%pt, Atm(n)%delz, isd, jsd, ied, jed, &
-                           isc, jsc, iec, jec )
-                      if( is_master() ) write(*,*) 'Back from read_da_inc_cubed_sphere',Atm(n)%pt(i,j,k)
-                   else
-                      if( is_master() ) write(*,*) 'Calling read_da_inc',Atm(n)%pt(i,j,k)
-                      call read_da_inc(Atm(n), Atm(n)%domain, Atm(n)%bd, Atm(n)%npz, Atm(n)%ncnst, &
-                           Atm(n)%u, Atm(n)%v, Atm(n)%q, Atm(n)%delp, Atm(n)%pt, Atm(n)%delz, isd, jsd, ied, jed, &
-                           isc, jsc, iec, jec )
-                      if( is_master() ) write(*,*) 'Back from read_da_inc',Atm(n)%pt(i,j,k)
-                   endif
-                endif
-                !====== end PJP added DA functionailty======
              endif
 
              seconds = 0; days = 0   ! Restart needs to be modified to record seconds and days.
@@ -486,7 +465,27 @@ contains
 
           endif !external_ic vs. restart vs. idealized
 
-
+          !====== PJP added DA functionality ======
+           if (Atm(n)%flagstruct%read_increment) then
+              ! print point in middle of domain for a sanity check
+              i = (Atm(n)%bd%isc + Atm(n)%bd%iec)/2
+              j = (Atm(n)%bd%jsc + Atm(n)%bd%jec)/2
+              k = Atm(n)%npz/2
+              if ( Atm(n)%flagstruct%increment_file_on_native_grid ) then
+                 if( is_master() ) write(*,*) 'Calling read_da_inc_cubed_sphere',Atm(n)%pt(i,j,k)
+                 call read_da_inc_cubed_sphere(Atm(n), Atm(n)%domain, Atm(n)%bd, Atm(n)%npz, Atm(n)%ncnst, &
+                      Atm(n)%u, Atm(n)%v, Atm(n)%q, Atm(n)%delp, Atm(n)%pt, Atm(n)%delz, isd, jsd, ied, jed, &
+                      isc, jsc, iec, jec )
+                 if( is_master() ) write(*,*) 'Back from read_da_inc_cubed_sphere',Atm(n)%pt(i,j,k)
+              else
+                 if( is_master() ) write(*,*) 'Calling read_da_inc',Atm(n)%pt(i,j,k)
+                 call read_da_inc(Atm(n), Atm(n)%domain, Atm(n)%bd, Atm(n)%npz, Atm(n)%ncnst, &
+                      Atm(n)%u, Atm(n)%v, Atm(n)%q, Atm(n)%delp, Atm(n)%pt, Atm(n)%delz, isd, jsd, ied, jed, &
+                      isc, jsc, iec, jec )
+                 if( is_master() ) write(*,*) 'Back from read_da_inc',Atm(n)%pt(i,j,k)
+              endif
+           endif
+           !====== end PJP added DA functionailty======
        endif !n==this_grid
 
 
