@@ -137,7 +137,7 @@ contains
                       akap, cappa, kord_mt, kord_wz, kord_tr, kord_tm,  peln, te0_2d,        &
                       ng, ua, va, omga, te, ws, fill, reproduce_sum, out_dt, dtdt,      &
                       ptop, ak, bk, pfull, gridstruct, domain, do_sat_adj, &
-                      hydrostatic, phys_hydrostatic, hybrid_z, do_omega, adiabatic, do_adiabatic_init, &
+                      hydrostatic, phys_hydrostatic, hybrid_z, adiabatic, do_adiabatic_init, &
                       do_inline_mp, inline_mp, c2l_ord, bd, fv_debug, &
                       moist_phys)
   logical, intent(in):: last_step
@@ -169,7 +169,7 @@ contains
   logical, intent(in):: do_inline_mp
   logical, intent(in):: fill                  !< fill negative tracers
   logical, intent(in):: reproduce_sum
-  logical, intent(in):: do_omega, adiabatic, do_adiabatic_init
+  logical, intent(in):: adiabatic, do_adiabatic_init
   real, intent(in) :: ptop
   real, intent(in) :: ak(km+1)
   real, intent(in) :: bk(km+1)
@@ -258,7 +258,7 @@ contains
 #ifdef MULTI_GASES
 !$OMP                                  num_gas,                                          &
 #endif
-!$OMP                                  hs,w,ws,kord_wz,do_omega,omga,rrg,kord_mt,pe4)    &
+!$OMP                                  hs,w,ws,kord_wz,omga,rrg,kord_mt,pe4)    &
 !$OMP                          private(qv,gz,cvm,kp,k_next,bkh,dp2,   &
 !$OMP                                  pe0,pe1,pe2,pe3,pk1,pk2,pn2,phis,q2,w2)
   do 1000 j=js,je+1
@@ -508,8 +508,8 @@ contains
    enddo
 
 !----------------
-   if ( do_omega ) then
-! Start do_omega
+   if ( last_step ) then
+! Start last_step
 ! Copy omega field to pe3
       do i=is,ie
          pe3(i,1) = 0.
@@ -588,7 +588,7 @@ contains
    endif
 
 ! Interpolate omega/pe3 (defined at pe0) to remapped cell center (dp2)
-   if ( do_omega ) then
+   if ( last_step ) then
    do k=1,km
       do i=is,ie
          dp2(i,k) = 0.5*(peln(i,k,j) + peln(i,k+1,j))
@@ -608,7 +608,7 @@ contains
           enddo
        enddo
    enddo
-   endif     ! end do_omega
+   endif     ! end last_step
 
   endif !(j < je+1)
 

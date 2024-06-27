@@ -192,6 +192,7 @@ use fv_arrays_mod,      only: fv_atmos_type, R_GRID, fv_grid_bounds_type, phys_d
 use fv_control_mod,     only: fv_control_init, fv_end, ngrids
 use fv_eta_mod,         only: get_eta_level
 use fv_fill_mod,        only: fill_gfs
+use dyn_core_mod,       only: del2_cubed
 use fv_dynamics_mod,    only: fv_dynamics
 use fv_nesting_mod,     only: twoway_nesting
 use boundary_mod,       only: fill_nested_grid
@@ -709,6 +710,22 @@ contains
     endif
 
     enddo !p_split
+    if (.not. Atm(n)%flagstruct%hydrostatic .and. .not.  Atm(n)%flagstruct%pass_full_omega_to_physics_in_non_hydrostatic_mode) then
+        Atm(n)%omga(isc:iec,jsc:jec,1:npz) = Atm(n)%delp(isc:iec,jsc:jec,1:npz) / Atm(n)%delz(isc:iec,jsc:jec,1:npz) * Atm(n)%w(isc:iec,jsc:jec,1:npz)
+        if(Atm(n)%flagstruct%nf_omega>0)   then
+           call del2_cubed(&
+                Atm(n)%omga, &
+                0.18*Atm(n)%gridstruct%da_min, &
+                Atm(n)%gridstruct, &
+                Atm(n)%domain, &
+                Atm(n)%npx, &
+                Atm(n)%npy, &
+                Atm(n)%npz, &
+                Atm(n)%flagstruct%nf_omega, &
+                Atm(n)%bd)
+        endif
+    endif
+
     call mpp_clock_end (id_dynam)
 
 !-----------------------------------------------------
@@ -2052,6 +2069,7 @@ contains
    real(kind=kind_phys) :: pk0inv, ptop, pktop
    real(kind=kind_phys) :: rTv, dm, qgrs_rad
    integer :: nb, blen, npz, i, j, k, ix, k1, kz, dnats, nq_adv
+
 #ifdef MULTI_GASES
    real :: q_grs(nq), q_min
 #endif
@@ -2118,7 +2136,7 @@ contains
          if(associated(IPD_Data(nb)%Statein%wgrs) .and. .not. Atm(mygrid)%flagstruct%hydrostatic) then
            IPD_Data(nb)%Statein%wgrs(ix,k) = _DBL_(_RL_(Atm(mygrid)%w(i,j,k1)))
          endif
-         IPD_Data(nb)%Statein%vvl(ix,k)  = _DBL_(_RL_(Atm(mygrid)%omga(i,j,k1)))
+         IPD_Data(nb)%Statein%vvl(ix,k) = _DBL_(_RL_(Atm(mygrid)%omga(i,j,k1)))
          IPD_Data(nb)%Statein%prsl(ix,k) = _DBL_(_RL_(Atm(mygrid)%delp(i,j,k1)))   ! Total mass
          if (Atm(mygrid)%flagstruct%do_skeb)IPD_Data(nb)%Statein%diss_est(ix,k) = _DBL_(_RL_(Atm(mygrid)%diss_est(i,j,k1)))
 
