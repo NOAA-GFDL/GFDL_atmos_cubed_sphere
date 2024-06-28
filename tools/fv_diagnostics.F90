@@ -1063,16 +1063,16 @@ contains
                'Relative Humidity', '%', missing_value=missing_value )
           !            'Relative Humidity', '%', missing_value=missing_value, range=rhrange )
           id_delp = register_diag_field ( trim(field), 'delp', axes(1:3), Time,        &
-               'pressure thickness', 'pa', missing_value=missing_value )
+               'pressure thickness', 'Pa', missing_value=missing_value )
           if ( .not. Atm(n)%flagstruct%hydrostatic )                                        &
                id_delz = register_diag_field ( trim(field), 'delz', axes(1:3), Time,        &
                'height thickness', 'm', missing_value=missing_value )
           if( Atm(n)%flagstruct%hydrostatic ) then
              id_pfhy = register_diag_field ( trim(field), 'pfhy', axes(1:3), Time,        &
-                  'hydrostatic pressure', 'pa', missing_value=missing_value )
+                  'hydrostatic pressure', 'Pa', missing_value=missing_value )
           else
              id_pfnh = register_diag_field ( trim(field), 'pfnh', axes(1:3), Time,        &
-                  'non-hydrostatic pressure', 'pa', missing_value=missing_value )
+                  'non-hydrostatic pressure', 'Pa', missing_value=missing_value )
           endif
           id_zratio = register_diag_field ( trim(field), 'zratio', axes(1:3), Time,        &
                'nonhydro_ratio', 'n/a', missing_value=missing_value )
@@ -4607,7 +4607,7 @@ contains
  real, intent(in):: ts(is-ng:ie+ng,js-ng:je+ng)
  real, intent(in):: peln(is:ie,km+1,js:je)
  real, intent(in):: height(kd)   !< must be monotonically decreasing with increasing k
- real, intent(out):: a2(is:ie,js:je,kd)      !< pressure (pa)
+ real, intent(out):: a2(is:ie,js:je,kd)      !< pressure (Pa)
  real, optional, intent(in):: fac
 
 ! local:
