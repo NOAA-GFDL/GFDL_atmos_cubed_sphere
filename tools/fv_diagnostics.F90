@@ -433,9 +433,9 @@ contains
     deallocate(grid_xt, grid_yt)
     deallocate(grid_x,  grid_y )
 
-    id_phalf = diag_axis_init('phalf', phalf, 'mb', 'z', &
+    id_phalf = diag_axis_init('phalf', phalf, 'mbar', 'z', &
             'ref half pressure level', direction=-1, set_name="dynamics")
-    id_pfull = diag_axis_init('pfull', pfull, 'mb', 'z', &
+    id_pfull = diag_axis_init('pfull', pfull, 'mbar', 'z', &
             'ref full pressure level', direction=-1, set_name="dynamics", edges=id_phalf)
 
 !---- register static fields -------
@@ -547,16 +547,16 @@ contains
        enddo
     end if
 
-    id_plev = diag_axis_init('plev', levs(1:nplev)*1.0, 'mb', 'z', &
+    id_plev = diag_axis_init('plev', levs(1:nplev)*1.0, 'mbar', 'z', &
             'actual pressure level', direction=-1, set_name="dynamics")
 
     axe2(1) = id_xt
     axe2(2) = id_yt
     axe2(3) = id_plev
 
-    id_plev_ave_edges = diag_axis_init('plev_ave_edges', levs_ave(1:nplev_ave+1)*1.0, 'mb', 'z', &
+    id_plev_ave_edges = diag_axis_init('plev_ave_edges', levs_ave(1:nplev_ave+1)*1.0, 'mbar', 'z', &
             'averaging layer pressure interface', direction=-1, set_name="dynamics")
-    id_plev_ave = diag_axis_init('plev_ave', (levs_ave(1:nplev_ave)+levs_ave(2:nplev_ave+1))*0.5, 'mb', 'z', &
+    id_plev_ave = diag_axis_init('plev_ave', (levs_ave(1:nplev_ave)+levs_ave(2:nplev_ave+1))*0.5, 'mbar', 'z', &
             'averaging layer pressure level', direction=-1, set_name="dynamics", edges=id_plev_ave_edges)
 
     axe_ave(1) = id_xt
@@ -994,32 +994,32 @@ contains
 ! Sea-level-pressure
 !-------------------
        id_slp = register_diag_field (trim(field), 'slp', axes(1:2),  Time,   &
-                                     'sea-level pressure', 'mb', missing_value=missing_value,  &
+                                     'sea-level pressure', 'mbar', missing_value=missing_value,  &
                                       range=slprange )
 !----------------------------------
 ! Bottom level pressure for masking
 !----------------------------------
        id_pmask = register_diag_field (trim(field), 'pmask', axes(1:2),  Time,   &
-                                     'masking pressure at lowest level', 'mb',   &
+                                     'masking pressure at lowest level', 'mbar',   &
                                       missing_value=missing_value )
 !------------------------------------------
 ! Fix for Bottom level pressure for masking
 !------------------------------------------
        id_pmaskv2 = register_diag_field(TRIM(field), 'pmaskv2', axes(1:2), Time,&
-            & 'masking pressure at lowest level', 'mb', missing_value=missing_value)
+            & 'masking pressure at lowest level', 'mbar', missing_value=missing_value)
 
 !-------------------
 ! Hurricane scales:
 !-------------------
 ! Net effects: ~ intensity * freq
        id_c15 = register_diag_field (trim(field), 'cat15', axes(1:2),  Time,   &
-                                     'de-pression < 1000', 'mb', missing_value=missing_value)
+                                     'de-pression < 1000', 'mbar', missing_value=missing_value)
        id_c25 = register_diag_field (trim(field), 'cat25', axes(1:2),  Time,   &
-                                     'de-pression < 980', 'mb', missing_value=missing_value)
+                                     'de-pression < 980', 'mbar', missing_value=missing_value)
        id_c35 = register_diag_field (trim(field), 'cat35', axes(1:2),  Time,   &
-                                     'de-pression < 964', 'mb', missing_value=missing_value)
+                                     'de-pression < 964', 'mbar', missing_value=missing_value)
        id_c45 = register_diag_field (trim(field), 'cat45', axes(1:2),  Time,   &
-                                     'de-pression < 944', 'mb', missing_value=missing_value)
+                                     'de-pression < 944', 'mbar', missing_value=missing_value)
 ! Frequency:
        id_f15 = register_diag_field (trim(field), 'f15', axes(1:2),  Time,   &
                                      'Cat15 frequency', 'none', missing_value=missing_value)
