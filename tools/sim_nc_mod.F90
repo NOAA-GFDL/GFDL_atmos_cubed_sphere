@@ -47,13 +47,8 @@ module sim_nc_mod
  public  open_ncfile, close_ncfile, get_ncdim1, get_var1_double, get_var2_double,   &
          get_var3_real, get_var3_double, get_var3_r4, get_var2_real, get_var2_r4,   &
          handle_err, check_var, get_var1_real, get_var_att_double, &
-         check_var_exists, get_var5_r4
+         check_var_exists
 
- interface get_var5_r4
-    module procedure get_var5_r4_to_r4
-    module procedure get_var5_r4_to_double
- end interface get_var5_r4
- 
  contains
 
       subroutine open_ncfile( iflnm, ncid )
@@ -344,96 +339,6 @@ module sim_nc_mod
       if (status .ne. NF_NOERR) call handle_err('get_var4_double get_vara_double '//var4_name,status)
 
       end subroutine get_var4_double
-
-      subroutine get_var5_r4_to_r4( ncid, var5_name, is,ie, js,je, ks,ke, ntile, ntime, var5 )
-      implicit         none
-#include <netcdf.inc>
-      integer, intent(in):: ncid
-      character*(*), intent(in)::  var5_name
-      integer, intent(in):: is, ie, js, je, ks, ke, ntile, ntime
-      real*4, intent(out):: var5(is:ie,js:je,ks:ke)
-      integer:: status, var5id
-      integer:: start(5), icount(5)
-
-      start(1) = is
-      start(2) = js
-      start(3) = ks
-      start(4) = ntile
-      start(5) = ntime
-
-      icount(1) = ie - is + 1
-      icount(2) = je - js + 1
-      icount(3) = ke - ks + 1
-      icount(4) = 1           ! one tile at a time
-      icount(5) = 1           ! one time level at a time
-
-      status = nf_inq_varid (ncid, var5_name, var5id)
-
-      status = nf_get_vara_real(ncid, var5id, start, icount, var5)
-
-      if (status .ne. NF_NOERR) call handle_err('get_var5_r4 get_vara_real '//var5_name,status)
-
-      end subroutine get_var5_r4_to_r4
-
-      subroutine get_var5_r4_to_double( ncid, var5_name, is,ie, js,je, ks,ke, ntile, ntime, var5 )
-      implicit         none
-#include <netcdf.inc>
-      integer, intent(in):: ncid
-      character*(*), intent(in)::  var5_name
-      integer, intent(in):: is, ie, js, je, ks, ke, ntile, ntime
-      real*8, intent(out):: var5(is:ie,js:je,ks:ke)
-      integer:: status, var5id
-      integer:: start(5), icount(5)
-
-      start(1) = is
-      start(2) = js
-      start(3) = ks
-      start(4) = ntile
-      start(5) = ntime
-
-      icount(1) = ie - is + 1
-      icount(2) = je - js + 1
-      icount(3) = ke - ks + 1
-      icount(4) = 1           ! one tile at a time
-      icount(5) = 1           ! one time level at a time
-
-      status = nf_inq_varid (ncid, var5_name, var5id)
-
-      status = nf_get_vara_real(ncid, var5id, start, icount, var5)
-
-      if (status .ne. NF_NOERR) call handle_err('get_var5_r4 get_vara_real '//var5_name,status)
-
-      end subroutine get_var5_r4_to_double
-
-      subroutine get_var5_double( ncid, var5_name, is,ie, js,je, ks,ke, ntile, ntime, var5 )
-      implicit         none
-#include <netcdf.inc>
-      integer, intent(in):: ncid
-      character*(*), intent(in)::  var5_name
-      integer, intent(in):: is, ie, js, je, ks, ke, ntile, ntime
-      real*8, intent(out):: var5(is:ie,js:je,ks:ke)
-      integer:: status, var5id
-      integer:: start(5), icount(5)
-
-      start(1) = is
-      start(2) = js
-      start(3) = ks
-      start(4) = ntile
-      start(5) = ntime
-
-      icount(1) = ie - is + 1
-      icount(2) = je - js + 1
-      icount(3) = ke - ks + 1
-      icount(4) = 1           ! one tile at a time
-      icount(5) = 1           ! one time level at a time
-
-      status = nf_inq_varid (ncid, var5_name, var5id)
-
-      status = nf_get_vara_double(ncid, var5id, start, icount, var5)
-
-      if (status .ne. NF_NOERR) call handle_err('get_var5_real get_vara_real '//var5_name,status)
-
-      end subroutine get_var5_double
 !------------------------------------------------------------------------
 
       subroutine get_real3( ncid, var4_name, im, jm, nt, var4 )
