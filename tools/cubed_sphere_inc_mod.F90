@@ -3,7 +3,7 @@ module cubed_sphere_inc_mod
   use tracer_manager_mod, only: get_tracer_index, get_number_tracers, get_tracer_names
   use field_manager_mod,  only: MODEL_ATMOS
   use fv_arrays_mod,      only: fv_atmos_type
-  use fms2_io_mod,        only: open_file, close_file, read_data, variable_exists, FmsNetcdfFile_t
+  use fms2_io_mod,        only: open_file, close_file, read_data, variable_exists, FmsNetcdfDomainFile_t
   
   implicit none
   type increment_data_type
@@ -26,10 +26,10 @@ module cubed_sphere_inc_mod
       type(increment_data_type), intent(inout) :: increment_data
       type(fv_atmos_type), intent(in)          :: Atm
 
-      type(FmsNetcdfFile_t) :: fileobj
-      integer               :: itracer, ntracers, itile
-      character(len=64)     :: tracer_name
-      character(len=1)      :: itile_str 
+      type(FmsNetcdfDomainFile_t) :: fileobj
+      integer                     :: itracer, ntracers, itile
+      character(len=64)           :: tracer_name
+      character(len=1)            :: itile_str 
       
       ! Get various dimensions
       call get_number_tracers(MODEL_ATMOS, num_tracers=ntracers)
@@ -37,11 +37,11 @@ module cubed_sphere_inc_mod
       write(itile_str, '(I0)') itile
 
       ! Open file
-      if (open_file(fileobj, trim(fname_prefix) // '.tile' // itile_str // '.nc', "read", Atm%domain)) then
+      if ( open_file(fileobj, trim(fname_prefix) // '.tile' // itile_str // '.nc', "read", Atm%domain) ) then
          ! Read increments
          call read_data(fileobj, 'u_inc', increment_data%ua_inc)
          call read_data(fileobj, 'v_inc', increment_data%va_inc)
-         call read_data(fileobj, 'T_inc', increment_data%T_inc)
+         call read_data(fileobj, 'T_inc', increment_data%temp_inc)
          call read_data(fileobj, 'delp_inc', increment_data%delp_inc)
          if ( .not. Atm%flagstruct%hydrostatic ) then
             call read_data(fileobj, 'delz_inc', increment_data%delz_inc)
