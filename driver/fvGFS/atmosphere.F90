@@ -192,6 +192,7 @@ use fv_arrays_mod,      only: fv_atmos_type, R_GRID, fv_grid_bounds_type, phys_d
 use fv_control_mod,     only: fv_control_init, fv_end, ngrids
 use fv_eta_mod,         only: get_eta_level
 use fv_fill_mod,        only: fill_gfs
+use dyn_core_mod,       only: del2_cubed
 use fv_dynamics_mod,    only: fv_dynamics
 use fv_nesting_mod,     only: twoway_nesting
 use boundary_mod,       only: fill_nested_grid
@@ -493,6 +494,7 @@ contains
    ! and thread number are not used; set to safe values
    cdata%blk_no = 1
    cdata%thrd_no = 1
+   cdata%thrd_cnt = 1
 
    ! Create shared data type for fast and slow physics, one for each thread
 #ifdef OPENMP
@@ -708,6 +710,22 @@ contains
     endif
 
     enddo !p_split
+    if (.not. Atm(n)%flagstruct%hydrostatic .and. .not.  Atm(n)%flagstruct%pass_full_omega_to_physics_in_non_hydrostatic_mode) then
+        Atm(n)%omga(isc:iec,jsc:jec,1:npz) = Atm(n)%delp(isc:iec,jsc:jec,1:npz) / Atm(n)%delz(isc:iec,jsc:jec,1:npz) * Atm(n)%w(isc:iec,jsc:jec,1:npz)
+        if(Atm(n)%flagstruct%nf_omega>0)   then
+           call del2_cubed(&
+                Atm(n)%omga, &
+                0.18*Atm(n)%gridstruct%da_min, &
+                Atm(n)%gridstruct, &
+                Atm(n)%domain, &
+                Atm(n)%npx, &
+                Atm(n)%npy, &
+                Atm(n)%npz, &
+                Atm(n)%flagstruct%nf_omega, &
+                Atm(n)%bd)
+        endif
+    endif
+
     call mpp_clock_end (id_dynam)
 
 !-----------------------------------------------------
@@ -864,17 +882,18 @@ contains
  end subroutine atmosphere_pref
 
 
- subroutine atmosphere_control_data (i1, i2, j1, j2, kt, p_hydro, hydro, tile_num)
+ subroutine atmosphere_control_data (i1, i2, j1, j2, kt, p_hydro, hydro, tile_of_mosaic, global_tile_num)
    integer, intent(out)           :: i1, i2, j1, j2, kt
    logical, intent(out), optional :: p_hydro, hydro
-   integer, intent(out), optional :: tile_num
+   integer, intent(out), optional :: tile_of_mosaic, global_tile_num
    i1 = Atm(mygrid)%bd%isc
    i2 = Atm(mygrid)%bd%iec
    j1 = Atm(mygrid)%bd%jsc
    j2 = Atm(mygrid)%bd%jec
    kt = Atm(mygrid)%npz
 
-   if (present(tile_num)) tile_num = Atm(mygrid)%tile_of_mosaic
+   if (present(global_tile_num)) global_tile_num = Atm(mygrid)%global_tile
+   if (present(tile_of_mosaic)) tile_of_mosaic = Atm(mygrid)%tile_of_mosaic
    if (present(p_hydro)) p_hydro   = Atm(mygrid)%flagstruct%phys_hydrostatic
    if (present(  hydro))   hydro   = Atm(mygrid)%flagstruct%hydrostatic
 
@@ -2050,6 +2069,7 @@ contains
    real(kind=kind_phys) :: pk0inv, ptop, pktop
    real(kind=kind_phys) :: rTv, dm, qgrs_rad
    integer :: nb, blen, npz, i, j, k, ix, k1, kz, dnats, nq_adv
+
 #ifdef MULTI_GASES
    real :: q_grs(nq), q_min
 #endif
@@ -2116,7 +2136,7 @@ contains
          if(associated(IPD_Data(nb)%Statein%wgrs) .and. .not. Atm(mygrid)%flagstruct%hydrostatic) then
            IPD_Data(nb)%Statein%wgrs(ix,k) = _DBL_(_RL_(Atm(mygrid)%w(i,j,k1)))
          endif
-         IPD_Data(nb)%Statein%vvl(ix,k)  = _DBL_(_RL_(Atm(mygrid)%omga(i,j,k1)))
+         IPD_Data(nb)%Statein%vvl(ix,k) = _DBL_(_RL_(Atm(mygrid)%omga(i,j,k1)))
          IPD_Data(nb)%Statein%prsl(ix,k) = _DBL_(_RL_(Atm(mygrid)%delp(i,j,k1)))   ! Total mass
          if (Atm(mygrid)%flagstruct%do_skeb)IPD_Data(nb)%Statein%diss_est(ix,k) = _DBL_(_RL_(Atm(mygrid)%diss_est(i,j,k1)))
 
