@@ -35,7 +35,11 @@ use diag_manager_mod,   only: register_diag_field, diag_axis_init, &
 use diag_data_mod,      only: CMOR_MISSING_VALUE, null_axis_id
 use tracer_manager_mod, only: get_tracer_index
 use field_manager_mod,  only: MODEL_ATMOS
+#ifdef OVERLOAD_R4
+use constantsR4_mod,    only: GRAV, RDGAS
+#else
 use constants_mod,      only: GRAV, RDGAS
+#endif
 
 use fv_mapz_mod,        only: E_Flux
 use fv_arrays_mod,      only: fv_atmos_type

@@ -37,7 +37,11 @@ use time_manager_mod, only: time_type, set_time, print_date,  &
 use  time_interp_mod, only: time_interp
 use get_cal_time_mod, only: get_cal_time
 use          mpp_mod, only: mpp_min, mpp_max
+#ifdef OVERLOAD_R4
+use  constantsR4_mod, only: RDGAS, RVGAS, PI, KAPPA, CP_AIR
+#else
 use    constants_mod, only: RDGAS, RVGAS, PI, KAPPA, CP_AIR
+#endif
 use fv_mapz_mod,      only: mappm
 implicit none
 private
