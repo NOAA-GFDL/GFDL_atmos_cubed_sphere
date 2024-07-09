@@ -30,6 +30,7 @@ module atmosphere_mod
 !-----------------
 ! FMS modules:
 !-----------------
+use platform_mod, only: r8_kind, r4_kind
 use atmos_co2_mod,         only: atmos_co2_rad, co2_radiation_override
 use block_control_mod,     only: block_control_type
 #ifdef OVERLOAD_R4
@@ -107,6 +108,36 @@ use coarse_grained_restart_files_mod, only: fv_coarse_restart_init
 implicit none
 private
 
+interface atmosphere_boundary
+  module procedure :: atmosphere_boundary_r4
+  module procedure :: atmosphere_boundary_r8
+end interface atmosphere_boundary
+
+interface atmosphere_pref
+  module procedure :: atmosphere_pref_r4
+  module procedure :: atmosphere_pref_r8
+end interface atmosphere_pref
+
+interface atmosphere_cell_area
+  module procedure :: atmosphere_cell_area_r4
+  module procedure :: atmosphere_cell_area_r8
+end interface atmosphere_cell_area
+
+interface get_bottom_mass
+  module procedure :: get_bottom_mass_r4
+  module procedure :: get_bottom_mass_r8
+end interface get_bottom_mass
+
+interface get_bottom_wind
+  module procedure :: get_bottom_wind_r4
+  module procedure :: get_bottom_wind_r8
+end interface get_bottom_wind
+
+interface get_stock_pe
+  module procedure :: get_stock_pe_r4
+  module procedure :: get_stock_pe_r8
+end interface get_stock_pe
+
 !--- driver routines
 public :: atmosphere_init, atmosphere_end, atmosphere_restart, &
           atmosphere_dynamics, atmosphere_state_update
@@ -169,7 +200,6 @@ character(len=20)   :: mod_name = 'GFDL/atmosphere_mod'
   type(fv_atmos_type), allocatable, target :: Atm(:)
 
   real, parameter:: w0_big = 60.  ! to prevent negative w-tracer diffusion
-
 !---dynamics tendencies for use in fv_subgrid_z and during fv_update_phys
   real, allocatable, dimension(:,:,:)   :: u_dt, v_dt, t_dt, qv_dt
   real, allocatable, dimension(:,:,:,:) :: q_dt
@@ -186,7 +216,13 @@ character(len=20)   :: mod_name = 'GFDL/atmosphere_mod'
 
 contains
 
-
+#if defined(OVERLOAD_R4)
+#define _DBL_(X) DBLE(X)
+#define _RL_(X) REAL(X,KIND=4)
+#else
+#define _DBL_(X) X
+#define _RL_(X) X
+#endif
 
  subroutine atmosphere_init (Time_init, Time, Time_step, Surf_diff, Grid_box)
    type (time_type),      intent(in)    :: Time_init, Time, Time_step
@@ -869,14 +905,6 @@ contains
 
  end subroutine atmosphere_resolution
 
-
- subroutine atmosphere_pref (p_ref)
-   real, dimension(:,:), intent(inout) :: p_ref
-
-   p_ref = pref
-
- end subroutine atmosphere_pref
-
  subroutine atmosphere_control_data (i1, i2, j1, j2, kt, p_hydro, hydro, do_uni_zfull) !miz
    integer, intent(out)           :: i1, i2, j1, j2, kt
    logical, intent(out), optional :: p_hydro, hydro, do_uni_zfull !miz
@@ -891,16 +919,6 @@ contains
    if (present(do_uni_zfull)) do_uni_zfull = Atm(mygrid)%flagstruct%do_uni_zfull
 
  end subroutine atmosphere_control_data
-
-
- subroutine atmosphere_cell_area  (area_out)
-   real, dimension(:,:),  intent(out)          :: area_out
-
-   area_out(1:iec-isc+1, 1:jec-jsc+1) =  Atm(mygrid)%gridstruct%area (isc:iec,jsc:jec)
-
- end subroutine atmosphere_cell_area
-
-
 
  subroutine atmosphere_grid_center (lon, lat)
 !---------------------------------------------------------------
@@ -918,33 +936,6 @@ contains
     end do
 
  end subroutine atmosphere_grid_center
-
-
-
- subroutine atmosphere_boundary (blon, blat, global)
-!---------------------------------------------------------------
-!    returns the longitude and latitude grid box edges
-!    for either the local PEs grid (default) or the global grid
-!---------------------------------------------------------------
-    real,    intent(out) :: blon(:,:), blat(:,:)   ! Unit: radian
-    logical, intent(in), optional :: global
-! Local data:
-    integer i,j
-
-    if( PRESENT(global) ) then
-      if (global) call mpp_error(FATAL, '==> global grid is no longer available &
-                               & in the Cubed Sphere')
-    endif
-
-    do j=jsc,jec+1
-       do i=isc,iec+1
-          blon(i-isc+1,j-jsc+1) = Atm(mygrid)%gridstruct%grid(i,j,1)
-          blat(i-isc+1,j-jsc+1) = Atm(mygrid)%gridstruct%grid(i,j,2)
-       enddo
-    end do
-
- end subroutine atmosphere_boundary
-
 
  subroutine set_atmosphere_pelist ()
    call mpp_set_current_pelist(Atm(mygrid)%pelist, no_sync=.TRUE.)
@@ -973,139 +964,6 @@ contains
    axes (1:size(axes(:))) = Atm(mygrid)%atmos_axes (1:size(axes(:)))
 
  end subroutine get_atmosphere_axes
-
-
-
- subroutine get_bottom_mass ( t_bot, tr_bot, p_bot, z_bot, p_surf, slp )
-!--------------------------------------------------------------
-! returns temp, sphum, pres, height at the lowest model level
-! and surface pressure
-!--------------------------------------------------------------
-   real, intent(out), dimension(isc:iec,jsc:jec):: t_bot, p_bot, z_bot, p_surf
-   real, intent(out), optional, dimension(isc:iec,jsc:jec):: slp
-   real, intent(out), dimension(isc:iec,jsc:jec,nq):: tr_bot
-   integer :: i, j, m, k, kr
-   real    :: rrg, sigtop, sigbot
-   real, dimension(isc:iec,jsc:jec) :: tref
-   real, parameter :: tlaps = 6.5e-3
-
-   rrg  = rdgas / grav
-
-   do j=jsc,jec
-      do i=isc,iec
-         p_surf(i,j) = Atm(mygrid)%ps(i,j)
-         t_bot(i,j) = Atm(mygrid)%pt(i,j,npz)
-         p_bot(i,j) = Atm(mygrid)%delp(i,j,npz)/(Atm(mygrid)%peln(i,npz+1,j)-Atm(mygrid)%peln(i,npz,j))
-         z_bot(i,j) = rrg*t_bot(i,j)*(1.+zvir*Atm(mygrid)%q(i,j,npz,sphum)) *  &
-                      (1. - Atm(mygrid)%pe(i,npz,j)/p_bot(i,j))
-      enddo
-   enddo
-
-   if ( present(slp) ) then
-     ! determine 0.8 sigma reference level
-     sigtop = Atm(mygrid)%ak(1)/pstd_mks+Atm(mygrid)%bk(1)
-     do k = 1, npz
-        sigbot = Atm(mygrid)%ak(k+1)/pstd_mks+Atm(mygrid)%bk(k+1)
-        if (sigbot+sigtop > 1.6) then
-           kr = k
-           exit
-        endif
-        sigtop = sigbot
-     enddo
-     do j=jsc,jec
-        do i=isc,iec
-           ! sea level pressure
-           tref(i,j) = Atm(mygrid)%pt(i,j,kr) * (Atm(mygrid)%delp(i,j,kr)/ &
-                            ((Atm(mygrid)%peln(i,kr+1,j)-Atm(mygrid)%peln(i,kr,j))*Atm(mygrid)%ps(i,j)))**(-rrg*tlaps)
-           slp(i,j) = Atm(mygrid)%ps(i,j)*(1.+tlaps*Atm(mygrid)%phis(i,j)/(tref(i,j)*grav))**(1./(rrg*tlaps))
-        enddo
-     enddo
-   endif
-
-! Copy tracers
-   do m=1,nq
-      do j=jsc,jec
-         do i=isc,iec
-            tr_bot(i,j,m) = Atm(mygrid)%q(i,j,npz,m)
-         enddo
-      enddo
-   enddo
-
- end subroutine get_bottom_mass
-
-
- subroutine get_bottom_wind ( u_bot, v_bot )
-!-----------------------------------------------------------
-! returns u and v on the mass grid at the lowest model level
-!-----------------------------------------------------------
-   real, intent(out), dimension(isc:iec,jsc:jec):: u_bot, v_bot
-   integer i, j
-
-   do j=jsc,jec
-      do i=isc,iec
-         u_bot(i,j) = Atm(mygrid)%u_srf(i,j)
-         v_bot(i,j) = Atm(mygrid)%v_srf(i,j)
-      enddo
-   enddo
-
- end subroutine get_bottom_wind
-
-
-
- subroutine get_stock_pe(index, value)
-   integer, intent(in) :: index
-   real,   intent(out) :: value
-
-#ifdef USE_STOCK
-   include 'stock.inc'
-#endif
-
-   real wm(isc:iec,jsc:jec)
-   integer i,j,k
-   real, pointer :: area(:,:)
-
-   area => Atm(mygrid)%gridstruct%area
-
-   select case (index)
-
-#ifdef USE_STOCK
-   case (ISTOCK_WATER)
-#else
-   case (1)
-#endif
-
-!----------------------
-! Perform vertical sum:
-!----------------------
-     wm = 0.
-     do j=jsc,jec
-        do k=1,npz
-           do i=isc,iec
-! Warning: the following works only with AM2 physics: water vapor; cloud water, cloud ice.
-              wm(i,j) = wm(i,j) + Atm(mygrid)%delp(i,j,k) * ( Atm(mygrid)%q(i,j,k,sphum)   +  &
-                                                              Atm(mygrid)%q(i,j,k,liq_wat) +  &
-                                                              Atm(mygrid)%q(i,j,k,ice_wat) )
-           enddo
-        enddo
-     enddo
-
-!----------------------
-! Horizontal sum:
-!----------------------
-     value = 0.
-     do j=jsc,jec
-        do i=isc,iec
-           value = value + wm(i,j)*area(i,j)
-        enddo
-     enddo
-     value = value/grav
-
-   case default
-     value = 0.0
-   end select
-
- end subroutine get_stock_pe
-
 
  subroutine atmosphere_state_update (Time, Physics_tendency, Physics, Atm_block)
    type(time_type),intent(in)      :: Time
@@ -1491,21 +1349,21 @@ contains
      jbs = Atm_block%jbs(nb)
      jbe = Atm_block%jbe(nb)
 
-     Physics%block(nb)%phis = Atm(mygrid)%phis(ibs:ibe,jbs:jbe)
-     Physics%block(nb)%u    = Atm(mygrid)%ua(ibs:ibe,jbs:jbe,:)
-     Physics%block(nb)%v    = Atm(mygrid)%va(ibs:ibe,jbs:jbe,:)
-     Physics%block(nb)%t    = Atm(mygrid)%pt(ibs:ibe,jbs:jbe,:)
-     Physics%block(nb)%q    = Atm(mygrid)%q(ibs:ibe,jbs:jbe,:,:)
-     Physics%block(nb)%omega= Atm(mygrid)%omga(ibs:ibe,jbs:jbe,:)
-     Physics%block(nb)%pe   = Atm(mygrid)%pe(ibs:ibe,:,jbs:jbe)
-     Physics%block(nb)%peln = Atm(mygrid)%peln(ibs:ibe,:,jbs:jbe)
-     Physics%block(nb)%delp = Atm(mygrid)%delp(ibs:ibe,jbs:jbe,:)
+     Physics%block(nb)%phis = _DBL_(_RL_(Atm(mygrid)%phis(ibs:ibe,jbs:jbe)))
+     Physics%block(nb)%u    = _DBL_(_RL_(Atm(mygrid)%ua(ibs:ibe,jbs:jbe,:)))
+     Physics%block(nb)%v    = _DBL_(_RL_(Atm(mygrid)%va(ibs:ibe,jbs:jbe,:)))
+     Physics%block(nb)%t    = _DBL_(_RL_(Atm(mygrid)%pt(ibs:ibe,jbs:jbe,:)))
+     Physics%block(nb)%q    = _DBL_(_RL_(Atm(mygrid)%q(ibs:ibe,jbs:jbe,:,:)))
+     Physics%block(nb)%omega= _DBL_(_RL_(Atm(mygrid)%omga(ibs:ibe,jbs:jbe,:)))
+     Physics%block(nb)%pe   = _DBL_(_RL_(Atm(mygrid)%pe(ibs:ibe,:,jbs:jbe)))
+     Physics%block(nb)%peln = _DBL_(_RL_(Atm(mygrid)%peln(ibs:ibe,:,jbs:jbe)))
+     Physics%block(nb)%delp = _DBL_(_RL_(Atm(mygrid)%delp(ibs:ibe,jbs:jbe,:)))
      if (.not.Physics%control%phys_hydrostatic) then
-        Physics%block(nb)%delz = Atm(mygrid)%delz(ibs:ibe,jbs:jbe,:)
-        Physics%block(nb)%w    = Atm(mygrid)%w(ibs:ibe,jbs:jbe,:)
+        Physics%block(nb)%delz = _DBL_(_RL_(Atm(mygrid)%delz(ibs:ibe,jbs:jbe,:)))
+        Physics%block(nb)%w    = _DBL_(_RL_(Atm(mygrid)%w(ibs:ibe,jbs:jbe,:)))
      endif
      if (_ALLOCATED(Physics%block(nb)%tmp_4d)) &
-        Physics%block(nb)%tmp_4d = Atm(mygrid)%qdiag(ibs:ibe,jbs:jbe,:,:)
+        Physics%block(nb)%tmp_4d = _DBL_(_RL_(Atm(mygrid)%qdiag(ibs:ibe,jbs:jbe,:,:)))
 
      call fv_compute_p_z (Atm_block%npz, Physics%block(nb)%phis, Physics%block(nb)%pe, &
                           Physics%block(nb)%peln, Physics%block(nb)%delp, Physics%block(nb)%delz, &
@@ -1513,9 +1371,9 @@ contains
                           Physics%block(nb)%p_full, Physics%block(nb)%p_half, &
                           Physics%block(nb)%z_full, Physics%block(nb)%z_half, &
 #ifdef USE_COND
-                          Atm(mygrid)%q_con(ibs:ibe,jbs:jbe,:), &
+                          _DBL_(_RL_(Atm(mygrid)%q_con(ibs:ibe,jbs:jbe,:))), &
 #else
-                          Atm(mygrid)%q_con, &
+                          _DBL_(_RL_(Atm(mygrid)%q_con)), &
 #endif
                           Physics%control%phys_hydrostatic, Physics%control%do_uni_zfull) !miz
 
@@ -1525,11 +1383,11 @@ contains
 !--- these values would be zeroed out and accumulated
 !--- in the atmosphere_state_update
 
-       Physics_tendency%block(nb)%u_dt = u_dt(ibs:ibe,jbs:jbe,:)
-       Physics_tendency%block(nb)%v_dt = v_dt(ibs:ibe,jbs:jbe,:)
-       Physics_tendency%block(nb)%t_dt = t_dt(ibs:ibe,jbs:jbe,:)
-       Physics_tendency%block(nb)%q_dt = q_dt(ibs:ibe,jbs:jbe,:,:)
-       Physics_tendency%block(nb)%qdiag = Atm(mygrid)%qdiag(ibs:ibe,jbs:jbe,:,:)
+       Physics_tendency%block(nb)%u_dt = _DBL_(_RL_(u_dt(ibs:ibe,jbs:jbe,:)))
+       Physics_tendency%block(nb)%v_dt = _DBL_(_RL_(v_dt(ibs:ibe,jbs:jbe,:)))
+       Physics_tendency%block(nb)%t_dt = _DBL_(_RL_(t_dt(ibs:ibe,jbs:jbe,:)))
+       Physics_tendency%block(nb)%q_dt = _DBL_(_RL_(q_dt(ibs:ibe,jbs:jbe,:,:)))
+       Physics_tendency%block(nb)%qdiag = _DBL_(_RL_(Atm(mygrid)%qdiag(ibs:ibe,jbs:jbe,:,:)))
      endif
    enddo
 
@@ -1553,14 +1411,14 @@ contains
      jbs = Atm_block%jbs(nb)
      jbe = Atm_block%jbe(nb)
 
-     Radiation%block(nb)%phis = Atm(mygrid)%phis(ibs:ibe,jbs:jbe)
-     Radiation%block(nb)%t    = Atm(mygrid)%pt(ibs:ibe,jbs:jbe,:)
-     Radiation%block(nb)%q    = Atm(mygrid)%q(ibs:ibe,jbs:jbe,:,:)
-     Radiation%block(nb)%pe   = Atm(mygrid)%pe(ibs:ibe,:,jbs:jbe)
-     Radiation%block(nb)%peln = Atm(mygrid)%peln(ibs:ibe,:,jbs:jbe)
-     Radiation%block(nb)%delp = Atm(mygrid)%delp(ibs:ibe,jbs:jbe,:)
+     Radiation%block(nb)%phis =  _DBL_(_RL_(Atm(mygrid)%phis(ibs:ibe,jbs:jbe)))
+     Radiation%block(nb)%t    =  _DBL_(_RL_(Atm(mygrid)%pt(ibs:ibe,jbs:jbe,:)))
+     Radiation%block(nb)%q    =  _DBL_(_RL_(Atm(mygrid)%q(ibs:ibe,jbs:jbe,:,:)))
+     Radiation%block(nb)%pe   =  _DBL_(_RL_(Atm(mygrid)%pe(ibs:ibe,:,jbs:jbe)))
+     Radiation%block(nb)%peln =  _DBL_(_RL_(Atm(mygrid)%peln(ibs:ibe,:,jbs:jbe)))
+     Radiation%block(nb)%delp =  _DBL_(_RL_(Atm(mygrid)%delp(ibs:ibe,jbs:jbe,:)))
      if (.not.Radiation%control%phys_hydrostatic) &
-        Radiation%block(nb)%delz = Atm(mygrid)%delz(ibs:ibe,jbs:jbe,:)
+        Radiation%block(nb)%delz =  _DBL_(_RL_(Atm(mygrid)%delz(ibs:ibe,jbs:jbe,:)))
 
      call fv_compute_p_z (Atm_block%npz, Radiation%block(nb)%phis, Radiation%block(nb)%pe, &
                           Radiation%block(nb)%peln, Radiation%block(nb)%delp, Radiation%block(nb)%delz, &
@@ -1568,9 +1426,9 @@ contains
                           Radiation%block(nb)%p_full, Radiation%block(nb)%p_half, &
                           Radiation%block(nb)%z_full, Radiation%block(nb)%z_half, &
 #ifdef USE_COND
-                          Atm(mygrid)%q_con(ibs:ibe,jbs:jbe,:), &
+                          _DBL_(_RL_(Atm(mygrid)%q_con(ibs:ibe,jbs:jbe,:))), &
 #else
-                          Atm(mygrid)%q_con, &
+                          _DBL_(_RL_(Atm(mygrid)%q_con)), &
 #endif
                           Radiation%control%phys_hydrostatic, Radiation%control%do_uni_zfull) !miz
    enddo
@@ -1593,17 +1451,17 @@ contains
  subroutine fv_compute_p_z (npz, phis, pe, peln, delp, delz, pt, q_sph, &
                             p_full, p_half, z_full, z_half, q_con, hydrostatic, do_uni_zfull) !miz
     integer, intent(in)  :: npz
-    real, dimension(:,:),   intent(in)  :: phis
-    real, dimension(:,:,:), intent(in)  :: pe, peln, delp, delz, q_con, pt, q_sph
-    real, dimension(:,:,:), intent(out) :: p_full, p_half, z_full, z_half
+    real(kind=r8_kind), dimension(:,:),   intent(in)  :: phis
+    real(kind=r8_kind), dimension(:,:,:), intent(in)  :: pe, peln, delp, delz, q_con, pt, q_sph
+    real(kind=r8_kind), dimension(:,:,:), intent(out) :: p_full, p_half, z_full, z_half
     logical, intent(in)  :: hydrostatic, do_uni_zfull !miz
 !--- local variables
     integer i,j,k,isiz,jsiz
     real    tvm
-    real    :: zvir, rrg, ginv
+    real(kind=r8_kind)    :: zvir, rrg, ginv
 #ifdef USE_COND
-    real, dimension(size(pe,1),size(pe,3),size(pe,2)):: peg, pelng
-    real:: dlg
+    real(kind=r8_kind), dimension(size(pe,1),size(pe,3),size(pe,2)):: peg, pelng
+    real(kind=r8_kind):: dlg
 #endif
 
     isiz=size(phis,1)
@@ -1699,5 +1557,8 @@ contains
     enddo
 
  end subroutine reset_atmos_tracers
+
+#include "atmosphere_r4.fh"
+#include "atmosphere_r8.fh"
 
 end module atmosphere_mod
