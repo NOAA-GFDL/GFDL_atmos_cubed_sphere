@@ -15,8 +15,8 @@
 
     do j=jsc,jec+1
        do i=isc,iec+1
-          blon(i-isc+1,j-jsc+1) = Atm(mygrid)%gridstruct%grid(i,j,1)
-          blat(i-isc+1,j-jsc+1) = Atm(mygrid)%gridstruct%grid(i,j,2)
+          blon(i-isc+1,j-jsc+1) = _DBL_(_RL_(Atm(mygrid)%gridstruct%grid(i,j,1)))
+          blat(i-isc+1,j-jsc+1) = _DBL_(_RL_(Atm(mygrid)%gridstruct%grid(i,j,2)))
        enddo
     end do
 
@@ -25,14 +25,14 @@
  subroutine ATMOSPHERE_PREF_ (p_ref)
    real(ATMOSPHERE_KIND_), dimension(:,:), intent(inout) :: p_ref
 
-   p_ref = pref
+   p_ref = _DBL_(_RL_(pref))
 
  end subroutine ATMOSPHERE_PREF_
 
   subroutine ATMOSPHERE_CELL_AREA_  (area_out)
    real(ATMOSPHERE_KIND_), dimension(:,:),  intent(out)          :: area_out
 
-   area_out(1:iec-isc+1, 1:jec-jsc+1) =  Atm(mygrid)%gridstruct%area (isc:iec,jsc:jec)
+   area_out(1:iec-isc+1, 1:jec-jsc+1) =  _DBL_(_RL_(Atm(mygrid)%gridstruct%area (isc:iec,jsc:jec)))
 
  end subroutine ATMOSPHERE_CELL_AREA_
 
@@ -49,23 +49,23 @@
      real(ATMOSPHERE_KIND_), dimension(isc:iec,jsc:jec) :: tref
      real(ATMOSPHERE_KIND_), parameter :: tlaps = 6.5e-3
 
-     rrg  = rdgas / grav
+     rrg  = _DBL_(_RL_(rdgas / grav))
 
      do j=jsc,jec
         do i=isc,iec
-           p_surf(i,j) = Atm(mygrid)%ps(i,j)
-           t_bot(i,j) = Atm(mygrid)%pt(i,j,npz)
-           p_bot(i,j) = Atm(mygrid)%delp(i,j,npz)/(Atm(mygrid)%peln(i,npz+1,j)-Atm(mygrid)%peln(i,npz,j))
-           z_bot(i,j) = rrg*t_bot(i,j)*(1.+zvir*Atm(mygrid)%q(i,j,npz,sphum)) *  &
-                        (1. - Atm(mygrid)%pe(i,npz,j)/p_bot(i,j))
+           p_surf(i,j) = _DBL_(_RL_(Atm(mygrid)%ps(i,j)))
+           t_bot(i,j) = _DBL_(_RL_(Atm(mygrid)%pt(i,j,npz)))
+           p_bot(i,j) = _DBL_(_RL_(Atm(mygrid)%delp(i,j,npz)/(Atm(mygrid)%peln(i,npz+1,j)-Atm(mygrid)%peln(i,npz,j))))
+           z_bot(i,j) = rrg*t_bot(i,j)*_DBL_(_RL_(1.+zvir*Atm(mygrid)%q(i,j,npz,sphum))) *  &
+                        _DBL_(_RL_(1. - Atm(mygrid)%pe(i,npz,j)/p_bot(i,j)))
         enddo
      enddo
 
      if ( present(slp) ) then
        ! determine 0.8 sigma reference level
-       sigtop = Atm(mygrid)%ak(1)/pstd_mks+Atm(mygrid)%bk(1)
+       sigtop = _DBL_(_RL_(Atm(mygrid)%ak(1)/pstd_mks+Atm(mygrid)%bk(1)))
        do k = 1, npz
-          sigbot = Atm(mygrid)%ak(k+1)/pstd_mks+Atm(mygrid)%bk(k+1)
+          sigbot = _DBL_(_RL_(Atm(mygrid)%ak(k+1)/pstd_mks+Atm(mygrid)%bk(k+1)))
           if (sigbot+sigtop > 1.6) then
              kr = k
              exit
@@ -75,9 +75,9 @@
        do j=jsc,jec
           do i=isc,iec
              ! sea level pressure
-             tref(i,j) = Atm(mygrid)%pt(i,j,kr) * (Atm(mygrid)%delp(i,j,kr)/ &
-                              ((Atm(mygrid)%peln(i,kr+1,j)-Atm(mygrid)%peln(i,kr,j))*Atm(mygrid)%ps(i,j)))**(-rrg*tlaps)
-             slp(i,j) = Atm(mygrid)%ps(i,j)*(1.+tlaps*Atm(mygrid)%phis(i,j)/(tref(i,j)*grav))**(1./(rrg*tlaps))
+             tref(i,j) = _DBL_(_RL_(Atm(mygrid)%pt(i,j,kr) * (Atm(mygrid)%delp(i,j,kr)/ &
+                              ((Atm(mygrid)%peln(i,kr+1,j)-Atm(mygrid)%peln(i,kr,j))*Atm(mygrid)%ps(i,j)))**(-rrg*tlaps)))
+             slp(i,j) = _DBL_(_RL_(Atm(mygrid)%ps(i,j)*(1.+tlaps*Atm(mygrid)%phis(i,j)/(real(tref(i,j))*grav))**(1./(rrg*tlaps))))
           enddo
        enddo
      endif
@@ -86,7 +86,7 @@
      do m=1,nq
         do j=jsc,jec
            do i=isc,iec
-              tr_bot(i,j,m) = Atm(mygrid)%q(i,j,npz,m)
+              tr_bot(i,j,m) = _DBL_(_RL_(Atm(mygrid)%q(i,j,npz,m)))
            enddo
         enddo
      enddo
@@ -102,8 +102,8 @@
 
    do j=jsc,jec
       do i=isc,iec
-         u_bot(i,j) = Atm(mygrid)%u_srf(i,j)
-         v_bot(i,j) = Atm(mygrid)%v_srf(i,j)
+         u_bot(i,j) = _DBL_(_RL_(Atm(mygrid)%u_srf(i,j)))
+         v_bot(i,j) = _DBL_(_RL_(Atm(mygrid)%v_srf(i,j)))
       enddo
    enddo
 
@@ -136,9 +136,9 @@
         do k=1,npz
            do i=isc,iec
 ! Warning: the following works only with AM2 physics: water vapor; cloud water, cloud ice.
-              wm(i,j) = wm(i,j) + Atm(mygrid)%delp(i,j,k) * ( Atm(mygrid)%q(i,j,k,sphum)   +  &
+              wm(i,j) = wm(i,j) + _DBL_(_RL_(Atm(mygrid)%delp(i,j,k) * ( Atm(mygrid)%q(i,j,k,sphum)   +  &
                                                               Atm(mygrid)%q(i,j,k,liq_wat) +  &
-                                                              Atm(mygrid)%q(i,j,k,ice_wat) )
+                                                              Atm(mygrid)%q(i,j,k,ice_wat) )))
            enddo
         enddo
      enddo
@@ -149,10 +149,10 @@
      value = 0.
      do j=jsc,jec
         do i=isc,iec
-           value = value + wm(i,j)*Atm(mygrid)%gridstruct%area(i,j)
+           value = value + wm(i,j)*_DBL_(_RL_(Atm(mygrid)%gridstruct%area(i,j)))
         enddo
      enddo
-     value = value/grav
+     value = value/_DBL_(_RL_(grav))
 
    case default
      value = 0.0
