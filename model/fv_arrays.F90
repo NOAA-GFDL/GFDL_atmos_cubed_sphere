@@ -926,6 +926,7 @@ module fv_arrays_mod
   integer :: nrows_blend = 0          !< # of blending rows in the outer integration domain.
   logical :: write_restart_with_bcs = .false.   !< Default setting for using DA-updated BC files
   logical :: regional_bcs_from_gsi = .false.    !< Default setting for writing restart files with boundary rows
+  logical :: pass_full_omega_to_physics_in_non_hydrostatic_mode = .false.  !< Default to passing local omega to physics in non-hydrostatic 
 
 
   !>Convenience pointers
@@ -1510,6 +1511,7 @@ contains
     allocate ( Atm%ts(is:ie,js:je) )
     allocate ( Atm%phis(isd:ied  ,jsd:jed  ) )
     allocate ( Atm%omga(isd:ied  ,jsd:jed  ,npz) ); Atm%omga=0.
+
     allocate (   Atm%ua(isd:ied  ,jsd:jed  ,npz) )
     allocate (   Atm%va(isd:ied  ,jsd:jed  ,npz) )
     allocate (   Atm%uc(isd:ied+1,jsd:jed  ,npz) )
