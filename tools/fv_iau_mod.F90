@@ -188,9 +188,15 @@ subroutine IAU_initialize (IPD_Control, IAU_Data,Init_parm)
 
     if( file_exists(fname) ) then
       call open_ncfile( fname, ncid )        ! open the file
-      call get_ncdim1( ncid, 'lon',   im)
-      call get_ncdim1( ncid, 'lat',   jm)
-      call get_ncdim1( ncid, 'lev',   km)
+      if (IPD_Control%iau_regional) then
+       call get_ncdim1( ncid, 'nx',   im)
+       call get_ncdim1( ncid, 'ny',   jm)
+       call get_ncdim1( ncid, 'nz',   km)
+      else
+       call get_ncdim1( ncid, 'lon',   im)
+       call get_ncdim1( ncid, 'lat',   jm)
+       call get_ncdim1( ncid, 'lev',   km)
+      end if
 
       if (km.ne.npz) then
         if (is_master()) print *, 'km = ', km
@@ -200,20 +206,22 @@ subroutine IAU_initialize (IPD_Control, IAU_Data,Init_parm)
 
       if(is_master())  write(*,*) fname, ' DA increment dimensions:', im,jm,km
 
-      allocate (  lon(im) )
-      allocate (  lat(jm) )
+      if (.not.IPD_Control%iau_regional) then
+        allocate (  lon(im) )
+        allocate (  lat(jm) )
 
-      call _GET_VAR1 (ncid, 'lon', im, lon )
-      call _GET_VAR1 (ncid, 'lat', jm, lat )
-      call close_ncfile(ncid)
+        call _GET_VAR1 (ncid, 'lon', im, lon )
+        call _GET_VAR1 (ncid, 'lat', jm, lat )
+        call close_ncfile(ncid)
 
-      ! Convert to radians
-      do i=1,im
-        lon(i) = lon(i) * deg2rad
-      enddo
-      do j=1,jm
-        lat(j) = lat(j) * deg2rad
-      enddo
+        ! Convert to radians
+        do i=1,im
+          lon(i) = lon(i) * deg2rad
+        enddo
+        do j=1,jm
+          lat(j) = lat(j) * deg2rad
+        enddo
+      end if
 
     else
       call mpp_error(FATAL,'==> Error in IAU_initialize: Expected file '&
@@ -232,10 +240,12 @@ subroutine IAU_initialize (IPD_Control, IAU_Data,Init_parm)
          agrid(is-1+i,js-1+j,2)=Init_parm%xlat(i,j)
       enddo
     enddo
-    call remap_coef( is, ie, js, je, is, ie, js, je, &
+    if (.not.IPD_Control%iau_regional) then
+      call remap_coef( is, ie, js, je, is, ie, js, je, &
         im, jm, lon, lat, id1, id2, jdc, s2c, &
         agrid)
-    deallocate ( lon, lat,agrid )
+      deallocate ( lon, lat,agrid )
+    end if
 
 
     allocate(IAU_Data%ua_inc(is:ie, js:je, km))
@@ -253,6 +263,7 @@ subroutine IAU_initialize (IPD_Control, IAU_Data,Init_parm)
     allocate (iau_state%inc1%tracer_inc(is:ie, js:je, km,ntracers))
     iau_state%hr1=IPD_Control%iaufhrs(1)
     iau_state%wt = 1.0 ! IAU increment filter weights (default 1.0)
+    iau_state%wt=iau_state%wt*IPD_Control%iau_inc_scale !Increase the weight
     iau_state%wt_normfact = 1.0
     if (IPD_Control%iau_filter_increments) then
        ! compute increment filter weights, sum to obtain normalization factor
@@ -346,7 +357,7 @@ subroutine getiauforcing(IPD_Control,IAU_Data)
          IAU_Data%in_interval=.false.
       else
          if (IPD_Control%iau_filter_increments) call setiauforcing(IPD_Control,IAU_Data,iau_state%wt)
-         if (is_master()) print *,'apply iau forcing t1,t,t2,filter wt=',t1,IPD_Control%fhour,t2,iau_state%wt/iau_state%wt_normfact
+         if (is_master()) print *,'apply iau forcing t1,t,t2,filter wt=',t1,IPD_Control%fhour,t2,iau_state%wt/iau_state%wt_normfact,iau_state%wt
          IAU_Data%in_interval=.true.
       endif
       return
@@ -474,16 +485,32 @@ subroutine read_iau_forcing(IPD_Control,increments,fname)
       enddo
     enddo
 
-    allocate ( wk3(1:im,jbeg:jend, 1:km) )
+    if (IPD_Control%iau_regional) then
+      allocate ( wk3(1:im,js:je, 1:km) )
+    else
+      allocate ( wk3(1:im,jbeg:jend, 1:km) )
+    endif
+
  ! read in 1 time level
-    call interp_inc('T_inc',increments%temp_inc(:,:,:),jbeg,jend)
-    call interp_inc('delp_inc',increments%delp_inc(:,:,:),jbeg,jend)
-    call interp_inc('delz_inc',increments%delz_inc(:,:,:),jbeg,jend)
-    call interp_inc('u_inc',increments%ua_inc(:,:,:),jbeg,jend)   ! can these be treated as scalars?
-    call interp_inc('v_inc',increments%va_inc(:,:,:),jbeg,jend)
-    do l=1,ntracers
-       call interp_inc(trim(tracer_names(l))//'_inc',increments%tracer_inc(:,:,:,l),jbeg,jend)
-    enddo
+    if (IPD_Control%iau_regional) then
+      call interp_inc2('T_inc',increments%temp_inc)
+      call interp_inc2('delp_inc',increments%delp_inc)
+      call interp_inc2('delz_inc',increments%delz_inc)
+      call interp_inc2('u_inc',increments%ua_inc)
+      call interp_inc2('v_inc',increments%va_inc)
+      do l=1,ntracers
+         call interp_inc2(trim(tracer_names(l))//'_inc',increments%tracer_inc(:,:,:,l))
+      enddo
+    else
+      call interp_inc('T_inc',increments%temp_inc(:,:,:),jbeg,jend)
+      call interp_inc('delp_inc',increments%delp_inc(:,:,:),jbeg,jend)
+      call interp_inc('delz_inc',increments%delz_inc(:,:,:),jbeg,jend)
+      call interp_inc('u_inc',increments%ua_inc(:,:,:),jbeg,jend)   ! can these be treated as scalars?
+      call interp_inc('v_inc',increments%va_inc(:,:,:),jbeg,jend)
+      do l=1,ntracers
+         call interp_inc(trim(tracer_names(l))//'_inc',increments%tracer_inc(:,:,:,l),jbeg,jend)
+      enddo
+    end if
     call close_ncfile(ncid)
     deallocate (wk3)
 
@@ -516,6 +543,22 @@ subroutine interp_inc(field_name,var,jbeg,jend)
     enddo
  enddo
 end subroutine interp_inc
+
+subroutine interp_inc2(field_name,var)
+! interpolate increment from GSI gaussian grid to cubed sphere
+! everying is on the A-grid, earth relative
+ character(len=*), intent(in) :: field_name
+ real, dimension(is:ie,js:je,1:km), intent(inout) :: var
+ integer:: i1, i2, j1, k,j,i,ierr
+ call check_var_exists(ncid, field_name, ierr)
+ if (ierr == 0) then
+    call get_var3_r4( ncid, field_name, 1,im, js,je, 1,km, wk3 )
+ else
+    if (is_master()) print *,'warning: no increment for ',trim(field_name),' found, assuming zero'
+    wk3 = 0.
+ end if
+ var(is:ie,js:je,1:km)=wk3(is:ie,:,:)
+end subroutine interp_inc2
 
 end module fv_iau_mod
 
