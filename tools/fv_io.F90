@@ -42,7 +42,7 @@ module fv_io_mod
                                      variable_exists, read_data, set_filename_appendix
   use mpp_mod,                 only: mpp_error, FATAL, NOTE, WARNING, mpp_root_pe, &
                                      mpp_sync, mpp_pe, mpp_declare_pelist, mpp_get_current_pelist, &
-                                     mpp_npes
+                                     mpp_npes, mpp_broadcast
   use mpp_domains_mod,         only: domain2d, EAST, WEST, NORTH, CENTER, SOUTH, CORNER, &
                                      mpp_get_compute_domain, mpp_get_data_domain, &
                                      mpp_get_layout, mpp_get_ntile_count, &
@@ -61,7 +61,7 @@ module fv_io_mod
   use fv_treat_da_inc_mod,     only: read_da_inc
   use mpp_parameter_mod,       only: DGRID_NE
   use fv_grid_utils_mod,       only: cubed_a2d
-  
+
   implicit none
   private
 
@@ -294,7 +294,7 @@ contains
           call register_restart_field(Atm%Fv_restart_tile, 'v', Atm%v, &
                dim_names_4d2, is_optional=.true.)
        endif
-       
+
        !--- include agrid winds in restarts for use in data assimilation or for restarting
        if (Atm%flagstruct%agrid_vel_rst .or. Atm%flagstruct%restart_from_agrid_winds) then
           call register_restart_field(Atm%Fv_restart_tile, 'ua', Atm%ua, &
@@ -302,7 +302,7 @@ contains
           call register_restart_field(Atm%Fv_restart_tile, 'va', Atm%va, &
                dim_names_4d3)
        endif
-       
+
        if (.not. Atm%flagstruct%restart_from_agrid_winds) then
           call register_restart_field(Atm%Fv_restart_tile, 'u', Atm%u, &
                dim_names_4d)
@@ -472,15 +472,20 @@ contains
     allocate(pes(mpp_npes()))
     call mpp_get_current_pelist(pes)
 
-    suffix = ''
-    fname = ''//trim(dir)//'/'//trim(pre)//'fv_core.res.nc'
-    Atm(1)%Fv_restart_is_open = open_file(Atm(1)%Fv_restart,fname,"read", is_restart=.true., pelist=pes)
-    if (Atm(1)%Fv_restart_is_open) then
-      call fv_io_register_restart(Atm(1))
-      call read_restart(Atm(1)%Fv_restart)
-      call close_file(Atm(1)%Fv_restart)
-      Atm(1)%Fv_restart_is_open = .false.
+!--- single reader with a broadcast to all other members of the group pes
+    if (mpp_pe() == pes(1)) then
+      suffix = ''
+      fname = ''//trim(dir)//'/'//trim(pre)//'fv_core.res.nc'
+      Atm(1)%Fv_restart_is_open = open_file(Atm(1)%Fv_restart,fname,"read", is_restart=.true., pelist=pes(1:1))
+      if (Atm(1)%Fv_restart_is_open) then
+        call fv_io_register_restart(Atm(1))
+        call read_restart(Atm(1)%Fv_restart)
+        call close_file(Atm(1)%Fv_restart)
+        Atm(1)%Fv_restart_is_open = .false.
+      endif
     endif
+    call mpp_broadcast(Atm(1)%ak, size(Atm(1)%ak), pes(1), pes)
+    call mpp_broadcast(Atm(1)%bk, size(Atm(1)%bk), pes(1), pes)
     deallocate(pes)
 
     if (Atm(1)%flagstruct%external_eta) then
@@ -687,11 +692,15 @@ contains
     fname = 'INPUT/fv_core.res.nc'
     allocate(pes(mpp_npes()))
     call mpp_get_current_pelist(pes)
-    if (open_file(Fv_restart_r,fname,"read", is_restart=.true., pelist=pes)) then
-       call read_data(Fv_restart_r, 'ak', ak_r(:))
-       call read_data(Fv_restart_r, 'bk', bk_r(:))
-       call close_file(Fv_restart_r)
+    if (mpp_pe() == pes(1)) then
+      if (open_file(Fv_restart_r,fname,"read", is_restart=.true., pelist=pes(1:1))) then
+         call read_data(Fv_restart_r, 'ak', ak_r(:))
+         call read_data(Fv_restart_r, 'bk', bk_r(:))
+         call close_file(Fv_restart_r)
+      endif
     endif
+    call mpp_broadcast(ak_r, size(ak_r), pes(1), pes)
+    call mpp_broadcast(bk_r, size(bk_r), pes(1), pes)
     deallocate(pes)
 
 ! fix for single tile runs where you need fv_core.res.nc and fv_core.res.tile1.nc
