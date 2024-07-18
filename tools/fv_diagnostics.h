@@ -64,7 +64,7 @@
             id_rh300_cmip,  id_rh250_cmip, id_rh100_cmip, id_rh50_cmip,  id_rh10_cmip
 
  integer :: id_hght3d, id_any_hght
- integer :: id_u100m, id_v100m, id_w100m
+ integer :: id_u100m, id_v100m, id_w100m, id_wind100m
 
      ! For initial conditions:
      integer ic_ps, ic_ua, ic_va, ic_ppt

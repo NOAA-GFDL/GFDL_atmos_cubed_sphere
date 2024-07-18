@@ -3029,7 +3029,7 @@
 ! Iterate then interpolate to get balanced pt & pk on the sphere
 ! Adjusting ptop
         call SuperK_u(npz, zs1, uz1, dudz)
-        call balanced_K(npz, is, ie, js, je, ng, pe1(npz+1), ze1, ts1, qs1, uz1, dudz, pe, pk, pt,  &
+        call balanced_K(npz, is, ie, js, je, ng, pe1(npz+1), ze1, ts1, qs1, uz1, dudz, pe, pt,  &
                         delz, zvir, ptop, ak, bk, agrid)
         do j=js,je
            do i=is,ie
@@ -6300,7 +6300,7 @@ end subroutine terminator_tracers
 
  end subroutine SuperK_Sounding
 
- subroutine balanced_K(km, is, ie, js, je, ng, ps0, ze1, ts1, qs1, uz1, dudz, pe, pk, pt,  &
+ subroutine balanced_K(km, is, ie, js, je, ng, ps0, ze1, ts1, qs1, uz1, dudz, pe, pt,  &
                        delz, zvir, ptop, ak, bk, agrid)
  integer, intent(in):: is, ie, js, je, ng, km
  real, intent(in), dimension(km  ):: ts1, qs1, uz1, dudz
@@ -6311,7 +6311,6 @@ end subroutine terminator_tracers
  real, intent(inout), dimension(km+1):: ak, bk
  real, intent(inout), dimension(is:ie,js:je,km):: pt
  real, intent(inout), dimension(is:,js:,1:) :: delz
- real, intent(out), dimension(is:ie,js:je,km+1):: pk
 ! pt is FV's cp*thelta_v
  real, intent(inout), dimension(is-1:ie+1,km+1,js-1:je+1):: pe
 ! Local
