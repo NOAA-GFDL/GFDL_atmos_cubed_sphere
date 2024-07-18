@@ -250,7 +250,7 @@ public :: atmosphere_fill_nest_cpl
 ! version number of this module
 ! Include variable "version" to be written to log file.
 #include<file_version.h>
-character(len=20)   :: mod_name = 'fvGFS/atmosphere_mod'
+character(len=20)   :: mod_name = 'UFS/atmosphere_mod'
 
 !---- private data ----
   type (time_type) :: Time_step_atmos

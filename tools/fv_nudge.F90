@@ -26,7 +26,7 @@
 
 !>@brief The module fv_nwp_nudge contains routines for nudging
 !! to input analyses.
-!>note This module is currently not supported in fvGFS of FV3GFS
+!>note This module is currently not supported in UFS
 
 module fv_nwp_nudge_mod
 
