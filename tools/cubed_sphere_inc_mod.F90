@@ -21,23 +21,20 @@ module cubed_sphere_inc_mod
 
 !----------------------------------------------------------------------------------------
 
-    subroutine read_cubed_sphere_inc(fname_prefix, increment_data, Atm)
-      character(*), intent(in)                 :: fname_prefix
+    subroutine read_cubed_sphere_inc(fname, increment_data, Atm)
+      character(*), intent(in)                 :: fname
       type(increment_data_type), intent(inout) :: increment_data
       type(fv_atmos_type), intent(in)          :: Atm
 
       type(FmsNetcdfDomainFile_t) :: fileobj
-      integer                     :: itracer, ntracers, itile
+      integer                     :: itracer, ntracers
       character(len=64)           :: tracer_name
-      character(len=1)            :: itile_str 
       
       ! Get various dimensions
       call get_number_tracers(MODEL_ATMOS, num_tracers=ntracers)
-      itile = Atm%tile_of_mosaic
-      write(itile_str, '(I0)') itile
 
       ! Open file
-      if ( open_file(fileobj, trim(fname_prefix) // '.tile' // itile_str // '.nc', "read", Atm%domain) ) then
+      if ( open_file(fileobj, trim(fname), 'read', Atm%domain) ) then
          ! Read increments
          call read_data(fileobj, 'u_inc', increment_data%ua_inc)
          call read_data(fileobj, 'v_inc', increment_data%va_inc)

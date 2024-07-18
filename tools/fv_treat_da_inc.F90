@@ -491,17 +491,20 @@ contains
     real, intent(inout) :: q(   is_in:ie_in, js_in:je_in, npz_in, nq)  ! tracers
     real, intent(inout) :: delz(isc_in:iec_in, jsc_in:jec_in, npz_in)  ! layer thickness
     
-    character(len=128)           :: fname
+    character(len=128)           :: fname_prefix, fname
     integer                      :: sphum, liq_wat, spo, spo2, spo3, o3mr, i, j, k, itracer
     type(increment_data_type)    :: increment_data
     type(group_halo_update_type) :: i_pack(2)
     real                         :: ua_inc(is_in:ie_in, js_in:je_in, npz_in)
     real                         :: va_inc(is_in:ie_in, js_in:je_in, npz_in)
+    character(len=1)             :: itile_str
 
     ! Get increment filename
-    fname = 'INPUT/'//Atm%flagstruct%res_latlon_dynamics
+    fname_prefix = 'INPUT/'//Atm%flagstruct%res_latlon_dynamics
 
     ! Ensure file exists
+    write(itile_str, '(I0)') Atm%tile_of_mosaic
+    fname = trim(fname_prefix) // '.tile' // itile_str // '.nc'
     if ( .not. file_exists(fname) ) then
       call mpp_error(FATAL,'==> Error in read_da_inc_cubed_sphere: Expected file '&
           //trim(fname)//' for DA increment does not exist')
@@ -518,6 +521,7 @@ contains
     allocate(increment_data%tracer_inc(isc_in:iec_in,jsc_in:jec_in,npz_in,nq))
     
     ! Read increments
+    fname = trim(fname_prefix) // '.nc'
     call read_cubed_sphere_inc(fname, increment_data, Atm)
 
     ! Wind increments
