@@ -1566,6 +1566,9 @@ contains
                 Atm%va(i,j,k) = real_big
                 Atm%pt(i,j,k) = real_big
               Atm%delp(i,j,k) = real_big
+#ifdef USE_COND
+             Atm%q_con(i,j,k) = 0.
+#endif
            enddo
         enddo
         do j=jsd, jed+1
@@ -1618,6 +1621,13 @@ contains
            Atm%phis(i,j) = real_big
         enddo
      enddo
+#ifndef USE_COND
+     do j=jsd, jed
+        do i=isd, ied
+           Atm%q_con(i,j,1) = 0.
+        enddo
+     enddo
+#endif
 
     allocate ( Atm%gridstruct% area(isd_2d:ied_2d  ,jsd_2d:jed_2d  ) )   ! Cell Centered
     allocate ( Atm%gridstruct% area_64(isd_2d:ied_2d  ,jsd_2d:jed_2d  ) ) ! Cell Centered
