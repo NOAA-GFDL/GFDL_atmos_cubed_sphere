@@ -1551,8 +1551,10 @@ contains
 
 #ifdef USE_COND
       allocate ( Atm%q_con(isd:ied,jsd:jed,1:npz) )
+      ! q_con will be initialized to 0, in the following omp loop
 #else
       allocate ( Atm%q_con(isd:isd,jsd:jsd,1) )
+      Atm%q_con = 0.
 #endif
 
 ! Notes by SJL
@@ -1621,13 +1623,6 @@ contains
            Atm%phis(i,j) = real_big
         enddo
      enddo
-#ifndef USE_COND
-     do j=jsd, jed
-        do i=isd, ied
-           Atm%q_con(i,j,1) = 0.
-        enddo
-     enddo
-#endif
 
     allocate ( Atm%gridstruct% area(isd_2d:ied_2d  ,jsd_2d:jed_2d  ) )   ! Cell Centered
     allocate ( Atm%gridstruct% area_64(isd_2d:ied_2d  ,jsd_2d:jed_2d  ) ) ! Cell Centered
