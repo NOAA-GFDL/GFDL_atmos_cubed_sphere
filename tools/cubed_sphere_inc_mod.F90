@@ -3,7 +3,8 @@ module cubed_sphere_inc_mod
   use tracer_manager_mod, only: get_tracer_index, get_number_tracers, get_tracer_names
   use field_manager_mod,  only: MODEL_ATMOS
   use fv_arrays_mod,      only: fv_atmos_type
-  use fms2_io_mod,        only: open_file, close_file, read_data, variable_exists, FmsNetcdfDomainFile_t
+  use fms2_io_mod,        only: open_file, close_file, read_data, variable_exists, &
+                                FmsNetcdfDomainFile_t, register_axis
   
   implicit none
   type increment_data_type
@@ -35,6 +36,10 @@ module cubed_sphere_inc_mod
 
       ! Open file
       if ( open_file(fileobj, trim(fname), 'read', Atm%domain) ) then
+         ! Register axes
+         call register_axis(fileobj, 'grid_xt', 'x')
+         call register_axis(fileobj, 'grid_yt', 'y')
+         
          ! Read increments
          call read_data(fileobj, 'u_inc', increment_data%ua_inc)
          call read_data(fileobj, 'v_inc', increment_data%va_inc)
