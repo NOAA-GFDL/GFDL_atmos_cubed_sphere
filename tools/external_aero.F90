@@ -170,8 +170,11 @@ end subroutine load_aero
 ! read aerosol climatological dataset
 
 subroutine read_aero(is, ie, js, je, npz, nq, Time, pe, peln, qa, kord_tr, fill)
-
-	use constants_mod, only: grav
+#ifdef OVERLOAD_R4
+	use constantsR4_mod, only: grav
+#else
+  use constants_mod, only: grav
+#endif
 	use diag_manager_mod, only: send_data
 	use time_manager_mod, only: get_date, set_date, get_time, operator(-)
 	use tracer_manager_mod, only: get_tracer_index

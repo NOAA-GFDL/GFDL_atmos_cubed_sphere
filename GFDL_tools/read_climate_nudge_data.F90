@@ -31,7 +31,11 @@ use fms2_io_mod,   only: open_file, close_file, get_num_dimensions, &
                          get_time_calendar, read_data, variable_att_exists, &
                          is_dimension_unlimited
 use mpp_mod,       only: input_nml_file, mpp_npes, mpp_get_current_pelist
+#ifdef OVERLOAD_R4
+use constantsR4_mod, only: PI, GRAV, RDGAS, RVGAS
+#else
 use constants_mod, only: PI, GRAV, RDGAS, RVGAS
+#endif
 
 implicit none
 private

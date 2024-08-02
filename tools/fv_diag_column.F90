@@ -25,7 +25,11 @@ module fv_diag_column_mod
                                 R_GRID
   use fv_grid_utils_mod,  only: great_circle_dist
   use time_manager_mod,   only: time_type, get_date, get_time, month_name
+#ifdef OVERLOAD_R4
+  use constantsR4_mod,    only: grav, rdgas, kappa, cp_air, TFREEZE, pi=>pi_8
+#else
   use constants_mod,      only: grav, rdgas, kappa, cp_air, TFREEZE, pi=>pi_8
+#endif
   use fms_mod,            only: write_version_number, lowercase
   use mpp_mod,            only: mpp_error, FATAL, stdlog, mpp_pe, mpp_root_pe, mpp_sum, &
                                 mpp_max, NOTE, input_nml_file, get_unit

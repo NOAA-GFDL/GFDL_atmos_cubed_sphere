@@ -20,8 +20,11 @@
 !***********************************************************************
 
 module init_hydro_mod
-
+#ifdef OVERLOAD_R4
+      use constantsR4_mod,    only: grav, rdgas, rvgas
+#else  
       use constants_mod,      only: grav, rdgas, rvgas
+#endif
       use fv_grid_utils_mod,  only: g_sum
       use fv_mp_mod,          only: is_master
       use field_manager_mod,  only: MODEL_ATMOS

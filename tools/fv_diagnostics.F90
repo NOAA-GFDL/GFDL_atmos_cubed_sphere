@@ -23,9 +23,13 @@
 !! complicated and the logic too cumbersome --- lmh 22nov19
 
 module fv_diagnostics_mod
-
+#ifdef OVERLOAD_R4
+ use constantsR4_mod,    only: grav, rdgas, rvgas, pi=>pi_8, kappa, WTMAIR, WTMCO2, WTMH2O, &
+                               hlv, cp_air, cp_vapor, TFREEZE
+#else
  use constants_mod,      only: grav, rdgas, rvgas, pi=>pi_8, kappa, WTMAIR, WTMCO2, WTMH2O, &
                                hlv, cp_air, cp_vapor, TFREEZE
+#endif
  use fv_arrays_mod,      only: radius ! scaled for small earth
  use fms_mod,            only: write_version_number
  use time_manager_mod,   only: time_type, get_date, get_time
