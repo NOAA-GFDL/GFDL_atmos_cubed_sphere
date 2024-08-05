@@ -37,8 +37,8 @@ module cubed_sphere_inc_mod
       ! Open file
       if ( open_file(fileobj, trim(fname), 'read', Atm%domain) ) then
          ! Register axes
-         call register_axis(fileobj, 'grid_xt', 'x')
-         call register_axis(fileobj, 'grid_yt', 'y')
+         call register_axis(fileobj, 'xaxis_1', 'x')
+         call register_axis(fileobj, 'yaxis_2', 'y')
          
          ! Read increments
          call read_data(fileobj, 'u_inc', increment_data%ua_inc)
