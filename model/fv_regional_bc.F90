@@ -3838,7 +3838,7 @@ subroutine remap_scalar_nggps_regional_bc(Atm                         &
   endif ! data source /= FV3GFS GAUSSIAN NEMSIO/NETCDF and GRIB2 FILE
 #endif
 !
-! For GFS spectral input, omega in pa/sec is stored as w in the input data so actual w(m/s) is calculated
+! For GFS spectral input, omega in Pa/sec is stored as w in the input data so actual w(m/s) is calculated
 ! For GFS nemsio input, omega is 0, so best not to use for input since boundary data will not exist for w
 ! For FV3GFS NEMSIO input, w is already in m/s (but the code reads in as omga) and just needs to be remapped
 !-------------------------------------------------------------
