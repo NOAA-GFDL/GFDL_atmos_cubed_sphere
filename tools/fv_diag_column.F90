@@ -380,7 +380,7 @@ contains
 
        if (hydrostatic) then
           write(unit,500) 'k', 'T', 'delp',   'u',   'v',  'sphum', 'cond', 'pres' !, 'pdry', 'NHpdry'
-          write(unit,500) ' ', 'K',   'mb', 'm/s', 'm/s',   'g/kg', 'g/kg', 'mb'    !  'mb',   'mb'
+          write(unit,500) ' ', 'K', 'mbar', 'm/s', 'm/s',   'g/kg', 'g/kg', 'mbar'  ! 'mbar', 'mbar'
 500       format(A4, A7, A8, A8, A8, A8, A9, A9)
           pehyd = ptop
           do k=1,npz
@@ -400,7 +400,7 @@ contains
 
        else
           write(unit,501) 'k', 'T', 'delp', 'delz',   'u',   'v',   'w', 'sphum', 'cond', 'pres', 'NHprime'!, 'pdry', 'NHpdry'
-          write(unit,501) ' ', 'K',   'mb',    'm', 'm/s', 'm/s', 'm/s',  'g/kg', 'g/kg', 'mb',   'mb'!,    !  'mb',   'mb'
+          write(unit,501) ' ', 'K', 'mbar',    'm', 'm/s', 'm/s', 'm/s',  'g/kg', 'g/kg', 'mbar', 'mbar'!,  ! 'mbar', 'mbar'
 501       format(A4, A7, A8, A6, A8, A8, A8, A8, A9, A9, A9)
           pehyd = ptop
           pehyddry = ptop
@@ -486,7 +486,7 @@ contains
 
        if (hydrostatic) then
           write(unit,501) 'k', 'T', 'delp',   'u',   'v',  'sphum', 'cond', 'pres' !, 'pdry', 'NHpdry'
-          write(unit,501) ' ', 'K',   'mb', 'm/s', 'm/s',   'g/kg', 'g/kg', 'mb'    !  'mb',   'mb'
+          write(unit,501) ' ', 'K', 'mbar', 'm/s', 'm/s',   'g/kg', 'g/kg', 'mbar'  ! 'mbar', 'mbar'
 501       format(A4, A7, A8, A8, A8, A8, A9, A9)
           pehyd = ptop
           do k=1,npz
@@ -514,7 +514,7 @@ contains
           enddo
        else
           write(unit,500) 'k', 'T', 'delp', 'delz',   'u',   'v',   'w', 'sphum', 'cond', 'pres', 'NHprime', 'heat'
-          write(unit,500)  ' ', 'K',   'mb',    'm', 'm/s', 'm/s', 'm/s',  'g/kg', 'g/kg', 'mb', 'mb', 'K'
+          write(unit,500) ' ', 'K', 'mbar',    'm', 'm/s', 'm/s', 'm/s',  'g/kg', 'g/kg', 'mbar', 'mbar',    'K'
 500       format(A4, A7, A8, A6, A8, A8, A8, A8, A9, A9, A9, A8)
           pehyd = ptop
           do k=1,npz
