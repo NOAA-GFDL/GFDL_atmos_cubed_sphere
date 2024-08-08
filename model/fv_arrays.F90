@@ -856,13 +856,13 @@ module fv_arrays_mod
                                           !< If .false., heating from the physics is applied simply as a temperature
                                           !< tendency. The default value is .true.; ignored if hydrostatic = .true.
    logical :: use_hydro_pressure = .false.   !< Whether to compute hydrostatic pressure for input to the physics.
-                                             !< Currently only enabled for the fvGFS model.
+                                             !< Currently only enabled for the UFS model.
                                              !< Ignored in hydrostatic simulations. The default is .false.
    logical :: do_uni_zfull = .false.   !< Whether to compute z_full (the height of each modellayer,
                                        !< as opposed to z_half, the height of each model interface)
                                        !< as the midpoint of the layer, as is done for the nonhydrostatic
                                        !< solver, instead of the height of the location where p = p the mean
-                                       !< pressure in the layer. This option is not available for fvGFS or
+                                       !< pressure in the layer. This option is not available for UFS or
                                        !< the solo_core. The default is .false.
    logical :: hybrid_z    = .false.  !< Whether to use a hybrid-height coordinate, instead of
                                      !< the usual sigma-p coordinate. The default value is .false.
