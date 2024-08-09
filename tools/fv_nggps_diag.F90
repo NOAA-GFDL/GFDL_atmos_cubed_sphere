@@ -221,14 +221,14 @@ contains
 
        if( Atm(n)%flagstruct%hydrostatic ) then
           id_pfhy = register_diag_field ( trim(file_name), 'pfhy', axes(1:3), Time,        &
-               'hydrostatic pressure', 'pa', missing_value=missing_value )
+               'hydrostatic pressure', 'Pa', missing_value=missing_value )
           if (id_pfhy>0) then
              kstt_pfhy = nlevs+1; kend_pfhy = nlevs+npzo
              nlevs = nlevs + npzo
           endif
        else
           id_pfnh = register_diag_field ( trim(file_name), 'pfnh', axes(1:3), Time,        &
-               'non-hydrostatic pressure', 'pa', missing_value=missing_value )
+               'non-hydrostatic pressure', 'Pa', missing_value=missing_value )
           if (id_pfnh>0) then
              kstt_pfnh = nlevs+1; kend_pfnh = nlevs+npzo
              nlevs = nlevs + npzo
@@ -248,7 +248,7 @@ contains
        endif
 
        id_omga = register_diag_field ( trim(file_name), 'omga', axes(1:3), Time,        &
-            'Vertical pressure velocity', 'pa/sec', missing_value=missing_value )
+            'Vertical pressure velocity', 'Pa/sec', missing_value=missing_value )
        if (id_omga>0) then
           kstt_omga = nlevs+1; kend_omga = nlevs+npzo
           nlevs = nlevs + npzo
@@ -262,7 +262,7 @@ contains
        endif
 
        id_delp = register_diag_field ( trim(file_name), 'delp', axes(1:3), Time,        &
-            'pressure thickness', 'pa', missing_value=missing_value )
+            'pressure thickness', 'Pa', missing_value=missing_value )
        if (id_delp>0) then
           kstt_delp = nlevs+1; kend_delp = nlevs+npzo
           nlevs = nlevs + npzo
@@ -291,7 +291,7 @@ contains
        enddo
 !
        id_ps = register_diag_field ( trim(file_name), 'ps', axes(1:2), Time,    &
-           'surface pressure', 'pa',  missing_value=missing_value )
+           'surface pressure', 'Pa',  missing_value=missing_value )
        if( id_ps > 0) then
           kstt_ps = nlevs+1; kend_ps = nlevs+1
           nlevs = nlevs + 1
@@ -1246,7 +1246,7 @@ contains
      endif
      if( id_pfnh>0  ) then
        call find_outputname(trim(file_name),'pfnh',output_name)
-       call add_field_to_bundle(trim(output_name),'non-hydrostatic pressure', 'pa', "time: point",  &
+       call add_field_to_bundle(trim(output_name),'non-hydrostatic pressure', 'Pa', "time: point",  &
             axes(1:3), fcst_grid, kstt_pfnh,kend_pfnh, dyn_bundle, output_file, rcd=rc)
        if(rc==0)  num_field_dyn=num_field_dyn+1
      endif
@@ -1259,7 +1259,7 @@ contains
    else
      if( id_pfhy>0  ) then
        call find_outputname(trim(file_name),'pfhy',output_name)
-       call add_field_to_bundle(trim(output_name),'hydrostatic pressure', 'pa', "time: point",   &
+       call add_field_to_bundle(trim(output_name),'hydrostatic pressure', 'Pa', "time: point",   &
             axes(1:3), fcst_grid, kstt_pfhy,kend_pfhy, dyn_bundle, output_file, rcd=rc)
        if(rc==0)  num_field_dyn=num_field_dyn+1
      endif
@@ -1267,7 +1267,7 @@ contains
 !
    if( id_omga>0  ) then
      call find_outputname(trim(file_name),'omga',output_name)
-     call add_field_to_bundle(trim(output_name),'Vertical pressure velocity', 'pa/sec', "time: point",   &
+     call add_field_to_bundle(trim(output_name),'Vertical pressure velocity', 'Pa/sec', "time: point",   &
           axes(1:3), fcst_grid, kstt_omga,kend_omga, dyn_bundle, output_file, rcd=rc)
      if(rc==0)  num_field_dyn=num_field_dyn+1
    endif
@@ -1282,7 +1282,7 @@ contains
 !
    if( id_delp > 0) then
      call find_outputname(trim(file_name),'delp',output_name)
-     call add_field_to_bundle(trim(output_name),'pressure thickness', 'pa', "time: point",   &
+     call add_field_to_bundle(trim(output_name),'pressure thickness', 'Pa', "time: point",   &
           axes(1:3), fcst_grid, kstt_delp,kend_delp, dyn_bundle, output_file, rcd=rc)
      if(rc==0)  num_field_dyn=num_field_dyn+1
    endif
@@ -1302,7 +1302,7 @@ contains
 !
    if( id_ps > 0) then
      call find_outputname(trim(file_name),'ps',output_name)
-     call add_field_to_bundle(trim(output_name),'surface pressure', 'pa', "time: point",   &
+     call add_field_to_bundle(trim(output_name),'surface pressure', 'Pa', "time: point",   &
           axes(1:2), fcst_grid, kstt_ps,kend_ps, dyn_bundle, output_file, rcd=rc)
      if(rc==0)  num_field_dyn=num_field_dyn+1
    endif

@@ -1278,8 +1278,8 @@ module fv_arrays_mod
 ! Others:
 !-----------------------------------------------------------------------
     real, _ALLOCATABLE :: phis(:,:)     _NULL  ! Surface geopotential (g*Z_surf)
-    real, _ALLOCATABLE :: omga(:,:,:)   _NULL  ! Vertical pressure velocity (pa/s)
-    real, _ALLOCATABLE :: local_omga(:,:,:)   _NULL  ! Vertical pressure velocity (pa/s)
+    real, _ALLOCATABLE :: omga(:,:,:)   _NULL  ! Vertical pressure velocity (Pa/s)
+    real, _ALLOCATABLE :: local_omga(:,:,:)   _NULL  ! Vertical pressure velocity (Pa/s)
     real, _ALLOCATABLE :: ua(:,:,:)     _NULL  ! (ua, va) are mostly used as the A grid winds
     real, _ALLOCATABLE :: va(:,:,:)     _NULL
     real, _ALLOCATABLE :: uc(:,:,:)     _NULL  ! (uc, vc) are mostly used as the C grid winds

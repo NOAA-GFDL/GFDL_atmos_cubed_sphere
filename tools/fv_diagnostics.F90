@@ -112,10 +112,10 @@ module fv_diagnostics_mod
 #else
  integer :: nplev = 31 !< # of levels in plev interpolated standard level output, with levels given by levs. 31 by default
 #endif
- integer :: levs(MAX_PLEVS) !< levels for plev interpolated standard level output, in hPa (mb) in increasing order. Extended GFS std levels by default.
+ integer :: levs(MAX_PLEVS) !< levels for plev interpolated standard level output, in hPa (mbar) in increasing order. Extended GFS std levels by default.
  integer :: k100, k200, k300, k500
  integer :: nplev_ave
- integer :: levs_ave(MAX_PLEVS) !< Interfaces of layer averages for nplev_ave regridded output, in hPa (mb) in increasing order. 50,400,850,1000 by default.
+ integer :: levs_ave(MAX_PLEVS) !< Interfaces of layer averages for nplev_ave regridded output, in hPa (mbar) in increasing order. 50,400,850,1000 by default.
 
  integer :: yr_init, mo_init, dy_init, hr_init, mn_init, sec_init
  integer :: id_dx, id_dy
@@ -297,9 +297,9 @@ contains
     deallocate(grid_xt, grid_yt)
     deallocate(grid_x,  grid_y )
 
-    id_phalf = diag_axis_init('phalf', phalf, 'mb', 'z', &
+    id_phalf = diag_axis_init('phalf', phalf, 'mbar', 'z', &
             'ref half pressure level', direction=-1, set_name="dynamics")
-    id_pfull = diag_axis_init('pfull', pfull, 'mb', 'z', &
+    id_pfull = diag_axis_init('pfull', pfull, 'mbar', 'z', &
             'ref full pressure level', direction=-1, set_name="dynamics", edges=id_phalf)
 
 !---- register static fields -------
@@ -398,16 +398,16 @@ contains
        enddo
     end if
 
-    id_plev = diag_axis_init('plev', levs(1:nplev)*1.0, 'mb', 'z', &
+    id_plev = diag_axis_init('plev', levs(1:nplev)*1.0, 'mbar', 'z', &
             'actual pressure level', direction=-1, set_name="dynamics")
 
     axe2(1) = id_xt
     axe2(2) = id_yt
     axe2(3) = id_plev
 
-    id_plev_ave_edges = diag_axis_init('plev_ave_edges', levs_ave(1:nplev_ave+1)*1.0, 'mb', 'z', &
+    id_plev_ave_edges = diag_axis_init('plev_ave_edges', levs_ave(1:nplev_ave+1)*1.0, 'mbar', 'z', &
             'averaging layer pressure interface', direction=-1, set_name="dynamics")
-    id_plev_ave = diag_axis_init('plev_ave', (levs_ave(1:nplev_ave)+levs_ave(2:nplev_ave+1))*0.5, 'mb', 'z', &
+    id_plev_ave = diag_axis_init('plev_ave', (levs_ave(1:nplev_ave)+levs_ave(2:nplev_ave+1))*0.5, 'mbar', 'z', &
             'averaging layer pressure level', direction=-1, set_name="dynamics", edges=id_plev_ave_edges)
 
     axe_ave(1) = id_xt
@@ -805,40 +805,40 @@ contains
         write(plev,'(I5)') levs(i)
 ! Height:
         id_h(i)   = register_diag_field(trim(field), 'z'//trim(adjustl(plev)), axes(1:2), Time, &
-                                    trim(adjustl(plev))//'-mb height', 'm', missing_value=missing_value)
+                                    trim(adjustl(plev))//'-mbar height', 'm', missing_value=missing_value)
 ! u-wind:
         id_u(i)   = register_diag_field(trim(field), 'u'//trim(adjustl(plev)), axes(1:2), Time, &
-                                    trim(adjustl(plev))//'-mb u', 'm/s', missing_value=missing_value)
+                                    trim(adjustl(plev))//'-mbar u', 'm/s', missing_value=missing_value)
 ! v-wind:
         id_v(i)   = register_diag_field(trim(field), 'v'//trim(adjustl(plev)), axes(1:2), Time, &
-                                    trim(adjustl(plev))//'-mb v', 'm/s', missing_value=missing_value)
+                                    trim(adjustl(plev))//'-mbar v', 'm/s', missing_value=missing_value)
 ! Temperature (K):
         id_t(i)   = register_diag_field(trim(field), 't'//trim(adjustl(plev)), axes(1:2), Time, &
-                                    trim(adjustl(plev))//'-mb temperature', 'K', missing_value=missing_value)
+                                    trim(adjustl(plev))//'-mbar temperature', 'K', missing_value=missing_value)
 ! specific humidity:
         id_q(i)   = register_diag_field(trim(field), 'q'//trim(adjustl(plev)), axes(1:2), Time, &
-                                    trim(adjustl(plev))//'-mb specific humidity', 'kg/kg', missing_value=missing_value)
+                                    trim(adjustl(plev))//'-mbar specific humidity', 'kg/kg', missing_value=missing_value)
 ! cloud water mass mixing ratio:
         id_ql(i)   = register_diag_field(trim(field), 'ql'//trim(adjustl(plev)), axes(1:2), Time, &
-                                    trim(adjustl(plev))//'-mb cloud water mass mixing ratio', 'kg/kg', missing_value=missing_value)
+                                    trim(adjustl(plev))//'-mbar cloud water mass mixing ratio', 'kg/kg', missing_value=missing_value)
 ! cloud ice mass mixing ratio:
         id_qi(i)   = register_diag_field(trim(field), 'qi'//trim(adjustl(plev)), axes(1:2), Time, &
-                                    trim(adjustl(plev))//'-mb cloud ice mass mixing ratio', 'kg/kg', missing_value=missing_value)
+                                    trim(adjustl(plev))//'-mbar cloud ice mass mixing ratio', 'kg/kg', missing_value=missing_value)
 ! rain mass mixing ratio:
         id_qr(i)   = register_diag_field(trim(field), 'qr'//trim(adjustl(plev)), axes(1:2), Time, &
-                                    trim(adjustl(plev))//'-mb rain mass mixing ratio', 'kg/kg', missing_value=missing_value)
+                                    trim(adjustl(plev))//'-mbar rain mass mixing ratio', 'kg/kg', missing_value=missing_value)
 ! snow mass mixing ratio:
         id_qs(i)   = register_diag_field(trim(field), 'qs'//trim(adjustl(plev)), axes(1:2), Time, &
-                                    trim(adjustl(plev))//'-mb snow mass mixing ratio', 'kg/kg', missing_value=missing_value)
+                                    trim(adjustl(plev))//'-mbar snow mass mixing ratio', 'kg/kg', missing_value=missing_value)
 ! graupel mass mixing ratio:
         id_qg(i)   = register_diag_field(trim(field), 'qg'//trim(adjustl(plev)), axes(1:2), Time, &
-                                    trim(adjustl(plev))//'-mb graupel mass mixing ratio', 'kg/kg', missing_value=missing_value)
+                                    trim(adjustl(plev))//'-mbar graupel mass mixing ratio', 'kg/kg', missing_value=missing_value)
 ! cloud fraction:
         id_cf(i)   = register_diag_field(trim(field), 'cf'//trim(adjustl(plev)), axes(1:2), Time, &
-                                    trim(adjustl(plev))//'-mb cloud fraction', '1', missing_value=missing_value)
+                                    trim(adjustl(plev))//'-mbar cloud fraction', '1', missing_value=missing_value)
 ! Omega (Pa/sec):
         id_omg(i) = register_diag_field(trim(field), 'omg'//trim(adjustl(plev)), axes(1:2), Time, &
-                                    trim(adjustl(plev))//'-mb omega', 'Pa/s', missing_value=missing_value)
+                                    trim(adjustl(plev))//'-mbar omega', 'Pa/s', missing_value=missing_value)
       enddo
 
        if (Atm(n)%flagstruct%write_3d_diags) then
@@ -898,41 +898,41 @@ contains
            id_any_hght = 0
       endif
 !-----------------------------
-! mean temp between 300-500 mb
+! mean temp between 300-500 mbar
 !-----------------------------
       id_tm = register_diag_field (trim(field), 'tm', axes(1:2),  Time,   &
-                                   'mean 300-500 mb temp', 'K', missing_value=missing_value, range=(/140.0,400.0/) )
+                                   'mean 300-500 mbar temp', 'K', missing_value=missing_value, range=(/140.0,400.0/) )
 
 !-------------------
 ! Sea-level-pressure
 !-------------------
        id_slp = register_diag_field (trim(field), 'slp', axes(1:2),  Time,   &
-                                     'sea-level pressure', 'mb', missing_value=missing_value,  &
+                                     'sea-level pressure', 'mbar', missing_value=missing_value,  &
                                       range=slprange )
 !----------------------------------
 ! Bottom level pressure for masking
 !----------------------------------
        id_pmask = register_diag_field (trim(field), 'pmask', axes(1:2),  Time,   &
-                                     'masking pressure at lowest level', 'mb',   &
+                                     'masking pressure at lowest level', 'mbar',   &
                                       missing_value=missing_value )
 !------------------------------------------
 ! Fix for Bottom level pressure for masking
 !------------------------------------------
        id_pmaskv2 = register_diag_field(TRIM(field), 'pmaskv2', axes(1:2), Time,&
-            & 'masking pressure at lowest level', 'mb', missing_value=missing_value)
+            & 'masking pressure at lowest level', 'mbar', missing_value=missing_value)
 
 !-------------------
 ! Hurricane scales:
 !-------------------
 ! Net effects: ~ intensity * freq
        id_c15 = register_diag_field (trim(field), 'cat15', axes(1:2),  Time,   &
-                                     'de-pression < 1000', 'mb', missing_value=missing_value)
+                                     'de-pression < 1000', 'mbar', missing_value=missing_value)
        id_c25 = register_diag_field (trim(field), 'cat25', axes(1:2),  Time,   &
-                                     'de-pression < 980', 'mb', missing_value=missing_value)
+                                     'de-pression < 980', 'mbar', missing_value=missing_value)
        id_c35 = register_diag_field (trim(field), 'cat35', axes(1:2),  Time,   &
-                                     'de-pression < 964', 'mb', missing_value=missing_value)
+                                     'de-pression < 964', 'mbar', missing_value=missing_value)
        id_c45 = register_diag_field (trim(field), 'cat45', axes(1:2),  Time,   &
-                                     'de-pression < 944', 'mb', missing_value=missing_value)
+                                     'de-pression < 944', 'mbar', missing_value=missing_value)
 ! Frequency:
        id_f15 = register_diag_field (trim(field), 'f15', axes(1:2),  Time,   &
                                      'Cat15 frequency', 'none', missing_value=missing_value)
@@ -979,22 +979,22 @@ contains
                'Relative Humidity', '%', missing_value=missing_value )
           !            'Relative Humidity', '%', missing_value=missing_value, range=rhrange )
           id_delp = register_diag_field ( trim(field), 'delp', axes(1:3), Time,        &
-               'pressure thickness'//massdef_str, 'pa', missing_value=missing_value )
+               'pressure thickness'//massdef_str, 'Pa', missing_value=missing_value )
 #ifdef GFS_PHYS
           id_delp_total = register_diag_field ( trim(field), 'delp_total', axes(1:3), Time,        &
-               'FV3 pressure thickness (dry air + all water species)', 'pa', missing_value=missing_value )
+               'FV3 pressure thickness (dry air + all water species)', 'Pa', missing_value=missing_value )
 #endif
           if ( .not. Atm(n)%flagstruct%hydrostatic )                                        &
                id_delz = register_diag_field ( trim(field), 'delz', axes(1:3), Time,        &
                'height thickness', 'm', missing_value=missing_value )
           if( Atm(n)%flagstruct%hydrostatic ) then
              id_pfhy = register_diag_field ( trim(field), 'pfhy', axes(1:3), Time,        &
-                  'hydrostatic pressure'//massdef_str, 'pa', missing_value=missing_value )
+                  'hydrostatic pressure'//massdef_str, 'Pa', missing_value=missing_value )
           else
              id_pfnh = register_diag_field ( trim(field), 'pfnh', axes(1:3), Time,        &
-                  'non-hydrostatic pressure'//massdef_str, 'pa', missing_value=missing_value )
+                  'non-hydrostatic pressure'//massdef_str, 'Pa', missing_value=missing_value )
              id_ppnh = register_diag_field ( trim(field), 'ppnh', axes(1:3), Time,        &
-                  'non-hydrostatic pressure perturbation', 'pa', missing_value=missing_value )
+                  'non-hydrostatic pressure perturbation', 'Pa', missing_value=missing_value )
           endif
           !--------------------
           ! 3D Condensate
@@ -1169,18 +1169,18 @@ contains
             'Column-averaged total chlorine mixing ratio', 'kg/kg', missing_value=missing_value )
 
 !--------------------------
-! 850-mb vorticity
+! 850-mbar vorticity
 !--------------------------
        id_vort850 = register_diag_field ( trim(field), 'vort850', axes(1:2), Time,       &
-                           '850-mb vorticity', '1/s', missing_value=missing_value )
+                           '850-mbar vorticity', '1/s', missing_value=missing_value )
 
        id_vort200 = register_diag_field ( trim(field), 'vort200', axes(1:2), Time,       &
-                           '200-mb vorticity', '1/s', missing_value=missing_value )
+                           '200-mbar vorticity', '1/s', missing_value=missing_value )
 
 ! Cubed_2_latlon interpolation is more accurate, particularly near the poles, using
 ! winds speed (a scalar), rather than wind vectors or kinetic energy directly.
        id_s200 = register_diag_field ( trim(field), 's200', axes(1:2), Time,       &
-                           '200-mb wind_speed', 'm/s', missing_value=missing_value )
+                           '200-mbar wind_speed', 'm/s', missing_value=missing_value )
        id_sl12 = register_diag_field ( trim(field), 'sl12', axes(1:2), Time,       &
                            '12th L wind_speed', 'm/s', missing_value=missing_value )
        id_sl13 = register_diag_field ( trim(field), 'sl13', axes(1:2), Time,       &
@@ -1194,7 +1194,7 @@ contains
                '850mb condensate', 'kg/m/s^2', missing_value=missing_value )
 
        id_vort500 = register_diag_field ( trim(field), 'vort500', axes(1:2), Time,       &
-                           '500-mb vorticity', '1/s', missing_value=missing_value )
+                           '500-mbar vorticity', '1/s', missing_value=missing_value )
 
        id_rain5km = register_diag_field ( trim(field), 'rain5km', axes(1:2), Time,       &
                            '5-km AGL liquid water', 'kg/kg', missing_value=missing_value )
@@ -1203,14 +1203,14 @@ contains
 !--------------------------
        if( .not. Atm(n)%flagstruct%hydrostatic ) then
           id_w200 = register_diag_field ( trim(field), 'w200', axes(1:2), Time,       &
-                              '200-mb w-wind', 'm/s', missing_value=missing_value )
+                              '200-mbar w-wind', 'm/s', missing_value=missing_value )
           id_w500 = register_diag_field ( trim(field), 'w500', axes(1:2), Time,       &
-                              '500-mb w-wind', 'm/s', missing_value=missing_value )
+                              '500-mbar w-wind', 'm/s', missing_value=missing_value )
           id_w700 = register_diag_field ( trim(field), 'w700', axes(1:2), Time,       &
-                              '700-mb w-wind', 'm/s', missing_value=missing_value )
+                              '700-mbar w-wind', 'm/s', missing_value=missing_value )
 
           id_w850 = register_diag_field ( trim(field), 'w850', axes(1:2), Time,       &
-                           '850-mb w-wind', 'm/s', missing_value=missing_value )
+                           '850-mbar w-wind', 'm/s', missing_value=missing_value )
           id_w5km = register_diag_field ( trim(field), 'w5km', axes(1:2), Time,       &
                            '5-km AGL w-wind', 'm/s', missing_value=missing_value )
           id_w2500m = register_diag_field ( trim(field), 'w2500m', axes(1:2), Time,       &
@@ -1219,15 +1219,15 @@ contains
                            '1-km AGL w-wind', 'm/s', missing_value=missing_value )
 
           id_wmaxup = register_diag_field ( trim(field), 'wmaxup', axes(1:2), Time,       &
-                           'column-maximum updraft (below 100 mb)', 'm/s', missing_value=missing_value )
+                           'column-maximum updraft (below 100 mbar)', 'm/s', missing_value=missing_value )
           id_wmaxdn = register_diag_field ( trim(field), 'wmaxdn', axes(1:2), Time,       &
-                           'column-maximum downdraft (below 100 mb)', 'm/s', missing_value=missing_value )
+                           'column-maximum downdraft (below 100 mbar)', 'm/s', missing_value=missing_value )
 
        endif
 
 ! helicity
        id_x850 = register_diag_field ( trim(field), 'x850', axes(1:2), Time,       &
-                           '850-mb vertical comp. of helicity', 'm/s**2', missing_value=missing_value )
+                           '850-mbar vertical comp. of helicity', 'm/s**2', missing_value=missing_value )
 !       id_x03 = register_diag_field ( trim(field), 'x03', axes(1:2), Time,       &
 !                           '0-3 km vertical comp. of helicity', 'm**2/s**2', missing_value=missing_value )
 !       id_x25 = register_diag_field ( trim(field), 'x25', axes(1:2), Time,       &
@@ -1266,97 +1266,97 @@ contains
 ! relative humidity (physics definition):
 !--------------------------
        id_rh10 = register_diag_field ( trim(field), 'rh10', axes(1:2), Time,       &
-                           '10-mb relative humidity', '%', missing_value=missing_value )
+                           '10-mbar relative humidity', '%', missing_value=missing_value )
        id_rh50 = register_diag_field ( trim(field), 'rh50', axes(1:2), Time,       &
-                           '50-mb relative humidity', '%', missing_value=missing_value )
+                           '50-mbar relative humidity', '%', missing_value=missing_value )
        id_rh100 = register_diag_field ( trim(field), 'rh100', axes(1:2), Time,       &
-                           '100-mb relative humidity', '%', missing_value=missing_value )
+                           '100-mbar relative humidity', '%', missing_value=missing_value )
        id_rh200 = register_diag_field ( trim(field), 'rh200', axes(1:2), Time,       &
-                           '200-mb relative humidity', '%', missing_value=missing_value )
+                           '200-mbar relative humidity', '%', missing_value=missing_value )
        id_rh250 = register_diag_field ( trim(field), 'rh250', axes(1:2), Time,       &
-                           '250-mb relative humidity', '%', missing_value=missing_value )
+                           '250-mbar relative humidity', '%', missing_value=missing_value )
        id_rh300 = register_diag_field ( trim(field), 'rh300', axes(1:2), Time,       &
-                           '300-mb relative humidity', '%', missing_value=missing_value )
+                           '300-mbar relative humidity', '%', missing_value=missing_value )
        id_rh500 = register_diag_field ( trim(field), 'rh500', axes(1:2), Time,       &
-                           '500-mb relative humidity', '%', missing_value=missing_value )
+                           '500-mbar relative humidity', '%', missing_value=missing_value )
        id_rh700 = register_diag_field ( trim(field), 'rh700', axes(1:2), Time,       &
-                           '700-mb relative humidity', '%', missing_value=missing_value )
+                           '700-mbar relative humidity', '%', missing_value=missing_value )
        id_rh850 = register_diag_field ( trim(field), 'rh850', axes(1:2), Time,       &
-                           '850-mb relative humidity', '%', missing_value=missing_value )
+                           '850-mbar relative humidity', '%', missing_value=missing_value )
        id_rh925 = register_diag_field ( trim(field), 'rh925', axes(1:2), Time,       &
-                           '925-mb relative humidity', '%', missing_value=missing_value )
+                           '925-mbar relative humidity', '%', missing_value=missing_value )
        id_rh1000 = register_diag_field ( trim(field), 'rh1000', axes(1:2), Time,       &
-                           '1000-mb relative humidity', '%', missing_value=missing_value )
+                           '1000-mbar relative humidity', '%', missing_value=missing_value )
 !--------------------------
 ! Dew Point
 !--------------------------
        id_dp10 = register_diag_field ( trim(field), 'dp10', axes(1:2), Time,       &
-                           '10-mb dew point', 'K', missing_value=missing_value )
+                           '10-mbar dew point', 'K', missing_value=missing_value )
        id_dp50 = register_diag_field ( trim(field), 'dp50', axes(1:2), Time,       &
-                           '50-mb dew point', 'K', missing_value=missing_value )
+                           '50-mbar dew point', 'K', missing_value=missing_value )
        id_dp100 = register_diag_field ( trim(field), 'dp100', axes(1:2), Time,       &
-                           '100-mb dew point', 'K', missing_value=missing_value )
+                           '100-mbar dew point', 'K', missing_value=missing_value )
        id_dp200 = register_diag_field ( trim(field), 'dp200', axes(1:2), Time,       &
-                           '200-mb dew point', 'K', missing_value=missing_value )
+                           '200-mbar dew point', 'K', missing_value=missing_value )
        id_dp250 = register_diag_field ( trim(field), 'dp250', axes(1:2), Time,       &
-                           '250-mb dew point', 'K', missing_value=missing_value )
+                           '250-mbar dew point', 'K', missing_value=missing_value )
        id_dp300 = register_diag_field ( trim(field), 'dp300', axes(1:2), Time,       &
-                           '300-mb dew point', 'K', missing_value=missing_value )
+                           '300-mbar dew point', 'K', missing_value=missing_value )
        id_dp500 = register_diag_field ( trim(field), 'dp500', axes(1:2), Time,       &
-                           '500-mb dew point', 'K', missing_value=missing_value )
+                           '500-mbar dew point', 'K', missing_value=missing_value )
        id_dp700 = register_diag_field ( trim(field), 'dp700', axes(1:2), Time,       &
-                           '700-mb dew point', 'K', missing_value=missing_value )
+                           '700-mbar dew point', 'K', missing_value=missing_value )
        id_dp850 = register_diag_field ( trim(field), 'dp850', axes(1:2), Time,       &
-                           '850-mb dew point', 'K', missing_value=missing_value )
+                           '850-mbar dew point', 'K', missing_value=missing_value )
        id_dp925 = register_diag_field ( trim(field), 'dp925', axes(1:2), Time,       &
-                           '925-mb dew point', 'K', missing_value=missing_value )
+                           '925-mbar dew point', 'K', missing_value=missing_value )
        id_dp1000 = register_diag_field ( trim(field), 'dp1000', axes(1:2), Time,       &
-                           '1000-mb dew point', 'K', missing_value=missing_value )
+                           '1000-mbar dew point', 'K', missing_value=missing_value )
 !--------------------------
 ! equivalent potential temperature:
 !--------------------------
        id_theta_e100 = register_diag_field ( trim(field), 'theta_e100', axes(1:2), Time,       &
-                           '100-mb equivalent potential temperature', 'K', missing_value=missing_value )
+                           '100-mbar equivalent potential temperature', 'K', missing_value=missing_value )
        id_theta_e200 = register_diag_field ( trim(field), 'theta_e200', axes(1:2), Time,       &
-                           '200-mb equivalent potential temperature', 'K', missing_value=missing_value )
+                           '200-mbar equivalent potential temperature', 'K', missing_value=missing_value )
        id_theta_e250 = register_diag_field ( trim(field), 'theta_e250', axes(1:2), Time,       &
-                           '250-mb equivalent potential temperature', 'K', missing_value=missing_value )
+                           '250-mbar equivalent potential temperature', 'K', missing_value=missing_value )
        id_theta_e300 = register_diag_field ( trim(field), 'theta_e300', axes(1:2), Time,       &
-                           '300-mb equivalent potential temperature', 'K', missing_value=missing_value )
+                           '300-mbar equivalent potential temperature', 'K', missing_value=missing_value )
        id_theta_e500 = register_diag_field ( trim(field), 'theta_e500', axes(1:2), Time,       &
-                           '500-mb equivalent potential temperature', 'K', missing_value=missing_value )
+                           '500-mbar equivalent potential temperature', 'K', missing_value=missing_value )
        id_theta_e700 = register_diag_field ( trim(field), 'theta_e700', axes(1:2), Time,       &
-                           '700-mb equivalent potential temperature', 'K', missing_value=missing_value )
+                           '700-mbar equivalent potential temperature', 'K', missing_value=missing_value )
        id_theta_e850 = register_diag_field ( trim(field), 'theta_e850', axes(1:2), Time,       &
-                           '850-mb equivalent potential temperature', 'K', missing_value=missing_value )
+                           '850-mbar equivalent potential temperature', 'K', missing_value=missing_value )
        id_theta_e925 = register_diag_field ( trim(field), 'theta_e925', axes(1:2), Time,       &
-                           '925-mb equivalent potential temperature', 'K', missing_value=missing_value )
+                           '925-mbar equivalent potential temperature', 'K', missing_value=missing_value )
        id_theta_e1000 = register_diag_field ( trim(field), 'theta_e1000', axes(1:2), Time,       &
-                           '1000-mb equivalent potential temperature', 'K', missing_value=missing_value )
+                           '1000-mbar equivalent potential temperature', 'K', missing_value=missing_value )
 
 !--------------------------
 ! relative humidity (CMIP definition):
 !--------------------------
        id_rh10_cmip = register_diag_field ( trim(field), 'rh10_cmip', axes(1:2), Time,       &
-                           '10-mb relative humidity (CMIP)', '%', missing_value=missing_value )
+                           '10-mbar relative humidity (CMIP)', '%', missing_value=missing_value )
        id_rh50_cmip = register_diag_field ( trim(field), 'rh50_cmip', axes(1:2), Time,       &
-                           '50-mb relative humidity (CMIP)', '%', missing_value=missing_value )
+                           '50-mbar relative humidity (CMIP)', '%', missing_value=missing_value )
        id_rh100_cmip = register_diag_field ( trim(field), 'rh100_cmip', axes(1:2), Time,       &
-                           '100-mb relative humidity (CMIP)', '%', missing_value=missing_value )
+                           '100-mbar relative humidity (CMIP)', '%', missing_value=missing_value )
        id_rh250_cmip = register_diag_field ( trim(field), 'rh250_cmip', axes(1:2), Time,       &
-                           '250-mb relative humidity (CMIP)', '%', missing_value=missing_value )
+                           '250-mbar relative humidity (CMIP)', '%', missing_value=missing_value )
        id_rh300_cmip = register_diag_field ( trim(field), 'rh300_cmip', axes(1:2), Time,       &
-                           '300-mb relative humidity (CMIP)', '%', missing_value=missing_value )
+                           '300-mbar relative humidity (CMIP)', '%', missing_value=missing_value )
        id_rh500_cmip = register_diag_field ( trim(field), 'rh500_cmip', axes(1:2), Time,       &
-                           '500-mb relative humidity (CMIP)', '%', missing_value=missing_value )
+                           '500-mbar relative humidity (CMIP)', '%', missing_value=missing_value )
        id_rh700_cmip = register_diag_field ( trim(field), 'rh700_cmip', axes(1:2), Time,       &
-                           '700-mb relative humidity (CMIP)', '%', missing_value=missing_value )
+                           '700-mbar relative humidity (CMIP)', '%', missing_value=missing_value )
        id_rh850_cmip = register_diag_field ( trim(field), 'rh850_cmip', axes(1:2), Time,       &
-                           '850-mb relative humidity (CMIP)', '%', missing_value=missing_value )
+                           '850-mbar relative humidity (CMIP)', '%', missing_value=missing_value )
        id_rh925_cmip = register_diag_field ( trim(field), 'rh925_cmip', axes(1:2), Time,       &
-                           '925-mb relative humidity (CMIP)', '%', missing_value=missing_value )
+                           '925-mbar relative humidity (CMIP)', '%', missing_value=missing_value )
        id_rh1000_cmip = register_diag_field ( trim(field), 'rh1000_cmip', axes(1:2), Time,       &
-                           '1000-mb relative humidity (CMIP)', '%', missing_value=missing_value )
+                           '1000-mbar relative humidity (CMIP)', '%', missing_value=missing_value )
 
 
        if (Atm(n)%flagstruct%write_3d_diags) then
@@ -1728,7 +1728,7 @@ contains
         call prt_mxm('TA_Top (K): ', Atm(n)%pt(isc:iec,jsc:jec,  1), isc, iec, jsc, jec, 0, 1, 1., Atm(n)%gridstruct%area_64, Atm(n)%domain)
         call prt_mxm('TA_Bottom (K): ', Atm(n)%pt(isc:iec,jsc:jec,npz), isc, iec, jsc, jec, 0, 1, 1., Atm(n)%gridstruct%area_64, Atm(n)%domain)
         call prt_mxm('TA (K): ', Atm(n)%pt,   isc, iec, jsc, jec, ngc, npz, 1., Atm(n)%gridstruct%area_64, Atm(n)%domain)
-        call prt_mxm('OM (pa/s): ', Atm(n)%omga, isc, iec, jsc, jec, ngc, npz, 1., Atm(n)%gridstruct%area_64, Atm(n)%domain)
+        call prt_mxm('OM (Pa/s): ', Atm(n)%omga, isc, iec, jsc, jec, ngc, npz, 1., Atm(n)%gridstruct%area_64, Atm(n)%domain)
 #endif
 
     elseif ( Atm(n)%flagstruct%range_warn ) then
@@ -2342,8 +2342,8 @@ contains
 
              !Determine which levels have been registered and need writing out
              if ( id_tm>0 ) then
-                  idg(k300) = 1  ! 300-mb
-                  idg(k500) = 1  ! 500-mb
+                  idg(k300) = 1  ! 300-mbar
+                  idg(k500) = 1  ! 500-mbar
              else
                   idg(k300) = id_h(k300)
                   idg(k500) = id_h(k500)
@@ -2383,7 +2383,7 @@ contains
              ! mean virtual temp 300mb to 500mb
              if( id_tm>0 ) then
                 if ( (id_h(k500) <= 0 .or. id_h(k300) <= 0) .and. (id_h_plev>0 .and. (k300<=0 .or. k500<=0))) then
-                   call mpp_error(NOTE, "Could not find levs for 300--500 mb mean temperature, setting to missing_value")
+                   call mpp_error(NOTE, "Could not find levs for 300--500 mbar mean temperature, setting to missing_value")
                    a2 = missing_value
                 else
                  do j=jsc,jec
@@ -2552,7 +2552,7 @@ contains
              if (.not. Atm(n)%gridstruct%bounded_domain)  then
                 tmp = 0.
                 sar = 0.
-                !            Compute mean temp at 100 mb near EQ
+                !            Compute mean temp at 100 mbar near EQ
                 do j=jsc,jec
                    do i=isc,iec
                       slat = Atm(n)%gridstruct%agrid(i,j,2)*rad2deg
@@ -2901,7 +2901,7 @@ contains
           endif
           if ( id_ctp>0 ) then
                used = send_data(id_ctp, var1, Time)
-               if(prt_minmax) call prt_mxm('Cloud_top_P (mb): ', var1, isc, iec, jsc, jec, 0, 1, 1., Atm(n)%gridstruct%area_64, Atm(n)%domain)
+               if(prt_minmax) call prt_mxm('Cloud_top_P (mbar): ', var1, isc, iec, jsc, jec, 0, 1, 1., Atm(n)%gridstruct%area_64, Atm(n)%domain)
           endif
           deallocate ( var1 )
           if ( id_ctz>0 ) then
@@ -3078,7 +3078,7 @@ contains
              enddo
            enddo
 !           if (prt_minmax) then
-!              call prt_mxm(' PFNH (mb)', wk(isc:iec,jsc:jec,1), isc, iec, jsc, jec, 0, npz, 1.E-2, Atm(n)%gridstruct%area_64, Atm(n)%domain)
+!              call prt_mxm(' PFNH (mbar)', wk(isc:iec,jsc:jec,1), isc, iec, jsc, jec, 0, npz, 1.E-2, Atm(n)%gridstruct%area_64, Atm(n)%domain)
 !           endif
            used=send_data(id_pfnh, wk, Time)
            if (id_ppnh > 0) then
@@ -3171,7 +3171,7 @@ contains
 
 
 ! pressure for masking p-level fields
-! incorrectly defines a2 to be ps (in mb).
+! incorrectly defines a2 to be ps (in mbar).
        if (id_pmask>0) then
             do j=jsc,jec
             do i=isc,iec
@@ -3183,7 +3183,7 @@ contains
        endif
 ! fix for pressure for masking p-level fields
 ! based on lowest-level pfull
-! define pressure at lowest level the same as interpolate_vertical (in mb)
+! define pressure at lowest level the same as interpolate_vertical (in mbar)
        if (id_pmaskv2>0) then
             do j=jsc,jec
             do i=isc,iec
@@ -3681,7 +3681,7 @@ contains
        if (allocated(a2)) deallocate(a2)
        allocate ( a2(isc:iec,jsc:jec) )
 
-       if ( id_sl12>0 ) then   ! 13th level wind speed (~ 222 mb for the 32L setup)
+       if ( id_sl12>0 ) then   ! 13th level wind speed (~ 222 mbar for the 32L setup)
             do j=jsc,jec
                do i=isc,iec
                   a2(i,j) = sqrt(Atm(n)%ua(i,j,12)**2 + Atm(n)%va(i,j,12)**2)
@@ -3689,7 +3689,7 @@ contains
             enddo
             used=send_data(id_sl12, a2, Time)
        endif
-       if ( id_sl13>0 ) then   ! 13th level wind speed (~ 222 mb for the 32L setup)
+       if ( id_sl13>0 ) then   ! 13th level wind speed (~ 222 mbar for the 32L setup)
             do j=jsc,jec
                do i=isc,iec
                   a2(i,j) = sqrt(Atm(n)%ua(i,j,13)**2 + Atm(n)%va(i,j,13)**2)
@@ -3703,7 +3703,7 @@ contains
                                       200.e2, Atm(n)%peln, Atm(n)%w(isc:iec,jsc:jec,:), a2)
             used=send_data(id_w200, a2, Time)
        endif
-! 500-mb
+! 500-mbar
        if ( (.not.Atm(n)%flagstruct%hydrostatic) .and. id_w500>0 ) then
             call interpolate_vertical(isc, iec, jsc, jec, npz,   &
                                       500.e2, Atm(n)%peln, Atm(n)%w(isc:iec,jsc:jec,:), a2)
@@ -3820,7 +3820,7 @@ contains
           theta_d = get_tracer_index (MODEL_ATMOS, 'theta_d')
           if ( theta_d>0 ) then
              if( prt_minmax ) then
-                ! Check level-34 ~ 300 mb
+                ! Check level-34 ~ 300 mbar
                 a2(:,:) = 0.
                 do k=1,npz
                 do j=jsc,jec
@@ -4564,7 +4564,7 @@ contains
 
  if ( nwat==0 ) then
       psmo = g_sum(domain, ps(is:ie,js:je), is, ie, js, je, n_g, area, 1)
-      if( master ) write(*,*) 'Total surface pressure (mb)', trim(gn), ' = ',  0.01*psmo
+      if( master ) write(*,*) 'Total surface pressure (mbar)', trim(gn), ' = ',  0.01*psmo
       call z_sum(is, ie, js, je, km, n_g, delp, q(is-n_g,js-n_g,1,1  ), psqv(is,js))
       return
  endif
@@ -4588,7 +4588,7 @@ contains
       call z_sum(is, ie, js, je, km, n_g, delp, q(is-n_g,js-n_g,1,graupel), psq(is,js,graupel))
 
 
-! Mean water vapor in the "stratosphere" (75 mb and above):
+! Mean water vapor in the "stratosphere" (75 mbar and above):
  if ( phalf(2)< 75. ) then
  kstrat = 1
  do k=1,km
@@ -4598,7 +4598,7 @@ contains
  call z_sum(is, ie, js, je, kstrat, n_g, delp, q(is-n_g,js-n_g,1,sphum), q_strat(is,js))
  psmo = g_sum(domain, q_strat(is,js), is, ie, js, je, n_g, area, 1) * 1.e6           &
       / p_sum(is, ie, js, je, kstrat, n_g, delp, area, domain)
- if(master) write(*,*) 'Mean_Specific_Humidity (mg/kg) above 75 mb', trim(gn), ' = ', psmo
+ if(master) write(*,*) 'Mean_Specific_Humidity (mg/kg) above 75 mbar', trim(gn), ' = ', psmo
  endif
 
 
@@ -4615,8 +4615,8 @@ contains
  psdry = psmo - totw
 
  if( master ) then
-     write(*,*) 'Total_Surface_Pressure (mb)', trim(gn), ' = ',  0.01*psmo
-     write(*,*) 'Mean_Dry_Surface_Pressure (mb)', trim(gn), ' = ',    0.01*psdry
+     write(*,*) 'Total_Surface_Pressure (mbar)', trim(gn), ' = ',  0.01*psmo
+     write(*,*) 'Mean_Dry_Surface_Pressure (mbar)', trim(gn), ' = ',    0.01*psdry
      write(*,*) 'Total_Water_Vapor (kg/m**2)', trim(gn), ' = ',  qtot(sphum)*ginv
      if ( nwat> 2 ) then
           write(*,*) '--- Micro Phys water substances (kg/m**2) ---'
@@ -4694,7 +4694,7 @@ contains
  real, intent(in):: ts(is-ng:ie+ng,js-ng:je+ng)
  real, intent(in):: peln(is:ie,km+1,js:je)
  real, intent(in):: height(kd)   ! must be monotonically decreasing with increasing k
- real, intent(out):: a2(is:ie,js:je,kd)      ! pressure (pa)
+ real, intent(out):: a2(is:ie,js:je,kd)      ! pressure (Pa)
  real, optional, intent(in):: fac
 
 ! local:
@@ -5841,7 +5841,7 @@ subroutine eqv_pot(theta_e, pt, delp, delz, peln, pkz, q, is, ie, js, je, ng, np
     do k = 1,npz
        cappa = cappa_b
       do j = js,je
-! get pressure in mb
+! get pressure in mbar
         if ( hydrostatic ) then
             do i=is,ie
                p_mb(i) = 0.01*delp(i,j,k) / (peln(i,k+1,j) - peln(i,k,j))
@@ -6270,11 +6270,11 @@ end subroutine eqv_pot
     ! use most unstable parcel (max theta-e)
 
     IF(p(1).lt.50000.0)THEN
-      ! first report is above 500 mb ... just use the first level reported
+      ! first report is above 500 mbar ... just use the first level reported
       kmin = nk
       maxthe = the(nk)
     ELSE
-      ! find max thetae below 500 mb
+      ! find max thetae below 500 mbar
       maxthe = 0.0
       do k=nk,1,-1
         if(p(k).ge.50000.0)then
@@ -6490,7 +6490,7 @@ end subroutine eqv_pot
       endif
 
       if( (p(k).le.10000.0).and.(b2.lt.0.0) )then
-        ! stop if b < 0 and p < 100 mb
+        ! stop if b < 0 and p < 100 mbar
         doit = .false.
       endif
 
