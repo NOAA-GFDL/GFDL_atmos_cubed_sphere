@@ -350,7 +350,7 @@ contains
        write(unit, *)
 
        write(unit,500) 'k', 'T', 'delp', 'delz',   'u',   'v',   'w', 'sphum', 'cond', 'pres', 'NHprime'!, 'pdry', 'NHpdry'
-       write(unit,500) ' ', 'K',   'mb',    'm', 'm/s', 'm/s', 'm/s',  'g/kg', 'g/kg', 'mb',   'mb'!,    !  'mb',   'mb'
+       write(unit,500) ' ', 'K', 'mbar',    'm', 'm/s', 'm/s', 'm/s',  'g/kg', 'g/kg', 'mbar', 'mbar'!,  !  'mbar', 'mbar'
 500    format(A4, A7, A8, A6, A8, A8, A8, A8, A9, A9, A9)
        if (hydrostatic) then
           call mpp_error(NOTE, 'Hydrostatic debug sounding not yet supported')
@@ -432,7 +432,7 @@ contains
        write(unit, *)
 
        write(unit,500) 'k', 'T', 'delp', 'delz',   'u',   'v',   'w', 'sphum', 'cond', 'pres', 'NHprime', 'heat'
-       write(unit,500)  ' ', 'K',   'mb',    'm', 'm/s', 'm/s', 'm/s',  'g/kg', 'g/kg', 'mb', 'mb', 'K'
+       write(unit,500) ' ', 'K', 'mbar',    'm', 'm/s', 'm/s', 'm/s',  'g/kg', 'g/kg', 'mbar', 'mbar', 'K'
 500    format(A4, A7, A8, A6, A8, A8, A8, A8, A9, A9, A9, A8)
           if (hydrostatic) then
              call mpp_error(NOTE, 'Hydrostatic debug sounding not yet supported')

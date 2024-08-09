@@ -2177,7 +2177,7 @@
        enddo
        ze1(1) = ztop
 
-       if ( is_master() ) write(*,*) 'Model top (pa)=', ptop
+       if ( is_master() ) write(*,*) 'Model top (Pa)=', ptop
 
        do j=jsd,jed
           do i=isd,ied
@@ -2246,7 +2246,7 @@
        enddo
        ze1(1) = ztop
 
-       if ( is_master() ) write(*,*) 'Model top (pa)=', ptop
+       if ( is_master() ) write(*,*) 'Model top (Pa)=', ptop
 
        do j=jsd,jed
           do i=isd,ied
