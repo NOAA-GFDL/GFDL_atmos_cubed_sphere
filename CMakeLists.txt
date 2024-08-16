@@ -198,7 +198,7 @@ if(GFS_PHYS)
 endif()
 
 if(use_WRTCOMP)
-  target_link_libraries(fv3 PUBLIC esmf)
+  target_link_libraries(fv3 PUBLIC ESMF::ESMF)
 endif()
 
 if(OPENMP)
