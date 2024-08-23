@@ -383,7 +383,7 @@ contains
     call init_ijk_mem(is, ie+1, jsd, jed,  npz, cx, 0.)
     call init_ijk_mem(isd, ied, js,  je+1, npz, cy, 0.)
 
-    if ( flagstruct%d_con > 1.0E-5 ) then
+    if ( flagstruct%d_con > 1.0E-5 .OR. flagstruct%do_skeb) then
          allocate( heat_source(isd:ied, jsd:jed, npz) )
          call init_ijk_mem(isd, ied, jsd, jed, npz, heat_source, 0.)
     endif
@@ -857,7 +857,7 @@ contains
 
        endif
 
-       if( hydrostatic .and. (.not.flagstruct%use_old_omega) .and. last_step ) then
+       if( (.not.flagstruct%use_old_omega) .and. last_step ) then
 ! Average horizontal "convergence" to cell center
             do j=js,je
                do i=is,ie
@@ -894,7 +894,7 @@ contains
                   nord_k, nord_v(k), nord_w, nord_t, flagstruct%dddmp, d2_divg, flagstruct%d4_bg,  &
                   damp_vt(k), damp_w, damp_t, d_con_k, hydrostatic, gridstruct, flagstruct, bd)
 
-       if( hydrostatic .and. (.not.flagstruct%use_old_omega) .and. last_step ) then
+       if((.not.flagstruct%use_old_omega) .and. last_step ) then
 ! Average horizontal "convergence" to cell center
             do j=js,je
                do i=is,ie
@@ -1264,7 +1264,7 @@ contains
 
 #ifdef SW_DYNAMICS
 #else
-    if ( hydrostatic .and. last_step ) then
+    if ( last_step ) then
       if ( flagstruct%use_old_omega ) then
 !$OMP parallel do default(none) shared(is,ie,js,je,npz,omga,pe,pem,rdt)
          do k=1,npz
