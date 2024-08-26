@@ -781,6 +781,7 @@ module fv_arrays_mod
                                 !<     1: GMAO linear
                                 !<     2: GMAO quadratic
                                 !<     3: GMAO cubic
+   logical :: md_subcycle = .false. ! Whether do molecular_diffusion subcycling (WAM)
 
    logical :: z_tracer = .false.   !< Whether to transport sub-cycled tracers layer-by-layer,
                                    !< each with its own computed sub-cycling time step (if q_split = 0).
