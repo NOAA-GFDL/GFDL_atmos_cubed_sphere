@@ -21,9 +21,9 @@
 
 module fv_grid_tools_mod
 #ifdef OVERLOAD_R4
-  use constants_mod,  only: grav, pi=>pi_8
+  use constantsR4_mod,  only: grav, pi=>pi_8
 #else
-  use constantsR4_mod,only: grav, pi=>pi_8
+  use constants_mod,only: grav, pi=>pi_8
 #endif
   use fv_arrays_mod,  only: radius, omega ! scaled for small earth
 !  use test_cases_mod, only: small_earth_scale
@@ -89,7 +89,7 @@ contains
     integer,             intent(IN)    :: ng
 
     type(FmsNetcdfFile_t) :: Grid_input
-    real, allocatable, dimension(:,:)  :: tmpx, tmpy
+    real(kind=R_GRID), allocatable, dimension(:,:)  :: tmpx, tmpy
     real(kind=R_GRID), pointer, dimension(:,:,:)    :: grid
     character(len=128)                 :: units = ""
     character(len=256)                 :: atm_mosaic, atm_hgrid, grid_form
