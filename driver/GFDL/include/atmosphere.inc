@@ -13,13 +13,21 @@
                                & in the Cubed Sphere')
     endif
 
-    do j=jsc,jec+1
-       do i=isc,iec+1
-          blon(i-isc+1,j-jsc+1) = _DBL_(_RL_(Atm(mygrid)%gridstruct%grid(i,j,1)))
-          blat(i-isc+1,j-jsc+1) = _DBL_(_RL_(Atm(mygrid)%gridstruct%grid(i,j,2)))
-       enddo
-    end do
-
+    if (ATMOSPHERE_KIND_ .eq. r8_kind) then
+      do j=jsc,jec+1
+        do i=isc,iec+1
+          blon(i-isc+1,j-jsc+1) = Atm(mygrid)%gridstruct%grid_64(i,j,1)
+          blat(i-isc+1,j-jsc+1) = Atm(mygrid)%gridstruct%grid_64(i,j,2)
+        enddo
+      end do
+    else
+      do j=jsc,jec+1
+        do i=isc,iec+1
+          blon(i-isc+1,j-jsc+1) = Atm(mygrid)%gridstruct%grid(i,j,1)
+          blat(i-isc+1,j-jsc+1) = Atm(mygrid)%gridstruct%grid(i,j,2)
+        enddo
+      end do
+    endif
  end subroutine ATMOSPHERE_BOUNDARY_
 
  subroutine ATMOSPHERE_PREF_ (p_ref)
@@ -56,8 +64,8 @@
            p_surf(i,j) = _DBL_(_RL_(Atm(mygrid)%ps(i,j)))
            t_bot(i,j) = _DBL_(_RL_(Atm(mygrid)%pt(i,j,npz)))
            p_bot(i,j) = _DBL_(_RL_(Atm(mygrid)%delp(i,j,npz)/(Atm(mygrid)%peln(i,npz+1,j)-Atm(mygrid)%peln(i,npz,j))))
-           z_bot(i,j) = rrg*t_bot(i,j)*_DBL_(_RL_(1.+zvir*Atm(mygrid)%q(i,j,npz,sphum))) *  &
-                        _DBL_(_RL_(1. - Atm(mygrid)%pe(i,npz,j)/p_bot(i,j)))
+           z_bot(i,j) = rrg*t_bot(i,j)*_DBL_(_RL_((1.+zvir*Atm(mygrid)%q(i,j,npz,sphum)))) *  &
+                        _DBL_(_RL_((1. - Atm(mygrid)%pe(i,npz,j)/p_bot(i,j))))
         enddo
      enddo
 
