@@ -16,3 +16,4 @@ jobs:
     name: Delete Builds
     steps:
       - run: find /contrib/fv3/2023.2.0/GFDL_atmos_cubed_sphere/refs/pull -maxdepth 1 -mindepth 1 -mtime +30 -type d -print -exec rm -rf "{}" \;
+      - run: find /contrib/fv3/2023.2.0/GFDL_atmos_cubed_sphere/refs/heads -maxdepth 1 -mindepth 1 -mtime +30 -type d -print -exec rm -rf "{}" \;
