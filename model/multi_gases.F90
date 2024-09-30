@@ -42,7 +42,7 @@ module multi_gases_mod
       use constants_mod,     only: rdgas, rvgas, cp_air
       use     fv_mp_mod,     only: is_master
       use mpp_mod,           only: stdlog, input_nml_file
-      use fms_mod,           only: check_nml_error, open_namelist_file, close_file
+      use fms_mod,           only: check_nml_error
 
 
       implicit none
@@ -175,9 +175,9 @@ module multi_gases_mod
        cpi(1) = 1846.004
        
 
-      ! Read multi_gases namelist
-        read (input_nml_file,multi_gases_nml,iostat=ios)
-        ierr = check_nml_error(ios,'multi_gases_nml')
+       ! Read multi_gases namelist
+       read (input_nml_file,multi_gases_nml,iostat=ios)
+       ierr = check_nml_error(ios,'multi_gases_nml')
 
       write(unit, nml=multi_gases_nml)
       

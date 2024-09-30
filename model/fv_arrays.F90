@@ -870,13 +870,13 @@ module fv_arrays_mod
                                           !< If .false., heating from the physics is applied simply as a temperature
                                           !< tendency. The default value is .true.; ignored if hydrostatic = .true.
    logical :: use_hydro_pressure = .false.   !< Whether to compute hydrostatic pressure for input to the physics.
-                                             !< Currently only enabled for the fvGFS model.
+                                             !< Currently only enabled for the UFS model.
                                              !< Ignored in hydrostatic simulations. The default is .false.
    logical :: do_uni_zfull = .false.   !< Whether to compute z_full (the height of each modellayer,
                                        !< as opposed to z_half, the height of each model interface)
                                        !< as the midpoint of the layer, as is done for the nonhydrostatic
                                        !< solver, instead of the height of the location where p = p the mean
-                                       !< pressure in the layer. This option is not available for fvGFS or
+                                       !< pressure in the layer. This option is not available for UFS or
                                        !< the solo_core. The default is .false.
    logical :: hybrid_z    = .false.  !< Whether to use a hybrid-height coordinate, instead of
                                      !< the usual sigma-p coordinate. The default value is .false.
@@ -941,6 +941,7 @@ module fv_arrays_mod
   integer :: nrows_blend = 0          !< # of blending rows in the outer integration domain.
   logical :: write_restart_with_bcs = .false.   !< Default setting for using DA-updated BC files
   logical :: regional_bcs_from_gsi = .false.    !< Default setting for writing restart files with boundary rows
+  logical :: pass_full_omega_to_physics_in_non_hydrostatic_mode = .false.  !< Default to passing local omega to physics in non-hydrostatic 
 
 
   !>Convenience pointers
@@ -1317,6 +1318,11 @@ module fv_arrays_mod
 
      integer, allocatable, dimension(:) :: pelist
 
+    ! These are set in fv_control_init() and used in fill_nested_grid_cpl()
+    ! to replace numerous p2p MPI transfers with a single mpp_broadcast()
+    integer, allocatable :: Bcast_ranks(:)
+    logical :: BcastMember
+
      type(fv_grid_bounds_type) :: bd
 
     type(fv_regional_bc_bounds_type) :: regional_bc_bounds
@@ -1520,6 +1526,7 @@ contains
     allocate ( Atm%ts(is:ie,js:je) )
     allocate ( Atm%phis(isd:ied  ,jsd:jed  ) )
     allocate ( Atm%omga(isd:ied  ,jsd:jed  ,npz) ); Atm%omga=0.
+
     allocate (   Atm%ua(isd:ied  ,jsd:jed  ,npz) )
     allocate (   Atm%va(isd:ied  ,jsd:jed  ,npz) )
     allocate (   Atm%uc(isd:ied+1,jsd:jed  ,npz) )
@@ -2078,7 +2085,7 @@ contains
           call deallocate_fv_nest_BC_type(Atm%neststruct%delz_BC)
        endif
 #endif
-
+       if(allocated(Atm%Bcast_ranks)) deallocate(Atm%Bcast_ranks)
     end if
 
     if (Atm%flagstruct%grid_type < 4) then

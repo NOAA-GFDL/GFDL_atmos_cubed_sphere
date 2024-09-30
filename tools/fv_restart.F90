@@ -168,7 +168,6 @@ module fv_restart_mod
   use mpp_domains_mod,     only: mpp_global_field
   use fv_treat_da_inc_mod, only: read_da_inc
   use fms2_io_mod,         only: file_exists, set_filename_appendix, FmsNetcdfFile_t, open_file, close_file
-  use fms_io_mod,          only: fmsset_filename_appendix=> set_filename_appendix
   use coarse_grained_restart_files_mod, only: fv_io_write_restart_coarse
   use fv_regional_mod,     only: write_full_fields
 #ifdef MULTI_GASES
@@ -289,7 +288,6 @@ contains
        if (Atm(n)%neststruct%nested .and. n==this_grid) then
           write(gnn,'(A4, I2.2)') "nest", Atm(n)%grid_number
           call set_filename_appendix(gnn)
-          call fmsset_filename_appendix(gnn)
        endif
 
        !3preN. Topography BCs for nest, including setup for blending
@@ -367,19 +365,6 @@ contains
              else
                 if( is_master() ) write(*,*) 'Warm starting, calling fv_io_restart'
                 call fv_io_read_restart(Atm(n)%domain_for_read,Atm(n:n))
-                !====== PJP added DA functionality ======
-                if (Atm(n)%flagstruct%read_increment) then
-                   ! print point in middle of domain for a sanity check
-                   i = (Atm(n)%bd%isc + Atm(n)%bd%iec)/2
-                   j = (Atm(n)%bd%jsc + Atm(n)%bd%jec)/2
-                   k = Atm(n)%npz/2
-                   if( is_master() ) write(*,*) 'Calling read_da_inc',Atm(n)%pt(i,j,k)
-                   call read_da_inc(Atm(n), Atm(n)%domain, Atm(n)%bd, Atm(n)%npz, Atm(n)%ncnst, &
-                        Atm(n)%u, Atm(n)%v, Atm(n)%q, Atm(n)%delp, Atm(n)%pt, Atm(n)%delz, isd, jsd, ied, jed, &
-                        isc, jsc, iec, jec )
-                   if( is_master() ) write(*,*) 'Back from read_da_inc',Atm(n)%pt(i,j,k)
-                endif
-                !====== end PJP added DA functionailty======
              endif
 
              seconds = 0; days = 0   ! Restart needs to be modified to record seconds and days.
@@ -480,7 +465,19 @@ contains
 
           endif !external_ic vs. restart vs. idealized
 
-
+          !====== PJP added DA functionality ======
+           if (Atm(n)%flagstruct%read_increment) then
+              ! print point in middle of domain for a sanity check
+              i = (Atm(n)%bd%isc + Atm(n)%bd%iec)/2
+              j = (Atm(n)%bd%jsc + Atm(n)%bd%jec)/2
+              k = Atm(n)%npz/2
+              if( is_master() ) write(*,*) 'Calling read_da_inc',Atm(n)%pt(i,j,k)
+              call read_da_inc(Atm(n), Atm(n)%domain, Atm(n)%bd, Atm(n)%npz, Atm(n)%ncnst, &
+                   Atm(n)%u, Atm(n)%v, Atm(n)%q, Atm(n)%delp, Atm(n)%pt, Atm(n)%delz, isd, jsd, ied, jed, &
+                   isc, jsc, iec, jec )
+              if( is_master() ) write(*,*) 'Back from read_da_inc',Atm(n)%pt(i,j,k)
+           endif
+           !====== end PJP added DA functionailty======
        endif !n==this_grid
 
 

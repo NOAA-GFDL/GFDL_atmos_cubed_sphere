@@ -34,6 +34,7 @@ option(GFS_TYPES   "Enable compiler definition -DGFS_TYPES"                OFF)
 option(use_WRTCOMP "Enable compiler definition -Duse_WRTCOMP"              OFF)
 option(INTERNAL_FILE_NML     "Enable compiler definition -DINTERNAL_FILE_NML"      ON)
 option(ENABLE_QUAD_PRECISION "Enable compiler definition -DENABLE_QUAD_PRECISION"  ON)
+option(HYDRO       "Enable compiler definition -DHYDRO"                    OFF)
 
 find_package(MPI REQUIRED)
 if(OPENMP)
@@ -107,19 +108,21 @@ list(APPEND tools_srcs_extra
   tools/fv_iau_mod.F90)
 
 list(APPEND driver_srcs
-  driver/fvGFS/DYCORE_typedefs.F90
-  driver/fvGFS/fv_nggps_diag.F90
-  driver/fvGFS/fv_ufs_restart_io.F90
-  driver/fvGFS/atmosphere.F90)
+  driver/UFS/DYCORE_typedefs.F90
+  driver/UFS/fv_nggps_diag.F90
+  driver/UFS/fv_ufs_restart_io.F90
+  driver/UFS/atmosphere.F90)
 
 list(APPEND fv3_srcs ${model_srcs}
                      ${tools_srcs})
 
-list(APPEND fv3_defs SPMD
-                     MOIST_CAPPA
-                     USE_COND)
+list(APPEND fv3_defs SPMD)
 
 # Additional (optional) compiler definitions
+if (NOT HYDRO)
+  list(APPEND fv3_defs USE_COND MOIST_CAPPA)
+endif()
+
 if(DEBUG)
   list(APPEND fv3_defs DEBUG)
 endif()

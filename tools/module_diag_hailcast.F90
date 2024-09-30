@@ -2,6 +2,12 @@
 !John Henderson AER 20190425
 !time management handling from WRF is preserved but commented out
 
+! CAM-HAILCAST software designed and tested by Rebecca Adams-Selin in
+! collaboration with Conrad Ziegler at the National Severe Storms
+! Laboratory. Documentation provided in Adams-Selin and Ziegler 2016
+! MWR; Adams-Selin et al. 2019 WF; Adams-Selin 2023 MWR; and Pounds et
+! al. 2024 JAS.
+
 ! Yunheng Wang NSSL/CIWRO 20220310
 ! Remodeled as recommended for PR #164.
 !
@@ -77,6 +83,11 @@ CONTAINS
         !unit = stdlog()
         !write(unit, nml=fv_diagnostics_nml)
         !!end hailcast nml
+
+
+        ! need to set a default value for istatus because of it's intent(out) status
+        ! this value is not checked on return
+        istatus = 0
 
         if (mpp_pe() == mpp_root_pe()) then
             print*, 'do_hailcast = ', do_hailcast
@@ -805,7 +816,17 @@ CONTAINS
     !At coarser resolutions WRF underestimates liquid water aloft.
     !A fairer estimate is of the adiabatic liquid water profile, or
     !the difference between the saturation mixing ratio at each level
-    !and the cloud base water vapor mixing ratio
+    !and the cloud base water vapor mixing ratio.
+    !
+    !RWA_adiabat is a mixing ratio profile calculated by assuming
+    !there is no entrainment. It assumes the cloud water available at
+    !cloud base (RBAS) is only reduced aloft by bringing the air in
+    !the column to saturation (RSA), or glaciation (icefactor).
+    !
+    !RWA_new is, essentially, RWA below cloud base, and RWA_adiabat at
+    !cloud base and above it, with the caveat that any moisture
+    !expended at height levels below the current one can't be included
+    !in RWA_adiabat.
     DO k=1,nz
        RWA_new(k) = RWA(k)
        IF (k.LT.KBAS) THEN
@@ -826,31 +847,48 @@ CONTAINS
        ELSE
            icefactor = 0.
        ENDIF
-       !Don't want any negative liquid water values
+       !Calculate the potential amount of liquid water available at
+       !each vertical level, assuming no entrainment.  The cloud water
+       !available at cloud base (RBAS), is only reduced aloft by
+       !bringing the air to saturation (RSA), or by glaciation
+       !(icefactor).
        IF (RBAS.GT.RSA(k)) THEN
           RWA_adiabat(k) = (RBAS - RSA(k))*icefactor
        ELSE
           RWA_adiabat(k) = RWA(k)
        ENDIF
-       !Remove cloud liquid water outputted at previous lower levels
-       ! -- bug fix 170506 -- !
+       !Remove cloud liquid water outputted at previous lower
+       !levels. At cloud base (KBAS):
+       !
+       !    RWA_new(KBAS) = RWA_adiabat(KBAS) = RWA(KBAS) = RBAS
+       !
+       !RBAS is technically an amount of moisture that has been fluxed
+       !in across cloud base. I'm assuming an constant updraft speed
+       !of 1 m/s, a constant source mixing ratio of units kg/kg, and
+       !that it is happening over 1 sec of time. Normally one would
+       !think of fluxes in 3D, but remember we are in a 1D column
+       !here. That means, at the cloud base only, RBAS has units:
+       !
+       !    (kg kg-1)(m s-1)(s), or (kg kg-1)(m)
+       !
+       !Once we get above KBAS, however, that no longer holds true,
+       !and RWA_adiabat is in units of (kg kg-1). We then need to
+       !multiply it by the height of the layer to determine the flux
+       !of liquid water "out of the column" (i.e., bringing previous
+       !layers to saturation) over that layer.
        IF (k.eq.KBAS) THEN
           RWA_new(k) = RWA_adiabat(k)
        ELSE IF ((k.ge.KBAS+1).AND.(RWA_adiabat(k).ge.1.E-12)) THEN
           RWA_new(k) = RWA_adiabat(k)*(h1d(k)-h1d(k-1)) - RWA_new(k-1)
           IF (RWA_new(k).LT.0) RWA_new(k) = 0.
        ENDIF
-       ! - old code - !
-       !IF (k.eq.KBAS+1) THEN
-       !   RWA_new(k) = RWA_adiabat(k)*(h1d(k)-h1d(k-1))
-       !ELSE IF ((k.ge.KBAS+2).AND.(RWA_adiabat(k).ge.1.E-12)) THEN
-       !   RWA_new(k) = RWA_adiabat(k)*(h1d(k)-h1d(k-1)) - RWA_new(k-1)
-       !   IF (RWA_new(k).LT.0) RWA_new(k) = 0.
-       !ENDIF
     ENDDO
-    !remove the height factor from RWA_new
-    DO k=KBAS,nz
+    !Remove the height scaling factor from RWA_new at all k values
+    !above the cloud base (KBAS), to return RWA_new units to kg kg-1.
+    DO k=KBAS+1,nz
+     IF (RWA_adiabat(k).ge.1.E-12) THEN
        RWA_new(k) = RWA_new(k) / (h1d(k)-h1d(k-1))
+     ENDIF
     ENDDO
 
 
@@ -1059,8 +1097,7 @@ CONTAINS
       IF (D.GT.0.254) D = 0.  !just consider missing for now if > 10 in
 
       !assign hail size in mm for output
-      !dhails(i) = D * 1000
-      dhails(i) = D
+      dhails(i) = D * 1000
 
     ENDDO  !end embryo size loop
 

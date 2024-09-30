@@ -416,6 +416,7 @@ module fv_control_mod
      logical, pointer :: write_only_coarse_intermediate_restarts
      logical, pointer :: write_coarse_agrid_vel_rst
      logical, pointer :: write_coarse_dgrid_vel_rst
+     logical, pointer :: pass_full_omega_to_physics_in_non_hydrostatic_mode
      !!!!!!!!!! END POINTERS !!!!!!!!!!!!!!!!!!!!!!!!!!!!
 
      this_grid = -1 ! default
@@ -452,7 +453,6 @@ module fv_control_mod
 
      allocate(global_pelist(npes))
      call mpp_get_current_pelist(global_pelist, commID=global_commID) ! for commID
-
 
      allocate(grids_master_procs(ngrids))
      pecounter = 0
@@ -735,6 +735,27 @@ module fv_control_mod
      Atm(this_grid)%neststruct%parent_proc = ANY(Atm(this_grid)%neststruct%child_grids) !ANY(tile_coarse == Atm(this_grid)%global_tile)
      Atm(this_grid)%neststruct%child_proc = ASSOCIATED(Atm(this_grid)%parent_grid) !this means a nested grid
 
+     if(n>1) then
+       call mpp_set_current_pelist( global_pelist )
+       do n=2,ngrids
+        ! Construct the MPI communicators that are used in fill_nested_grid_cpl()
+          allocate(Atm(n)%Bcast_ranks(1+size(Atm(n)%pelist)))
+          ! parent grid sending rank within Bcast_ranks array
+          Atm(n)%Bcast_ranks(1)=Atm(n)%parent_grid%pelist(1) + &
+                     ( Atm(n)%neststruct%parent_tile-tile_fine(Atm(n)%parent_grid%grid_number)+ &
+                       Atm(n)%parent_grid%flagstruct%ntiles-1 )*Atm(n)%parent_grid%npes_per_tile
+
+          Atm(n)%Bcast_ranks(2:(1+size(Atm(n)%pelist)))=Atm(n)%pelist ! Receivers
+          Atm(n)%BcastMember=.false.
+          if(any(mpp_pe() == Atm(n)%Bcast_ranks)) then
+            Atm(n)%BcastMember=.true.
+          endif
+
+          call mpp_declare_pelist(Atm(n)%Bcast_ranks(:))
+       enddo
+       call mpp_set_current_pelist(Atm(this_grid)%pelist)
+     endif
+
      if (ngrids > 1) call setup_update_regions
      if (Atm(this_grid)%neststruct%nestbctype > 1) then
         call mpp_error(FATAL, 'nestbctype > 1 not yet implemented')
@@ -980,6 +1001,7 @@ module fv_control_mod
        write_only_coarse_intermediate_restarts => Atm%coarse_graining%write_only_coarse_intermediate_restarts
        write_coarse_agrid_vel_rst    => Atm%coarse_graining%write_coarse_agrid_vel_rst
        write_coarse_dgrid_vel_rst    => Atm%coarse_graining%write_coarse_dgrid_vel_rst
+       pass_full_omega_to_physics_in_non_hydrostatic_mode => Atm%flagstruct%pass_full_omega_to_physics_in_non_hydrostatic_mode
      end subroutine set_namelist_pointers
 
 
@@ -1073,7 +1095,8 @@ module fv_control_mod
             write_coarse_restart_files,&
             write_coarse_diagnostics,&
             write_only_coarse_intermediate_restarts, &
-            write_coarse_agrid_vel_rst, write_coarse_dgrid_vel_rst, ignore_rst_cksum
+            write_coarse_agrid_vel_rst, write_coarse_dgrid_vel_rst, &
+            pass_full_omega_to_physics_in_non_hydrostatic_mode, ignore_rst_cksum
 
 
        ! Read FVCORE namelist

@@ -134,20 +134,10 @@ module molecular_diffusion_mod
 
       unit = stdlog()
 
-#ifdef INTERNAL_FILE_NML
-
       ! Read molecular_diffusion namelist
-        read (input_nml_file,molecular_diffusion_nml,iostat=ios)
-        ierr = check_nml_error(ios,'molecular_diffusion_nml')
+      read (input_nml_file,molecular_diffusion_nml,iostat=ios)
+      ierr = check_nml_error(ios,'molecular_diffusion_nml')
 
-#else
-      ! Read molecular_diffusion namelist
-        f_unit = open_namelist_file(nml_filename)
-        rewind (f_unit)
-        read (f_unit,molecular_diffusion_nml,iostat=ios)
-        ierr = check_nml_error(ios,'molecular_diffusion_nml')
-        call close_file(f_unit)
-#endif
       write(unit, nml=molecular_diffusion_nml)
       call molecular_diffusion_init(ncnst,nwat)
 
