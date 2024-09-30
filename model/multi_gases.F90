@@ -174,21 +174,11 @@ module multi_gases_mod
        ri(1)  = 461.50       
        cpi(1) = 1846.004
        
-#ifdef INTERNAL_FILE_NML
 
       ! Read multi_gases namelist
         read (input_nml_file,multi_gases_nml,iostat=ios)
         ierr = check_nml_error(ios,'multi_gases_nml')
 
-#else
-      ! Read multi_gases namelist
-        f_unit = open_namelist_file(nml_filename)
-
-        rewind (f_unit)
-        read (f_unit,multi_gases_nml,iostat=ios)
-        ierr = check_nml_error(ios,'multi_gases_nml')
-        call close_file(f_unit)
-#endif
       write(unit, nml=multi_gases_nml)
       
       cvi(0:ncnst-1) = cpi(0:ncnst-1) -ri(0:ncnst-1)
