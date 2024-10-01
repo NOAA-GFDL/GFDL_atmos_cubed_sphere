@@ -20,7 +20,11 @@
 !***********************************************************************
 
 module fv_eta_mod
+#ifdef OVERLOAD_R4
+ use constantsR4_mod,only: kappa, grav, cp_air, rdgas
+#else
  use constants_mod,  only: kappa, grav, cp_air, rdgas
+#endif
  use fv_mp_mod,      only: is_master
  use fms_mod,        only: FATAL, error_mesg
  use fms2_io_mod,    only: ascii_read

@@ -24,7 +24,11 @@ module fv_sg_mod
 !-----------------------------------------------------------------------
 ! FV sub-grid mixing
 !-----------------------------------------------------------------------
+#ifdef OVERLOAD_R4
+  use constantsR4_mod,    only: rdgas, rvgas, cp_air, cp_vapor, hlv, hlf, kappa, grav
+#else
   use constants_mod,      only: rdgas, rvgas, cp_air, cp_vapor, hlv, hlf, kappa, grav
+#endif
   use tracer_manager_mod, only: get_tracer_index
   use field_manager_mod,  only: MODEL_ATMOS
   use gfdl_mp_mod,        only: wqs, mqs3d, c_liq, c_ice

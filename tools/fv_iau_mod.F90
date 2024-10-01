@@ -41,7 +41,11 @@ module fv_iau_mod
   use mpp_mod,             only: mpp_error, FATAL, NOTE, mpp_pe
   use mpp_domains_mod,     only: domain2d
 
+#ifdef OVERLOAD_R4
+  use constantsR4_mod,     only: pi=>pi_8
+#else
   use constants_mod,       only: pi=>pi_8
+#endif
   use fv_arrays_mod,       only: fv_atmos_type,       &
                                  fv_grid_type,        &
                                  fv_grid_bounds_type, &

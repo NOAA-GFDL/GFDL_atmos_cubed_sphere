@@ -21,7 +21,11 @@
 
  module test_cases_mod
 
+#ifdef OVERLOAD_R4
+      use constantsR4_mod,   only: cnst_radius=>radius, pi=>pi_8, cnst_omega=>omega, grav, kappa, rdgas, cp_air, rvgas
+#else
       use constants_mod,     only: cnst_radius=>radius, pi=>pi_8, cnst_omega=>omega, grav, kappa, rdgas, cp_air, rvgas
+#endif
       use fv_arrays_mod,     only: radius, omega ! scaled for small earth
       use init_hydro_mod,    only: p_var, hydro_eq, hydro_eq_ext
       use fv_mp_mod,         only: is_master,        &
