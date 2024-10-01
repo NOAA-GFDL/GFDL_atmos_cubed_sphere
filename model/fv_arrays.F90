@@ -1552,8 +1552,10 @@ contains
 
 #ifdef USE_COND
       allocate ( Atm%q_con(isd:ied,jsd:jed,1:npz) )
+      ! q_con will be initialized to 0, in the following omp loop
 #else
       allocate ( Atm%q_con(isd:isd,jsd:jsd,1) )
+      Atm%q_con = 0.
 #endif
 
 ! Notes by SJL
@@ -1567,6 +1569,9 @@ contains
                 Atm%va(i,j,k) = real_big
                 Atm%pt(i,j,k) = real_big
               Atm%delp(i,j,k) = real_big
+#ifdef USE_COND
+             Atm%q_con(i,j,k) = 0.
+#endif
            enddo
         enddo
         do j=jsd, jed+1
