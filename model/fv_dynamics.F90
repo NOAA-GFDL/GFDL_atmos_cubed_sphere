@@ -303,11 +303,15 @@ contains
       real :: time_total
       integer :: seconds, days
 
-      ccpp_associate: associate( cappa     => GFDL_interstitial%cappa,     &
-                                 dp1       => GFDL_interstitial%te0,       &
-                                 dtdt_m    => GFDL_interstitial%dtdt,      &
-                                 last_step => GFDL_interstitial%last_step, &
-                                 te_2d     => GFDL_interstitial%te0_2d     )
+      real, dimension(:,:,:), pointer :: cappa
+      real, dimension(:,:,:), pointer :: dp1
+      real, dimension(:,:,:), pointer :: dtdt_m
+      real, dimension(:,:), pointer :: te_2d
+
+      cappa => GFDL_interstitial%cappa
+      dp1 => GFDL_interstitial%te0
+      dtdt_m => GFDL_interstitial%dtdt
+      te_2d => GFDL_interstitial%te0_2d
 
       is  = bd%is
       ie  = bd%ie
@@ -428,11 +432,7 @@ contains
       enddo
 
     if ( hydrostatic ) then
-#ifdef __GFORTRAN__
-!$OMP parallel do default(none) shared(is,ie,js,je,isd,ied,jsd,jed,npz,zvir,nwat,q,q_con,sphum,liq_wat, &
-#else
 !$OMP parallel do default(none) shared(is,ie,js,je,isd,ied,jsd,jed,npz,dp1,zvir,nwat,q,q_con,sphum,liq_wat, &
-#endif
 !$OMP      rainwat,ice_wat,snowwat,graupel,hailwat) private(cvm,i,j,k)
       do k=1,npz
          do j=js,je
@@ -446,20 +446,12 @@ contains
          enddo
       enddo
     else
-#ifdef __GFORTRAN__
-!$OMP parallel do default(none) shared(is,ie,js,je,isd,ied,jsd,jed,npz,zvir,q,q_con,sphum,liq_wat, &
-#else
 !$OMP parallel do default(none) shared(is,ie,js,je,isd,ied,jsd,jed,npz,dp1,zvir,q,q_con,sphum,liq_wat, &
-#endif
 !$OMP                                  rainwat,ice_wat,snowwat,graupel,hailwat,pkz,flagstruct, &
 #ifdef MULTI_GASES
 !$OMP                                  kapad,                                          &
 #endif
-#ifdef __GFORTRAN__
-!$OMP                                  kappa,rdg,delp,pt,delz,nwat)                    &
-#else
 !$OMP                                  cappa,kappa,rdg,delp,pt,delz,nwat)              &
-#endif
 !$OMP                          private(cvm,i,j,k)
        do k=1,npz
          if ( flagstruct%moist_phys ) then
@@ -587,11 +579,7 @@ contains
        pt_initialized = .true.
      endif
   else
-#ifdef __GFORTRAN__
-!$OMP parallel do default(none) shared(is,ie,js,je,npz,pt,pkz,q_con)
-#else
 !$OMP parallel do default(none) shared(is,ie,js,je,npz,pt,dp1,pkz,q_con)
-#endif
   do k=1,npz
      do j=js,je
         do i=is,ie
@@ -611,15 +599,11 @@ contains
   endif
 #endif
 
-  last_step = .false.
+  GFDL_interstitial%last_step = .false.
   mdt = bdt / real(k_split)
 
   if ( idiag%id_mdt > 0 .and. (.not. do_adiabatic_init) ) then
-#ifdef __GFORTRAN__
-!$OMP parallel do default(none) shared(is,ie,js,je,npz)
-#else
 !$OMP parallel do default(none) shared(is,ie,js,je,npz,dtdt_m)
-#endif
        do k=1,npz
           do j=js,je
              do i=is,ie
@@ -649,11 +633,7 @@ contains
       call start_group_halo_update(i_pack(8), u, v, domain, gridtype=DGRID_NE)
 #endif
                                            call timing_off('COMM_TOTAL')
-#ifdef __GFORTRAN__
-!$OMP parallel do default(none) shared(isd,ied,jsd,jed,npz,delp)
-#else
 !$OMP parallel do default(none) shared(isd,ied,jsd,jed,npz,dp1,delp)
-#endif
       do k=1,npz
          do j=jsd,jed
             do i=isd,ied
@@ -665,7 +645,7 @@ contains
          call start_group_halo_update(i_pack(13), dp1, domain)
       endif
 
-      if ( n_map==k_split ) last_step = .true.
+      if ( n_map==k_split ) GFDL_interstitial%last_step = .true.
 
 #ifdef USE_COND
                                            call timing_on('COMM_TOTAL')
@@ -688,7 +668,7 @@ contains
                     u, v, w, delz, pt, q, delp, pe, pk, phis, ws, omga, ptop, pfull, ua, va,           &
                     uc, vc, mfx, mfy, cx, cy, pkz, peln, q_con, ak, bk, ks, &
                     gridstruct, flagstruct, neststruct, idiag, bd, &
-                    domain, n_map==1, i_pack, last_step, diss_est,time_total)
+                    domain, n_map==1, i_pack, GFDL_interstitial%last_step, diss_est,time_total)
                                            call timing_off('DYN_CORE')
 
 
@@ -744,7 +724,7 @@ contains
      endif
 #endif
 
-         if( last_step .and. idiag%id_divg>0 ) then
+         if( GFDL_interstitial%last_step .and. idiag%id_divg>0 ) then
              used = send_data(idiag%id_divg, dp1, fv_time)
              if(flagstruct%fv_debug) call prt_mxm('divg',  dp1, is, ie, js, je, 0, npz, 1.,gridstruct%area_64, domain)
          endif
@@ -768,7 +748,7 @@ contains
                                                   call avec_timer_start(6)
 #endif
 
-         call Lagrangian_to_Eulerian(last_step, consv_te, ps, pe, delp,          &
+         call Lagrangian_to_Eulerian(GFDL_interstitial%last_step, consv_te, ps, pe, delp,          &
                      pkz, pk, mdt, bdt, npx, npy, npz, is,ie,js,je, isd,ied,jsd,jed,       &
                      nr, nwat, sphum, q_con, u,  v, w, delz, pt, q, phis,    &
                      zvir, cp_air, akap, cappa, flagstruct%kord_mt, flagstruct%kord_wz, &
@@ -782,10 +762,10 @@ contains
                      flagstruct%moist_phys)
 
      if ( flagstruct%molecular_diffusion ) then
-! do thermosphere adjustment if it is turned on and at last_step.
-         if( md_tadj_layers .gt.0 .and. md_time .and. last_step ) then
+! do thermosphere adjustment if it is turned on and at GFDL_interstitial%last_step.
+         if( md_tadj_layers .gt.0 .and. md_time .and. GFDL_interstitial%last_step ) then
              call thermosphere_adjustment(domain,gridstruct,npz,bd,ng,pt)
-        endif ! md_tadj_layers>0 and md_time and last_step
+        endif ! md_tadj_layers>0 and md_time and GFDL_interstitial%last_step
      endif
 
      if ( flagstruct%fv_debug ) then
@@ -804,12 +784,12 @@ contains
 #endif
                                                   call timing_off('Remapping')
 #ifdef MOIST_CAPPA
-         if ( neststruct%nested .and. .not. last_step) then
+         if ( neststruct%nested .and. .not. GFDL_interstitial%last_step) then
             call nested_grid_BC_apply_intT(cappa, &
                  0, 0, npx, npy, npz, bd, real(n_map+1), real(k_split), &
                  neststruct%cappa_BC, bctype=neststruct%nestbctype  )
          endif
-         if ( flagstruct%regional .and. .not. last_step) then
+         if ( flagstruct%regional .and. .not. GFDL_interstitial%last_step) then
             reg_bc_update_time=current_time_in_seconds+(n_map+1)*mdt
             call regional_boundary_update(cappa, 'cappa', &
                                           isd, ied, jsd, jed, npz, &
@@ -822,7 +802,7 @@ contains
 !--------------------------
 ! Filter omega for physics:
 !--------------------------
-          if( last_step )  then
+          if( GFDL_interstitial%last_step )  then
             if(flagstruct%nf_omega>0) then   
              call del2_cubed(omga, 0.18*gridstruct%da_min, gridstruct, domain, npx, npy, npz, flagstruct%nf_omega, bd)
             endif
@@ -840,11 +820,7 @@ contains
 
   if ( idiag%id_mdt > 0 .and. (.not.do_adiabatic_init) ) then
 ! Output temperature tendency due to inline moist physics:
-#ifdef __GFORTRAN__
-!$OMP parallel do default(none) shared(is,ie,js,je,npz,bdt)
-#else
 !$OMP parallel do default(none) shared(is,ie,js,je,npz,dtdt_m,bdt)
-#endif
        do k=1,npz
           do j=js,je
              do i=is,ie
@@ -974,11 +950,7 @@ contains
   endif
 
   if( (flagstruct%consv_am.or.idiag%id_amdt>0) .and. (.not.do_adiabatic_init)  ) then
-#ifdef __GFORTRAN__
-!$OMP parallel do default(none) shared(is,ie,js,je,teq,dt2,ps2,ps,idiag)
-#else
 !$OMP parallel do default(none) shared(is,ie,js,je,te_2d,teq,dt2,ps2,ps,idiag)
-#endif
       do j=js,je
          do i=is,ie
 ! Note: the mountain torque computation contains also numerical error
@@ -1058,8 +1030,6 @@ contains
 
   ! Call CCPP timestep finalize
   call ccpp_physics_timestep_finalize(cdata, suite_name=trim(ccpp_suite), group_name="fast_physics", ierr=ierr)
-
-  end associate ccpp_associate
 
   end subroutine fv_dynamics
 
