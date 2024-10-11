@@ -226,11 +226,8 @@ contains
   real rcp, rg, rrg, bkh, dtmp, k1k
   integer:: i,j,k
   integer:: kdelz
-  integer:: nt, liq_wat, ice_wat, rainwat, snowwat, cld_amt, graupel, hailwat, ccn_cm3, iq, n, kmp, kp, k_next
+  integer:: nt, liq_wat, ice_wat, rainwat, snowwat, cld_amt, graupel, hailwat, ccn_cm3, iq, n, kp, k_next
   integer :: ierr
-
-      ccpp_associate: associate( fast_mp_consv => GFDL_interstitial%fast_mp_consv, &
-                                 kmp           => GFDL_interstitial%kmp            )
 
        k1k = rdgas/cv_air   ! akap / (1.-akap) = rg/Cv=0.4
         rg = rdgas
@@ -247,7 +244,7 @@ contains
        ccn_cm3 = get_tracer_index (MODEL_ATMOS, 'ccn_cm3')
 
        if ( do_adiabatic_init .or. do_sat_adj ) then
-            fast_mp_consv = (.not.do_adiabatic_init) .and. consv>consv_min
+            GFDL_interstitial%fast_mp_consv = (.not.do_adiabatic_init) .and. consv>consv_min
        endif
 
 !$OMP parallel do default(none) shared(is,ie,js,je,km,pe,ptop,kord_tm,hydrostatic, &
@@ -664,37 +661,20 @@ contains
 
 1000  continue
 
-#ifdef __GFORTRAN__
-!$OMP parallel default(none) shared(is,ie,js,je,km,ptop,u,v,pe,ua,va,isd,ied,jsd,jed,kord_mt,     &
+!$OMP parallel default(none) shared(is,ie,js,je,km,ptop,u,v,pe,ua,va,isd,ied,jsd,jed,kord_mt,  &
 !$OMP                               te_2d,te,delp,hydrostatic,hs,rg,pt,peln, adiabatic,        &
 !$OMP                               cp,delz,nwat,rainwat,liq_wat,ice_wat,snowwat,              &
-!$OMP                               graupel,hailwat,q_con,r_vir,sphum,w,pk,pkz,last_step,consv,        &
+!$OMP                               graupel,hailwat,q_con,r_vir,sphum,w,pk,pkz,last_step,consv,&
 !$OMP                               do_adiabatic_init,zsum1,zsum0,te0_2d,domain,               &
 !$OMP                               ng,gridstruct,E_Flux,pdt,dtmp,reproduce_sum,q,             &
 !$OMP                               mdt,cld_amt,cappa,dtdt,out_dt,rrg,akap,do_sat_adj,         &
-!$OMP                               kord_tm,pe4, npx,npy,ccn_cm3,u_dt,v_dt, c2l_ord,bd,dp0,ps, &
-!$OMP                                cdata,GFDL_interstitial)                           &
+!$OMP                               kord_tm, pe4,npx,npy, ccn_cm3,                             &
+!$OMP                               u_dt,v_dt,c2l_ord,bd,dp0,ps,cdata,GFDL_interstitial)       &
 !$OMP                        shared(ccpp_suite)                                                &
 #ifdef MULTI_GASES
 !$OMP                        shared(num_gas)                                                   &
 #endif
 !$OMP                       private(q2,pe0,pe1,pe2,pe3,qv,cvm,gz,gsize,phis,kdelz,dp2,t0, ierr)
-#else
-!$OMP parallel default(none) shared(is,ie,js,je,km,kmp,ptop,u,v,pe,ua,va,isd,ied,jsd,jed,kord_mt, &
-!$OMP                               te_2d,te,delp,hydrostatic,hs,rg,pt,peln, adiabatic,        &
-!$OMP                               cp,delz,nwat,rainwat,liq_wat,ice_wat,snowwat,              &
-!$OMP                               graupel,hailwat,q_con,r_vir,sphum,w,pk,pkz,last_step,consv,        &
-!$OMP                               do_adiabatic_init,zsum1,zsum0,te0_2d,domain,               &
-!$OMP                               ng,gridstruct,E_Flux,pdt,dtmp,reproduce_sum,q,             &
-!$OMP                               mdt,cld_amt,cappa,dtdt,out_dt,rrg,akap,do_sat_adj,         &
-!$OMP                               fast_mp_consv,kord_tm, pe4,npx,npy, ccn_cm3,               &
-!$OMP                               u_dt,v_dt,c2l_ord,bd,dp0,ps,cdata,GFDL_interstitial)        &
-!$OMP                        shared(ccpp_suite)                                                &
-#ifdef MULTI_GASES
-!$OMP                        shared(num_gas)                                                   &
-#endif
-!$OMP                       private(q2,pe0,pe1,pe2,pe3,qv,cvm,gz,gsize,phis,kdelz,dp2,t0, ierr)
-#endif
 
 !$OMP do
   do k=2,km
@@ -923,8 +903,6 @@ endif        ! end last_step check
     endif
   endif
 !$OMP end parallel
-
-  end associate ccpp_associate
 
  end subroutine Lagrangian_to_Eulerian
 

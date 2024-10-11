@@ -19,7 +19,7 @@ if(NOT CMAKE_BUILD_TYPE MATCHES "^(Debug|Release|Repro|MinSizeRel|RelWithDebInfo
 endif()
 message(STATUS "Setting build type to '${CMAKE_BUILD_TYPE}'.")
 
-if(NOT CMAKE_Fortran_COMPILER_ID MATCHES "^(Intel|GNU)$")
+if(NOT CMAKE_Fortran_COMPILER_ID MATCHES "^(Intel|IntelLLVM|GNU)$")
   message(WARNING "Compiler not officially supported: ${CMAKE_Fortran_COMPILER_ID}")
 endif()
 
@@ -102,7 +102,8 @@ list(APPEND tools_srcs
   tools/module_diag_hailcast.F90
   tools/sim_nc_mod.F90
   tools/sorted_index.F90
-  tools/test_cases.F90)
+  tools/test_cases.F90
+  tools/cubed_sphere_inc_mod.F90)
 
 list(APPEND tools_srcs_extra
   tools/fv_iau_mod.F90)
