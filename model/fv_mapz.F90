@@ -321,7 +321,7 @@ contains
 #ifdef MULTI_GASES
 !$OMP                                  num_gas,                                          &
 #endif
-!$OMP                                  hs,w,ws,kord_wz,,omga,rrg,kord_mt,pe4,remap_t,remap_pt, &
+!$OMP                                  hs,w,ws,kord_wz,omga,rrg,kord_mt,pe4,remap_t,remap_pt, &
 !$OMP                                  remap_te,remap_option,gmao_remap)    &
 !$OMP                          private(qv,gz,cvm,kp,k_next,bkh,dp2,   &
 !$OMP                                  pe0,pe1,pe2,pe3,pk1,pk2,pn2,phis,q2,w2)
