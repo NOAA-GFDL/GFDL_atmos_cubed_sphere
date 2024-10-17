@@ -30,7 +30,11 @@ module fv_restart_mod
   ! for the model.
   !</DESCRIPTION>
 
+#ifdef OVERLOAD_R4
+  use constantsR4_mod,     only: kappa, pi=>pi_8, rdgas, grav, rvgas, cp_air
+#else
   use constants_mod,       only: kappa, pi=>pi_8, rdgas, grav, rvgas, cp_air
+#endif
   use fv_arrays_mod,       only: radius, omega ! scaled for small earth
   use fv_arrays_mod,       only: fv_atmos_type, fv_nest_type, fv_grid_bounds_type, R_GRID
   use fv_io_mod,           only: fv_io_init, fv_io_read_restart, fv_io_write_restart, &

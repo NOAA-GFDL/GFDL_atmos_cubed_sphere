@@ -22,7 +22,11 @@
  module fv_grid_utils_mod
 
 #include <fms_platform.h>
+#ifdef OVERLOAD_R4
+ use constantsR4_mod, only: pi=>pi_8
+#else
  use constants_mod,   only: pi=>pi_8
+#endif
  use fv_arrays_mod,   only: radius, omega ! scaled for small earth
  use mpp_mod,         only: FATAL, mpp_error, WARNING
  use external_sst_mod, only: i_sst, j_sst, sst_ncep, sst_anom

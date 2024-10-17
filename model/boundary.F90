@@ -22,7 +22,11 @@
 module boundary_mod
 
   use fv_mp_mod,         only: is_master
-  use constants_mod,     only: grav
+#ifdef OVERLOAD_R4
+    use constantsR4_mod, only: grav
+#else
+    use constants_mod, only: grav
+#endif
 
   use mpp_domains_mod,    only: mpp_get_compute_domain, mpp_get_data_domain, mpp_get_global_domain
   use mpp_domains_mod,    only: CENTER, CORNER, NORTH, EAST

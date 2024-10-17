@@ -26,7 +26,12 @@
       use fms2_io_mod,       only: file_exists
       use mpp_mod,           only: get_unit, input_nml_file, mpp_error
       use mpp_domains_mod,   only: mpp_update_domains, domain2d
+#ifdef OVERLOAD_R4
+      use constantsR4_mod,   only: grav, pi=>pi_8
+#else
       use constants_mod,     only: grav, pi=>pi_8
+#endif
+
 
       use fv_grid_utils_mod, only: great_circle_dist, latlon2xyz, v_prod, normalize_vect
       use fv_grid_utils_mod, only: g_sum, global_mx, vect_cross
