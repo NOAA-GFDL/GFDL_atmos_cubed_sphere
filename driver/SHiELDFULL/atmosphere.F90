@@ -31,8 +31,13 @@ module atmosphere_mod
 !-----------------
 ! FMS modules:
 !-----------------
+use platform_mod, only: r8_kind, r4_kind
 use block_control_mod,      only: block_control_type
-use constants_mod,          only: cp_air, rdgas, grav, rvgas, kappa, pstd_mks, pi
+#ifdef OVERLOAD_R4
+use constantsR4_mod,       only: cp_air, rdgas, grav, rvgas, kappa, pstd_mks, pi
+#else
+use constants_mod,         only: cp_air, rdgas, grav, rvgas, kappa, pstd_mks, pi
+#endif
 use time_manager_mod,       only: time_type, get_time, set_time, operator(+), &
                                   operator(-), operator(/), time_type_to_real
 use fms_mod,                only: error_mesg, FATAL,                 &
@@ -93,6 +98,38 @@ use coarse_grained_restart_files_mod, only: fv_coarse_restart_init
 
 implicit none
 private
+
+interface atmosphere_grid_bdry
+  module procedure :: atmosphere_grid_bdry_r4
+  module procedure :: atmosphere_grid_bdry_r8
+end interface atmosphere_grid_bdry
+
+interface atmosphere_pref
+  module procedure :: atmosphere_pref_r4
+  module procedure :: atmosphere_pref_r8
+end interface atmosphere_pref
+
+interface atmosphere_cell_area
+  module procedure :: atmosphere_cell_area_r4
+  module procedure :: atmosphere_cell_area_r8
+end interface atmosphere_cell_area
+
+interface get_bottom_mass
+  module procedure :: get_bottom_mass_r4
+  module procedure :: get_bottom_mass_r8
+end interface get_bottom_mass
+
+interface get_bottom_wind
+  module procedure :: get_bottom_wind_r4
+  module procedure :: get_bottom_wind_r8
+end interface get_bottom_wind
+
+interface get_stock_pe
+  module procedure :: get_stock_pe_r4
+  module procedure :: get_stock_pe_r8
+end interface get_stock_pe
+
+
 
 !--- driver routines
 public :: atmosphere_init, atmosphere_end, atmosphere_restart, &
@@ -158,6 +195,13 @@ character(len=20)   :: mod_name = 'SHiELD/atmosphere_mod'
 
 contains
 
+#if defined(OVERLOAD_R4)
+#define _DBL_(X) DBLE(X)
+#define _RL_(X) REAL(X,KIND=4)
+#else
+#define _DBL_(X) X
+#define _RL_(X) X
+#endif
 
 
  subroutine atmosphere_init (Time_init, Time, Time_step, Grid_box, area, IAU_Data)
@@ -684,15 +728,6 @@ if ( is_master() ) write(*,*) 'CALL atmos_global_diag_init'
 
  end subroutine atmosphere_resolution
 
-
- subroutine atmosphere_pref (p_ref)
-   real, dimension(:,:), intent(inout) :: p_ref
-
-   p_ref = pref
-
- end subroutine atmosphere_pref
-
-
  subroutine atmosphere_control_data (i1, i2, j1, j2, kt, p_hydro, hydro, tile_num, &
                                      do_inline_mp, do_cosp)
    integer, intent(out)           :: i1, i2, j1, j2, kt
@@ -730,32 +765,6 @@ if ( is_master() ) write(*,*) 'CALL atmos_global_diag_init'
     end do
 
  end subroutine atmosphere_grid_ctr
-
-
- subroutine atmosphere_grid_bdry (blon, blat, global)
-!---------------------------------------------------------------
-!    returns the longitude and latitude grid box edges
-!    for either the local PEs grid (default) or the global grid
-!---------------------------------------------------------------
-    real,    intent(out) :: blon(:,:), blat(:,:)   ! Unit: radian
-    logical, intent(in), optional :: global
-! Local data:
-    integer i,j
-
-    if( PRESENT(global) ) then
-      if (global) call mpp_error(FATAL, '==> global grid is no longer available &
-                               & in the Cubed Sphere')
-    endif
-
-    do j=jsc,jec+1
-       do i=isc,iec+1
-          blon(i-isc+1,j-jsc+1) = Atm(mygrid)%gridstruct%grid(i,j,1)
-          blat(i-isc+1,j-jsc+1) = Atm(mygrid)%gridstruct%grid(i,j,2)
-       enddo
-    end do
-
- end subroutine atmosphere_grid_bdry
-
 
  subroutine set_atmosphere_pelist ()
    call mpp_set_current_pelist(Atm(mygrid)%pelist, no_sync=.TRUE.)
@@ -1059,138 +1068,6 @@ if ( is_master() ) write(*,*) 'CALL atmos_global_diag_init'
 !rab
 !rab   return
 !rab end subroutine atmosphere_tracer_postinit
-
-
- subroutine get_bottom_mass ( t_bot, tr_bot, p_bot, z_bot, p_surf, slp )
-!--------------------------------------------------------------
-! returns temp, sphum, pres, height at the lowest model level
-! and surface pressure
-!--------------------------------------------------------------
-   real, intent(out), dimension(isc:iec,jsc:jec):: t_bot, p_bot, z_bot, p_surf
-   real, intent(out), optional, dimension(isc:iec,jsc:jec):: slp
-   real, intent(out), dimension(isc:iec,jsc:jec,nq):: tr_bot
-   integer :: i, j, m, k, kr
-   real    :: rrg, sigtop, sigbot
-   real, dimension(isc:iec,jsc:jec) :: tref
-   real, parameter :: tlaps = 6.5e-3
-
-   rrg  = rdgas / grav
-
-   do j=jsc,jec
-      do i=isc,iec
-         p_surf(i,j) = Atm(mygrid)%ps(i,j)
-         t_bot(i,j) = Atm(mygrid)%pt(i,j,npz)
-         p_bot(i,j) = Atm(mygrid)%delp(i,j,npz)/(Atm(mygrid)%peln(i,npz+1,j)-Atm(mygrid)%peln(i,npz,j))
-         z_bot(i,j) = rrg*t_bot(i,j)*(1.+zvir*Atm(mygrid)%q(i,j,npz,1)) *  &
-                      (1. - Atm(mygrid)%pe(i,npz,j)/p_bot(i,j))
-      enddo
-   enddo
-
-   if ( present(slp) ) then
-     ! determine 0.8 sigma reference level
-     sigtop = Atm(mygrid)%ak(1)/pstd_mks+Atm(mygrid)%bk(1)
-     do k = 1, npz
-        sigbot = Atm(mygrid)%ak(k+1)/pstd_mks+Atm(mygrid)%bk(k+1)
-        if (sigbot+sigtop > 1.6) then
-           kr = k
-           exit
-        endif
-        sigtop = sigbot
-     enddo
-     do j=jsc,jec
-        do i=isc,iec
-           ! sea level pressure
-           tref(i,j) = Atm(mygrid)%pt(i,j,kr) * (Atm(mygrid)%delp(i,j,kr)/ &
-                            ((Atm(mygrid)%peln(i,kr+1,j)-Atm(mygrid)%peln(i,kr,j))*Atm(mygrid)%ps(i,j)))**(-rrg*tlaps)
-           slp(i,j) = Atm(mygrid)%ps(i,j)*(1.+tlaps*Atm(mygrid)%phis(i,j)/(tref(i,j)*grav))**(1./(rrg*tlaps))
-        enddo
-     enddo
-   endif
-
-! Copy tracers
-   do m=1,nq
-      do j=jsc,jec
-         do i=isc,iec
-            tr_bot(i,j,m) = Atm(mygrid)%q(i,j,npz,m)
-         enddo
-      enddo
-   enddo
-
- end subroutine get_bottom_mass
-
-
- subroutine get_bottom_wind ( u_bot, v_bot )
-!-----------------------------------------------------------
-! returns u and v on the mass grid at the lowest model level
-!-----------------------------------------------------------
-   real, intent(out), dimension(isc:iec,jsc:jec):: u_bot, v_bot
-   integer i, j
-
-   do j=jsc,jec
-      do i=isc,iec
-         u_bot(i,j) = Atm(mygrid)%u_srf(i,j)
-         v_bot(i,j) = Atm(mygrid)%v_srf(i,j)
-      enddo
-   enddo
-
- end subroutine get_bottom_wind
-
-
-
- subroutine get_stock_pe(index, value)
-   integer, intent(in) :: index
-   real,   intent(out) :: value
-
-#ifdef USE_STOCK
-   include 'stock.inc'
-#endif
-
-   real wm(isc:iec,jsc:jec)
-   integer i,j,k
-   real, pointer :: area(:,:)
-
-   area => Atm(mygrid)%gridstruct%area
-
-   select case (index)
-
-#ifdef USE_STOCK
-   case (ISTOCK_WATER)
-#else
-   case (1)
-#endif
-
-!----------------------
-! Perform vertical sum:
-!----------------------
-     wm = 0.
-     do j=jsc,jec
-        do k=1,npz
-           do i=isc,iec
-! Warning: the following works only with AM2 physics: water vapor; cloud water, cloud ice.
-              wm(i,j) = wm(i,j) + Atm(mygrid)%delp(i,j,k) * ( Atm(mygrid)%q(i,j,k,1) +    &
-                                                         Atm(mygrid)%q(i,j,k,2) +    &
-                                                         Atm(mygrid)%q(i,j,k,3) )
-           enddo
-        enddo
-     enddo
-
-!----------------------
-! Horizontal sum:
-!----------------------
-     value = 0.
-     do j=jsc,jec
-        do i=isc,iec
-           value = value + wm(i,j)*area(i,j)
-        enddo
-     enddo
-     value = value/grav
-
-   case default
-     value = 0.0
-   end select
-
- end subroutine get_stock_pe
-
 
  subroutine atmosphere_state_update (Time, IPD_Data, IAU_Data, Atm_block)
    !--- interface variables ---
@@ -2059,5 +1936,8 @@ if ( is_master() ) write(*,*) 'CALL atmos_global_diag_init'
 
    coarsening_strategy = Atm(mygrid)%coarse_graining%strategy
  end subroutine atmosphere_coarsening_strategy
+
+#include "atmosphere_r4.fh"
+#include "atmosphere_r8.fh"
 
 end module atmosphere_mod
