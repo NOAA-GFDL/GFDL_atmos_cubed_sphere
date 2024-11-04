@@ -164,7 +164,7 @@ module fv_nwp_nudge_mod
  integer :: k_breed = 0
  integer :: k_trop = 0
  real    :: p_trop = 950.E2
- real    :: dps_min = 50.      !< maximum PS increment (pa; each step) due to inline breeding
+ real    :: dps_min = 50.      !< maximum PS increment (Pa; each step) due to inline breeding
  real    :: del2_cd = 0.16
 
  real,    allocatable:: s2c(:,:,:)
@@ -258,8 +258,8 @@ module fv_nwp_nudge_mod
   real :: tau_vt_rad    = 4.0
 
   real :: pt_lim =  0.2
-  real ::  slp_env = 101010.    !< storm environment pressure (pa)
-  real :: pre0_env = 100000.    !< critical storm environment pressure (pa) for size computation
+  real ::  slp_env = 101010.    !< storm environment pressure (Pa)
+  real :: pre0_env = 100000.    !< critical storm environment pressure (Pa) for size computation
   real, parameter:: tm_max = 315.
 !------------------
   real:: r_lo = 2.0
@@ -2598,7 +2598,7 @@ module fv_nwp_nudge_mod
 
       call mp_reduce_sum(p_sum)
       mass_sink = mass_sink / p_sum ! mean delta pressure to be added back to the environment to conserve mass
-      if(master .and. nudge_debug) write(*,*) 'TC#',n, 'Mass tele-ported (pa)=', mass_sink
+      if(master .and. nudge_debug) write(*,*) 'TC#',n, 'Mass tele-ported (Pa)=', mass_sink
 
 !$OMP parallel do default(none) shared(is,ie,js,je,dist,r3,r2,ak,k_breed,delp,ps,mass_sink,npz) &
 !$OMP             private(pbreed, f1)
@@ -3269,8 +3269,8 @@ module fv_nwp_nudge_mod
     integer, intent(in)::  nobs   !< number of observations in this particular storm
     real(KIND=4), intent(in)::  lon_obs(nobs)
     real(KIND=4), intent(in)::  lat_obs(nobs)
-    real(KIND=4), intent(in)::      w10(nobs)        !< observed 10-m widn speed
-    real(KIND=4), intent(in)::     mslp(nobs)        !< observed SLP in pa
+    real(KIND=4), intent(in)::      w10(nobs)        !< observed 10-m wind speed
+    real(KIND=4), intent(in)::     mslp(nobs)        !< observed SLP in Pa
     real(KIND=4), intent(in)::  slp_out(nobs)        !< slp at r_out
     real(KIND=4), intent(in)::    r_out(nobs)
     real(KIND=4), intent(in):: time_obs(nobs)
@@ -3279,7 +3279,7 @@ module fv_nwp_nudge_mod
 ! Output
     real(kind=R_GRID), intent(out):: x_o , y_o      !< position of the storm center
     real, intent(out):: w10_o          !< 10-m wind speed
-    real, intent(out):: slp_o          !< Observed sea-level-pressure (pa)
+    real, intent(out):: slp_o          !< Observed sea-level-pressure (Pa)
     real, intent(out):: r_vor, p_vor
 ! Internal:
     real:: t_thresh
