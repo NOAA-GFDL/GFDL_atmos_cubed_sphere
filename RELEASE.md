@@ -1,11 +1,82 @@
+# RELEASE NOTES for FV3 202411: Summary
+FV3-202411-public --- November 2024  
+Lucas Harris, GFDL lucas.harris@noaa.gov  
+
+This version has been tested with:  
+SHiELD physics release FV3-202411-public from https://github.com/NOAA-GFDL/SHiELD_physics  
+FMS release 2024.03 from https://github.com/NOAA-GFDL/FMS  
+FMS Coupler release 2024.03.01 from https://github.com/NOAA-GFDL/FMScoupler  
+Atmos Drivers release FV3-202411-public from https://github.com/NOAA-GFDL/atmos_drivers  
+
+This release includes the following:
+- Numerics updates (Lucas, Joseph, Linjiong):
+  - Removed `USE_COND` and `MOIST_CAPPA` compiler directives and replaced with runtime options `use_cond` and `moist_kappa` in the new namelist `fv_thermo_nml`. Both default to `.T.` in nonhydrostatic simulation and `.F.` in hydrostatic.
+  - Added a simple limiter to prevent dissipative heating from creating spurious cooling. Set `prevent_diss_cooling = .F.` to turn off.
+  - Fixed bugs in hydrostatic nesting for west and east BCs in `setup_pt_BC_k()` and calculated true pressure in BCs if no BC remapping is done (compute_peBC, compute_peBC_k).
+  - Revision of `Lagrangian_to_Eulerian` to fix variable dimension mismatch.
+  - Revision of FV3's dissipation heating `diss_est` option to improve numerical consistency with other dissipation options.
+  - Fixed edge noise for hord 6 and 7 (suggested by Bill Putman, GMAO).
+  - Add mixed precision compilation mode to support 32bit FV3 with other 64bit components (with Uriel Ramirez).
+  - New tracers:
+    - `w_diff` to allow subgrid mixing of vertical velocity by physics. This requires compiling with the option `-DW_DIFF` to enable.
+    - `pbl_age` and `tro_pbl_age` tracers representing the age of air since leaving the PBL and tropical PBL, respectively. 
+    - Removed obsolete clock tracers
+    - Refer to `docs/HOWTO_tracer-2024.11.md` for more information
+- GFDL Microphysics updates (Linjiong)
+  - Included fast microphysics tendencies diagnostics 
+  - Added two namelist options (`fast_fr_mlt` and `fast_dep_sub`) to control freezing/melting and deposition/sublimation in the fast microphysics.
+  - Included a missing term in the energy conservation formula (credit: Tristan Abbott).  May affect  prediction of processes depending strongly on microphysics. Compile the model with `-DENG_CNV_OLD` to revert this change.
+  - Added a namelist option, `prog_cin`, to define the source of CIN (cloud ice nuclei) concentration. This is similar to `prog_ccn` but for ice nuclei.
+  - Added diagnostics for cloud content and cloud effective radii of all cloud hydrometeors (qc*, re*).
+  - Added diagnostics for microphysical process rates (mpp*).
+  - Removed unused Keihl et al. (1994) cloud water effective radius diagnosis
+- Driver update (Joseph):
+  - Implemented a new atmosphere driver to run SHiELD and SHiEMOM with the full FMScoupler.
+- Updates to $2\deltaz$ filter (fv_sg) (Lucas, Linjiong):
+  - Included a missing term in the energy conservation formula (credit: Tristan Abbott).  May affect  prediction of processes depending strongly on microphysics. Compile the model with `-DENG_CNV_OLD` to revert this change.
+  - Added option, `fv_sg_adj_weak`, to apply a weaker 2dz filter below sg_cutoff. This may be useful in controlling tropospheric instabilities without interfering with the behavior of the PBL scheme.
+  - Renamed routines and eliminated ifdefs for SHiELD vs. AM4 versions.
+- Physics interface updates (Linjiong, Kai, Spencer):
+  - Fixed negative tracers in the dynamics-physics interface. 
+  - Enhanced the fill_gfs function to remove negative tracers. 
+  - Enabled data_override for nest domain 
+  - Fixed a precipitation diagnostic issue when `ntimes > 1` in the GFDL MP.
+  - MPI fix for sedimentation mass transport in GFDL MP.
+- Updates to nudging (Lucas):
+  - Added an option to turn TC breeding off. 
+  - Bugfixes for nudging on a nest/regional domain (in which tendencies in the halo are undefined).
+- Coarse-graining updates (Spencer, Kai):
+  - Added options `strategy = 'pressure_level_extrapolate' ’blended_area_weighted’` (developed with support from Chris Bretherton, AI2), and simplest `model_level_area_weighted` (like FREgrid first-order conservative scheme). 
+  - Renamed `model_level` strategy to `model_level_mass_weighted`.
+  - Coarse-grained plev diagnostics for u, v, w, omega, vorticity, height, temperature, tracers, and RH.
+  - Coarse-grained plev diagnostics use plevs defined in coarse-grained plev diagnostics for `fv_diag_plevs_nml`
+  - OpenMP multi-threaded calculations
+- Code refactors (Lucas):
+  - Cleaned up `external_ic_nml` and `fv_surf_map_nml`.
+  - Cleaned up `fv_mapz.F90` to move vertical remapping operators and thermodynamics/energetics routines into their own modules
+- Diagnostics (Lucas, Linjiong, Kai, Spencer):
+  - Fixes for nudging and fv_sg diagnostics 
+  - Cleaned up fv_diagnostics stdout messages
+  - True instantaneous and timestep-mean divergence and dissipative heating.
+  - 40 dBz reflectivity height diagnostic.
+  - Dissipative heating and dissipation estimate as, even if stochastic physics isn't enabled.
+  - Introduced a flag `PRT_LEVEL` (now hard-coded) to control which min/max fields are written to stdout.
+  - Fixed a bug for CAPE/CIN/BRN when nonhydrostatic pressure perturbation is also being output.
+  - Refactor of plev and standard pressure level diagnostics, added new variables (vort, theta, theta_e, w, RH, dew point) to plevs, and removed unnecessary arguments to cs3_interpolator
+- Deprecated/removed options (Lucas):
+  - Removed outdated options: scale_z, w_max, w_limiter, z_min, d2_divg_max_k[12], damp_k_k[12], old_divg_damp, do_am4_remap, use_new_ncep, use_ncep_phy, a2b_ord, c2l_ord.
+  - Interpolation from cell-means to corner values (a2b) and from local staggered winds to A-grid lat-lon winds, have been hard-coded to be fourth-order, except where it had previously been hard-coded to be second-order. Supporting codes have been cleaned up.
+  - Deprecation notice for conserve_ke
+  - Added warning messages for poorly-chosen advection scheme options (hord_xx), and a FATAL is thrown for invalid scheme choices.
+
+
 # RELEASE NOTES for FV3 202305: Summary
-FV3-202305-public --- May 2023
-Lucas Harris, GFDL lucas.harris@noaa.gov
+FV3-202305-public --- May 2023  
+Lucas Harris, GFDL lucas.harris@noaa.gov  
 
 This version has been tested with SHiELD physics release 202305
 and with FMS release 2023.01 from https://github.com/NOAA-GFDL/FMS
 
-This release includes the following:
 - Revised Vertical Remapping Operators (Lucas)
   - kord=10 reverted back to AM4 version.
   - Post-AM4 version of kord=10 is now kord=12.
@@ -41,8 +112,8 @@ This release includes the following:
 
 
 # RELEASE NOTES for FV3 202210: Summary
-FV3-202210-public --- October 2022
-Lucas Harris, GFDL lucas.harris@noaa.gov
+FV3-202210-public --- October 2022  
+Lucas Harris, GFDL lucas.harris@noaa.gov  
 
 This version has been tested with SHiELD physics release 202210
 and with FMS release 2022.03 from https://github.com/NOAA-GFDL/FMS
@@ -57,8 +128,8 @@ This release includes the following:
 
 
 # RELEASE NOTES for FV3 202204: Summary
-FV3-202204-public --- April 2022
-Lucas Harris, GFDL lucas.harris@noaa.gov
+FV3-202204-public --- April 2022  
+Lucas Harris, GFDL lucas.harris@noaa.gov  
 
 This version has been tested against the current SHiELD physics
 and with FMS release 2022.01 from https://github.com/NOAA-GFDL/FMS
@@ -83,8 +154,8 @@ This release includes the following:
 
 # RELEASE NOTES for FV3 202107: Summary
 
-FV3-202107-public --- 08 July 2021
-Lucas Harris, GFDL lucas.harris@noaa.gov
+FV3-202107-public --- 08 July 2021  
+Lucas Harris, GFDL lucas.harris@noaa.gov  
 
 This version has been tested against the current SHiELD physics
 and with FMS release 2021.02 from https://github.com/NOAA-GFDL/FMS
@@ -102,8 +173,8 @@ This release includes the following:
 
 # RELEASE NOTES for FV3 202101: Summary
 
-FV3-202101-public --- 22 January 2021
-Lucas Harris, GFDL <lucas.harris@noaa.gov>
+FV3-202101-public --- 22 January 2021  
+Lucas Harris, GFDL <lucas.harris@noaa.gov>  
 
 This version has been tested against the current SHiELD (formerly fvGFS) physics
 and with FMS release candidate 2020.04 from https://github.com/NOAA-GFDL/FMS
