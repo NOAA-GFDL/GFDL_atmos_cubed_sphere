@@ -356,8 +356,8 @@ contains
 
        if (gridstruct%bounded_domain) then
 
-          do j=js-2,je+1+2
-             do i=is-2,ie+1+2
+          do j=js,je+1
+             do i=is,ie+1
                 qout(i,j) = 0.25*(qin(i-1,j-1)+qin(i,j-1)+qin(i-1,j)+qin(i,j))
              enddo
           enddo

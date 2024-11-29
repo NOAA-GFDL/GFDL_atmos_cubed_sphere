@@ -38,7 +38,7 @@ use  time_interp_mod, only: time_interp
 use get_cal_time_mod, only: get_cal_time
 use          mpp_mod, only: mpp_min, mpp_max
 use    constants_mod, only: RDGAS, RVGAS, PI, KAPPA, CP_AIR
-use fv_mapz_mod,      only: mappm
+use fv_operators_mod, only: mappm
 implicit none
 private
 

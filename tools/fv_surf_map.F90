@@ -54,33 +54,31 @@
 !      5min
 !         nlon = 4320
 !         nlat = 2160
-!    surf_format:      netcdf (default)
-!                      binary
+!    surf_format:      netcdf (only)
 ! New NASA SRTM30 data: SRTM30.nc
 !         nlon = 43200
 !         nlat = 21600
-      logical::  zs_filter = .true.
-      logical:: zero_ocean = .true.          ! if true, no diffusive flux into water/ocean area
-      integer           ::  nlon = 21600
-      integer           ::  nlat = 10800
-      real:: cd4 = 0.15      ! Dimensionless coeff for del-4 diffusion (with FCT)
-      real:: cd2 = -1.       ! Dimensionless coeff for del-2 diffusion (-1 gives resolution-determined value)
-      real:: peak_fac = 1.05 ! overshoot factor for the mountain peak
-      real:: max_slope = 0.15 ! max allowable terrain slope: 1 --> 45 deg
-                              ! 0.15 for C768 or lower; 0.25 C1536; 0.3 for C3072
-      integer:: n_del2_weak = 12
-      integer:: n_del2_strong = -1
-      integer:: n_del4 = -1
+      logical::  zs_filter = .true.          !< Perform filtering after creating topography. This option is not used for external_ic = .true. (that is controlled by fv_core_nml::full_zs_filter)
+      logical:: zero_ocean = .true.          !< limits diffusive flux into water/ocean area
+      integer           ::  nlon
+      integer           ::  nlat
+      real:: cd4 = 0.15      !< Dimensionless coeff for del-4 diffusion (with FCT)
+      real:: cd2 = -1.       !< Dimensionless coeff for del-2 diffusion (-1 gives resolution-determined value)
+      real:: peak_fac = 1.05 !< overshoot factor for the mountain peak
+      real:: max_slope = 0.15 !< max allowable terrain slope: 1 --> 45 deg
+                              !< 0.15 for C768 or lower; 0.25 C1536; 0.3 for C3072
+      integer:: n_del2_weak = 12 !< number of passes of weak del-2 diffusion (cd2 = 0.12*da_min)
+      integer:: n_del2_strong = -1 !< number of passes of strong del-2 diffusion (in cd2 or hard-coded to 0.16*da_min)
+      integer:: n_del4 = -1 !< number of passes of del-4 diffusion
 
 
-      character(len=128)::  surf_file = "INPUT/topo1min.nc"
-      character(len=6)  ::  surf_format = 'netcdf'
+      character(len=128)::  surf_file = "INPUT/topo1min.nc" !< source lat-lon file for on-line topography creation and filtering
       logical :: namelist_read = .false.
 
       real cos_grid
       character(len=3) :: grid_string = ''
 
-      namelist /surf_map_nml/ surf_file,surf_format,nlon,nlat, zero_ocean, zs_filter, &
+      namelist /surf_map_nml/ surf_file,zero_ocean, zs_filter, &
                     cd4, peak_fac, max_slope, n_del2_weak, n_del2_strong, cd2, n_del4
 !
       real, allocatable:: zs_g(:,:), sgh_g(:,:), oro_g(:,:)
@@ -181,7 +179,6 @@
 ! surface file must be in NetCDF format
 !
       if ( file_exists(surf_file) ) then
-         if (surf_format == "netcdf") then
 
           status = nf_open (surf_file, NF_NOWRITE, ncid)
           if (status .ne. NF_NOERR) call handle_err(status)
@@ -200,15 +197,12 @@
 
           if ( is_master() ) then
               if ( nlon==43200 ) then
-                write(*,*) 'Opening NASA datset file:', surf_file, surf_format, nlon, nlat
+                write(*,*) 'Opening NASA datset file:', surf_file, nlon, nlat
               else
-                write(*,*) 'Opening USGS datset file:', surf_file, surf_format, nlon, nlat
+                write(*,*) 'Opening USGS datset file:', surf_file, nlon, nlat
               endif
           endif
 
-       else
-          call error_mesg ( 'surfdrv','Raw IEEE data format no longer supported !!!', FATAL )
-       endif
     else
        call error_mesg ( 'surfdrv','surface file '//trim(surf_file)//' not found !', FATAL )
     endif
@@ -238,94 +232,91 @@
 !-------------------------------------
       call timing_on('map_to_cubed')
 
-      if (surf_format == "netcdf") then
 
 !  Find latitude strips reading data
-         lats =  pi/2.
-         latn = -pi/2.
-         do j=js,je
-            do i=is,ie
-               lats = min( lats, grid(i,j,2), grid(i+1,j,2), grid(i,j+1,2), grid(i+1,j+1,2), agrid(i,j,2) )
-               latn = max( latn, grid(i,j,2), grid(i+1,j,2), grid(i,j+1,2), grid(i+1,j+1,2), agrid(i,j,2) )
-            enddo
+      lats =  pi/2.
+      latn = -pi/2.
+      do j=js,je
+         do i=is,ie
+            lats = min( lats, grid(i,j,2), grid(i+1,j,2), grid(i,j+1,2), grid(i+1,j+1,2), agrid(i,j,2) )
+            latn = max( latn, grid(i,j,2), grid(i+1,j,2), grid(i,j+1,2), grid(i+1,j+1,2), agrid(i,j,2) )
          enddo
+      enddo
 
 ! Enlarge the search zone:
 ! To account for the curvature of the coordinates:
 
-         !I have had trouble running c90 with 600 pes unless the search region is expanded
-         ! due to failures in finding latlon points in the source data.
-         !This sets a larger search region if the number of cells on a PE is too small.
-         !(Alternately you can just cold start the topography using a smaller number of PEs)
-         if (min(je-js+1,ie-is+1) < 15) then
-            delg = max( 0.4*(latn-lats), pi/real(npx_global-1), 2.*pi/real(nlat) )
-         else
-            delg = max( 0.2*(latn-lats), pi/real(npx_global-1), 2.*pi/real(nlat) )
-         endif
-         lats = max( -0.5*pi, lats - delg )
-         latn = min(  0.5*pi, latn + delg )
-
-         jstart = 1
-         do j=2,nlat
-            if ( lats < lat1(j) ) then
-                 jstart = j-1
-                 exit
-            endif
-         enddo
-         jstart = max(jstart-1, 1)
-
-         jend = nlat
-         do j=2,nlat
-            if ( latn < lat1(j+1) ) then
-                 jend = j+1
-                 exit
-            endif
-         enddo
-         jend = min(jend+1, nlat)
-
-         jt = jend - jstart + 1
-         igh = nlon/8 + nlon/(2*(npx_global-1))
-
-         if (is_master()) write(*,*) 'Terrain dataset =', nlon, 'jt=', jt
-         if (is_master()) write(*,*) 'igh (terrain ghosting)=', igh
-
-         status = nf_inq_varid (ncid, 'ftopo', ftopoid)
-         if (status .ne. NF_NOERR) call handle_err(status)
-         nread = 1;   start = 1
-         nread(1) = nlon
-         start(2) = jstart; nread(2) = jend - jstart + 1
-
-         allocate ( ft(-igh:nlon+igh,jt) )
-         status = nf_get_vara_real (ncid, ftopoid, start, nread, ft(1:nlon,1:jt))
-         if (status .ne. NF_NOERR) call handle_err(status)
-
-         do j=1,jt
-            do i=-igh,0
-               ft(i,j) = ft(i+nlon,j)
-            enddo
-            do i=nlon+1,nlon+igh
-               ft(i,j) = ft(i-nlon,j)
-            enddo
-         enddo
-
-         status = nf_inq_varid (ncid, 'htopo', htopoid)
-         if (status .ne. NF_NOERR) call handle_err(status)
-         allocate ( zs(-igh:nlon+igh,jt) )
-         status = nf_get_vara_real (ncid, htopoid, start, nread, zs(1:nlon,1:jt))
-         if (status .ne. NF_NOERR) call handle_err(status)
-         status = nf_close (ncid)
-         if (status .ne. NF_NOERR) call handle_err(status)
-! Ghost Data
-         do j=1,jt
-            do i=-igh,0
-               zs(i,j) = zs(i+nlon,j)
-            enddo
-            do i=nlon+1,nlon+igh
-               zs(i,j) = zs(i-nlon,j)
-            enddo
-         enddo
-
+      !I have had trouble running c90 with 600 pes unless the search region is expanded
+      ! due to failures in finding latlon points in the source data.
+      !This sets a larger search region if the number of cells on a PE is too small.
+      !(Alternately you can just cold start the topography using a smaller number of PEs)
+      if (min(je-js+1,ie-is+1) < 15) then
+         delg = max( 0.4*(latn-lats), pi/real(npx_global-1), 2.*pi/real(nlat) )
+      else
+         delg = max( 0.2*(latn-lats), pi/real(npx_global-1), 2.*pi/real(nlat) )
       endif
+      lats = max( -0.5*pi, lats - delg )
+      latn = min(  0.5*pi, latn + delg )
+
+      jstart = 1
+      do j=2,nlat
+         if ( lats < lat1(j) ) then
+            jstart = j-1
+            exit
+         endif
+      enddo
+      jstart = max(jstart-1, 1)
+
+      jend = nlat
+      do j=2,nlat
+         if ( latn < lat1(j+1) ) then
+            jend = j+1
+            exit
+         endif
+      enddo
+      jend = min(jend+1, nlat)
+
+      jt = jend - jstart + 1
+      igh = nlon/8 + nlon/(2*(npx_global-1))
+
+      if (is_master()) write(*,*) 'Terrain dataset =', nlon, 'jt=', jt
+      if (is_master()) write(*,*) 'igh (terrain ghosting)=', igh
+
+      status = nf_inq_varid (ncid, 'ftopo', ftopoid)
+      if (status .ne. NF_NOERR) call handle_err(status)
+      nread = 1;   start = 1
+      nread(1) = nlon
+      start(2) = jstart; nread(2) = jend - jstart + 1
+
+      allocate ( ft(-igh:nlon+igh,jt) )
+      status = nf_get_vara_real (ncid, ftopoid, start, nread, ft(1:nlon,1:jt))
+      if (status .ne. NF_NOERR) call handle_err(status)
+
+      do j=1,jt
+         do i=-igh,0
+            ft(i,j) = ft(i+nlon,j)
+         enddo
+         do i=nlon+1,nlon+igh
+            ft(i,j) = ft(i-nlon,j)
+         enddo
+      enddo
+
+      status = nf_inq_varid (ncid, 'htopo', htopoid)
+      if (status .ne. NF_NOERR) call handle_err(status)
+      allocate ( zs(-igh:nlon+igh,jt) )
+      status = nf_get_vara_real (ncid, htopoid, start, nread, zs(1:nlon,1:jt))
+      if (status .ne. NF_NOERR) call handle_err(status)
+      status = nf_close (ncid)
+      if (status .ne. NF_NOERR) call handle_err(status)
+      ! Ghost Data
+      do j=1,jt
+         do i=-igh,0
+            zs(i,j) = zs(i+nlon,j)
+         enddo
+         do i=nlon+1,nlon+igh
+            zs(i,j) = zs(i-nlon,j)
+         enddo
+      enddo
 
 ! special SP treatment:
 !     if ( jstart == 1 ) then

@@ -138,11 +138,10 @@ contains
    enddo
  end subroutine fillz
 
- subroutine fill_gfs(im, km, pe2, q, q_min)
+ subroutine fill_gfs(im, km, pe2, q)
 !SJL: this routine is the equivalent of fillz except that the vertical index is upside down
    integer, intent(in):: im, km
    real(kind=kind_phys), intent(in):: pe2(im,km+1)       ! pressure interface
-   real(kind=kind_phys), intent(in):: q_min
    real(kind=kind_phys), intent(inout):: q(im,km)
 !  LOCAL VARIABLES:
    real(kind=kind_phys) :: dp(im,km)
@@ -154,28 +153,28 @@ contains
       enddo
    enddo
 
+   do i=1,im
+
 ! From bottom up:
-   do k=1,km-1
-      k1 = k+1
-      do i=1,im
-         if ( q(i,k)<q_min ) then
-! Take mass from above so that q >= q_min
-              q(i,k1) = q(i,k1) + (q(i,k)-q_min)*dp(i,k)/dp(i,k1)
-              q(i,k ) = q_min
+      do k=1,km-1
+         k1 = k+1
+         if ( q(i,k)<0.0 ) then
+! Take mass from above
+              q(i,k1) = q(i,k1) + q(i,k)*dp(i,k)/dp(i,k1)
+              q(i,k ) = 0.
          endif
       enddo
-   enddo
 
 ! From top down:
-   do k=km,2,-1
-      k1 = k-1
-      do i=1,im
+      do k=km,2,-1
+         k1 = k-1
          if ( q(i,k)<0.0 ) then
 ! Take mass from below
               q(i,k1) = q(i,k1) + q(i,k)*dp(i,k)/dp(i,k1)
               q(i,k ) = 0.
          endif
       enddo
+     
    enddo
 
  end subroutine fill_gfs

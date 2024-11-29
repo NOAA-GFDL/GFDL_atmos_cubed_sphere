@@ -322,18 +322,20 @@ CONTAINS
 
   subroutine Riem_Solver_c(ms,   dt,  is,   ie,   js, je, km,   ng,  &
                            akap, cappa, cp,  ptop, hs, w3,  pt, q_con, &
-                           delp, gz,  pef,  ws, p_fac, a_imp, scale_m, &
+                           delp, gz,  pef,  ws, p_fac, a_imp, &
+                           use_cond, moist_kappa, &
                            pfull, fast_tau_w_sec, rf_cutoff)
 
    integer, intent(in):: is, ie, js, je, ng, km
    integer, intent(in):: ms
-   real, intent(in):: dt,  akap, cp, ptop, p_fac, a_imp, scale_m, fast_tau_w_sec, rf_cutoff
+   real, intent(in):: dt,  akap, cp, ptop, p_fac, a_imp, fast_tau_w_sec, rf_cutoff
    real, intent(in):: ws(is-ng:ie+ng,js-ng:je+ng)
    real, intent(in), dimension(is-ng:ie+ng,js-ng:je+ng,km):: pt, delp
    real, intent(in), dimension(is-ng:,js-ng:,1:):: q_con, cappa
    real, intent(in)::   hs(is-ng:ie+ng,js-ng:je+ng)
    real, intent(in), dimension(is-ng:ie+ng,js-ng:je+ng,km):: w3
    real, intent(in) :: pfull(km)
+   logical, intent(in) :: use_cond, moist_kappa
 ! OUTPUT PARAMETERS
    real, intent(inout), dimension(is-ng:ie+ng,js-ng:je+ng,km+1):: gz
    real, intent(  out), dimension(is-ng:ie+ng,js-ng:je+ng,km+1):: pef
@@ -344,6 +346,7 @@ CONTAINS
   real(kind=8) :: rff_temp
   integer i, j, k
   integer is1, ie1
+  real, parameter :: scale_m = 0.0 ! diff_z = scale_m**2 * 0.25
 
     gama = 1./(1.-akap)
    rgrav = 1./grav
@@ -366,7 +369,8 @@ CONTAINS
 
 
 !$OMP parallel do default(none) shared(js,je,is1,ie1,km,delp,pef,ptop,gz,rgrav,w3,pt, &
-!$OMP                                  a_imp,dt,gama,akap,ws,p_fac,scale_m,ms,hs,q_con,cappa,fast_tau_w_sec) &
+!$OMP                                  a_imp,dt,gama,akap,ws,p_fac,ms,hs,q_con,cappa, &
+!$OMP                                  use_cond,moist_kappa,fast_tau_w_sec) &
 !$OMP                          private(cp2,gm2, dm, dz2, w2, pm2, pe2, pem, peg)
    do 2000 j=js-1, je+1
 
@@ -376,42 +380,71 @@ CONTAINS
          enddo
       enddo
 
-      do i=is1, ie1
-         pef(i,j,1) = ptop                     ! full pressure at top
-         pem(i,1) = ptop
-#ifdef USE_COND
-         peg(i,1) = ptop
-#endif
-      enddo
-
-      do k=2,km+1
+      if (use_cond) then
          do i=is1, ie1
-            pem(i,k) = pem(i,k-1) + dm(i,k-1)
-#ifdef USE_COND
-! Excluding contribution from condensates:
-            peg(i,k) = peg(i,k-1) + dm(i,k-1)*(1.-q_con(i,j,k-1))
-#endif
+            pef(i,j,1) = ptop                     ! full pressure at top
+            pem(i,1) = ptop
+            peg(i,1) = ptop
          enddo
-      enddo
 
-      do k=1,km
+         do k=2,km+1
+            do i=is1, ie1
+               pem(i,k) = pem(i,k-1) + dm(i,k-1)
+               ! Excluding contribution from condensates:
+               peg(i,k) = peg(i,k-1) + dm(i,k-1)*(1.-q_con(i,j,k-1))
+            enddo
+         enddo
+
+      else
+         do i=is1, ie1
+            pef(i,j,1) = ptop                     ! full pressure at top
+            pem(i,1) = ptop
+         enddo
+
+         do k=2,km+1
+            do i=is1, ie1
+               pem(i,k) = pem(i,k-1) + dm(i,k-1)
+            enddo
+         enddo
+
+      endif
+
+      if (use_cond) then
+         if (moist_kappa) then
+            do k=1,km
+            do i=is1, ie1
+               dz2(i,k) = gz(i,j,k+1) - gz(i,j,k)
+               pm2(i,k) = (peg(i,k+1)-peg(i,k))/log(peg(i,k+1)/peg(i,k))
+               cp2(i,k) = cappa(i,j,k)
+               gm2(i,k) = 1. / (1.-cp2(i,k))
+                dm(i,k) = dm(i,k) * rgrav
+                w2(i,k) = w3(i,j,k)
+            enddo
+            enddo
+         else
+            do k=1,km
+            do i=is1, ie1
+               dz2(i,k) = gz(i,j,k+1) - gz(i,j,k)
+               pm2(i,k) = (peg(i,k+1)-peg(i,k))/log(peg(i,k+1)/peg(i,k))
+               cp2(i,k) = akap
+               gm2(i,k) = 1. / (1.-cp2(i,k))
+                dm(i,k) = dm(i,k) * rgrav
+                w2(i,k) = w3(i,j,k)
+            enddo
+            enddo
+         endif !moist_kappa
+      else
+         do k=1,km
          do i=is1, ie1
             dz2(i,k) = gz(i,j,k+1) - gz(i,j,k)
-#ifdef USE_COND
-            pm2(i,k) = (peg(i,k+1)-peg(i,k))/log(peg(i,k+1)/peg(i,k))
-
-#ifdef MOIST_CAPPA
-            cp2(i,k) = cappa(i,j,k)
-            gm2(i,k) = 1. / (1.-cp2(i,k))
-#endif
-
-#else
             pm2(i,k) = dm(i,k)/log(pem(i,k+1)/pem(i,k))
-#endif
+            cp2(i,k) = akap
+            gm2(i,k) = 1. / (1.-cp2(i,k))
              dm(i,k) = dm(i,k) * rgrav
              w2(i,k) = w3(i,j,k)
          enddo
-      enddo
+         enddo
+      endif !use_cond
 
 
       if ( a_imp < -0.01 ) then
@@ -453,7 +486,8 @@ CONTAINS
                           isd, ied, jsd, jed, akap, cappa, cp,     &
                           ptop, zs, q_con, w,  delz, pt,  &
                           delp, zh, pe, ppe, pk3, pk, peln, &
-                          ws, scale_m,  p_fac, a_imp, &
+                          ws,  p_fac, a_imp, &
+                          use_cond, moist_kappa, &
                           use_logp, last_call, fp_out)
 !--------------------------------------------
 ! !OUTPUT PARAMETERS
@@ -464,9 +498,10 @@ CONTAINS
    integer, intent(in):: ms, is, ie, js, je, km, ng
    integer, intent(in):: isd, ied, jsd, jed
    real, intent(in):: dt         ! the BIG horizontal Lagrangian time step
-   real, intent(in):: akap, cp, ptop, p_fac, a_imp, scale_m
+   real, intent(in):: akap, cp, ptop, p_fac, a_imp
    real, intent(in):: zs(isd:ied,jsd:jed)
    logical, intent(in):: last_call, use_logp, fp_out
+   logical, intent(in) :: use_cond, moist_kappa
    real, intent(in):: ws(is:ie,js:je)
    real, intent(in), dimension(isd:,jsd:,1:):: q_con, cappa
    real, intent(in), dimension(isd:ied,jsd:jed,km):: delp, pt
@@ -483,6 +518,7 @@ CONTAINS
   real, dimension(is:ie,km+1)::pem, pe2, peln2, peg, pelng
   real gama, rgrav, ptk, peln1
   integer i, j, k
+  real, parameter :: scale_m = 0.0 ! diff_z = scale_m**2 * 0.25
 
     gama = 1./(1.-akap)
    rgrav = 1./grav
@@ -490,60 +526,93 @@ CONTAINS
      ptk = exp(akap*peln1)
 
 !$OMP parallel do default(none) shared(is,ie,js,je,km,delp,ptop,peln1,pk3,ptk,akap,rgrav,zh,pt, &
-!$OMP                                  w,a_imp,dt,gama,ws,p_fac,scale_m,ms,delz,last_call,  &
-!$OMP                                  peln,pk,fp_out,ppe,use_logp,zs,pe,cappa,q_con )          &
+!$OMP                                  w,a_imp,dt,gama,ws,p_fac,ms,delz,last_call,  &
+!$OMP                                  peln,pk,fp_out,ppe,use_logp,zs,pe,cappa,     &
+!$OMP                                  q_con,use_cond,moist_kappa )          &
 !$OMP                          private(cp2, gm2, dm, dz2, pm2, pem, peg, pelng, pe2, peln2, w2)
    do 2000 j=js, je
 
-      do k=1,km
+      if (moist_kappa) then
+         do k=1,km
          do i=is, ie
             dm(i,k) = delp(i,j,k)
-#ifdef MOIST_CAPPA
             cp2(i,k) = cappa(i,j,k)
-#endif
          enddo
-      enddo
+         enddo
+      else
+         do k=1,km
+         do i=is, ie
+            dm(i,k) = delp(i,j,k)
+         enddo
+         enddo
+      endif
 
-      do i=is,ie
-         pem(i,1) = ptop
-         peln2(i,1) = peln1
-         pk3(i,j,1) = ptk
-#ifdef USE_COND
-         peg(i,1) = ptop
-         pelng(i,1) = peln1
-#endif
-      enddo
-      do k=2,km+1
+      if (use_cond) then
+         do i=is,ie
+            pem(i,1) = ptop
+            peln2(i,1) = peln1
+            pk3(i,j,1) = ptk
+            peg(i,1) = ptop
+            pelng(i,1) = peln1
+         enddo
+         do k=2,km+1
          do i=is,ie
             pem(i,k) = pem(i,k-1) + dm(i,k-1)
             peln2(i,k) = log(pem(i,k))
-#ifdef USE_COND
 ! Excluding contribution from condensates:
 ! peln used during remap; pk3 used only for p_grad
             peg(i,k) = peg(i,k-1) + dm(i,k-1)*(1.-q_con(i,j,k-1))
             pelng(i,k) = log(peg(i,k))
-#endif
             pk3(i,j,k) = exp(akap*peln2(i,k))
          enddo
-      enddo
+         enddo
+      else
+         do i=is,ie
+            pem(i,1) = ptop
+            peln2(i,1) = peln1
+            pk3(i,j,1) = ptk
+         enddo
+         do k=2,km+1
+         do i=is,ie
+            pem(i,k) = pem(i,k-1) + dm(i,k-1)
+            peln2(i,k) = log(pem(i,k))
+            pk3(i,j,k) = exp(akap*peln2(i,k))
+         enddo
+         enddo
+      endif !use_cond
 
-      do k=1,km
+      if (use_cond) then
+         if (moist_kappa) then
+            do k=1,km
+            do i=is, ie
+               pm2(i,k) = (peg(i,k+1)-peg(i,k))/(pelng(i,k+1)-pelng(i,k))
+               gm2(i,k) = 1. / (1.-cp2(i,k))
+                dm(i,k) = dm(i,k) * rgrav
+               dz2(i,k) = zh(i,j,k+1) - zh(i,j,k)
+                w2(i,k) = w(i,j,k)
+            enddo
+            enddo
+         else
+            do k=1,km
+            do i=is, ie
+               pm2(i,k) = (peg(i,k+1)-peg(i,k))/(pelng(i,k+1)-pelng(i,k))
+                dm(i,k) = dm(i,k) * rgrav
+               dz2(i,k) = zh(i,j,k+1) - zh(i,j,k)
+                w2(i,k) = w(i,j,k)
+            enddo
+            enddo
+         endif !moist_kappa
+      else
+         do k=1,km
          do i=is, ie
-#ifdef USE_COND
-            pm2(i,k) = (peg(i,k+1)-peg(i,k))/(pelng(i,k+1)-pelng(i,k))
-
-#ifdef MOIST_CAPPA
-            gm2(i,k) = 1. / (1.-cp2(i,k))
-#endif
-
-#else
             pm2(i,k) = dm(i,k)/(peln2(i,k+1)-peln2(i,k))
-#endif
              dm(i,k) = dm(i,k) * rgrav
             dz2(i,k) = zh(i,j,k+1) - zh(i,j,k)
              w2(i,k) = w(i,j,k)
          enddo
-      enddo
+         enddo
+      endif !use_cond
+
 
       if ( a_imp < -0.999 ) then
            call SIM3p0_solver(dt, is, ie, km, rdgas, gama, akap, pe2, dm,  &
@@ -730,14 +799,8 @@ CONTAINS
 ! Continuity of (pbar, wbar) is maintained
          do k=1, km
               rden = -rgas*dm(k)/dz(k)
-#ifdef MOIST_CAPPA
             pf1(k) = exp( gm2(i,k)*log(rden*pt1(k)) )
-!           dts(k) = -dz(k)/sqrt(gm2(i,k)*rgas*pf1(k)/rden)
             dts(k) = -dz(k)/sqrt(grg*pf1(k)/rden)
-#else
-            pf1(k) = exp( gama*log(rden*pt1(k)) )
-            dts(k) = -dz(k)/sqrt(grg*pf1(k)/rden)
-#endif
             if ( bdt > dts(k) ) then
                  ks0 = k-1
                  goto 222
@@ -796,14 +859,8 @@ CONTAINS
 
    do k=ks1, km
         rden = -rgas*dm(k)/dz(k)
-#ifdef MOIST_CAPPA
           pf = exp( gm2(i,k)*log(rden*pt1(k)) )
-!     dts(k) = -dz(k) /  sqrt( gm2(i,k)*rgas*pf/rden )
       dts(k) = -dz(k) /  sqrt( grg*pf/rden )
-#else
-          pf = exp( gama*log(rden*pt1(k)) )
-      dts(k) = -dz(k) /  sqrt( grg*pf/rden )
-#endif
        ptmp1 = dts(k)*(pf - pm2(i,k))
       r_lo(k) = wm(k) + ptmp1
       r_hi(k) = wm(k) - ptmp1
@@ -1233,21 +1290,13 @@ CONTAINS
    real t1g, rdt, capa1
    integer i, k
 
-#ifdef MOIST_CAPPA
       t1g = 2.*dt*dt
-#else
-      t1g = gama * 2.*dt*dt
-#endif
       rdt = 1. / dt
     capa1 = kappa - 1.
 
     do k=1,km
        do i=is, ie
-#ifdef MOIST_CAPPA
           pe(i,k) = exp(gm2(i,k)*log(-dm2(i,k)/dz2(i,k)*rgas*pt2(i,k))) - pm2(i,k)
-#else
-          pe(i,k) = exp(gama*log(-dm2(i,k)/dz2(i,k)*rgas*pt2(i,k))) - pm2(i,k)
-#endif
           w1(i,k) = w2(i,k)
        enddo
     enddo
@@ -1285,11 +1334,7 @@ CONTAINS
 ! Start the w-solver
     do k=2, km
        do i=is, ie
-#ifdef MOIST_CAPPA
           aa(i,k) = t1g*0.5*(gm2(i,k-1)+gm2(i,k))/(dz2(i,k-1)+dz2(i,k)) * (pem(i,k))
-#else
-          aa(i,k) = t1g/(dz2(i,k-1)+dz2(i,k)) * (pem(i,k))
-#endif
        enddo
     enddo
     do i=is, ie
@@ -1304,11 +1349,7 @@ CONTAINS
        enddo
     enddo
     do i=is, ie
-#ifdef MOIST_CAPPA
        p1(i) = t1g*gm2(i,km)/dz2(i,km)*(pem(i,km+1))
-#else
-       p1(i) = t1g/dz2(i,km)*(pem(i,km+1))
-#endif
        gam(i,km) = aa(i,km) / bet(i)
           bet(i) =  dm2(i,km) - (aa(i,km)+p1(i) + aa(i,km)*gam(i,km))
         w2(i,km) = (dm2(i,km)*w1(i,km)+dt*(pp(i,km+1)-pp(i,km))-p1(i)*ws(i)-aa(i,km)*w2(i,km-1))/bet(i)
@@ -1340,21 +1381,13 @@ CONTAINS
 
     do i=is, ie
            p1(i) = ( pe(i,km) + 2.*pe(i,km+1) )*r3
-#ifdef MOIST_CAPPA
        dz2(i,km) = -dm2(i,km)*rgas*pt2(i,km)*exp((cp2(i,km)-1.)*log(max(p_fac*pm2(i,km),p1(i)+pm2(i,km))))
-#else
-       dz2(i,km) = -dm2(i,km)*rgas*pt2(i,km)*exp(capa1*log(max(p_fac*pm2(i,km),p1(i)+pm2(i,km))))
-#endif
     enddo
 
     do k=km-1, 1, -1
        do i=is, ie
           p1(i) = (pe(i,k) + bb(i,k)*pe(i,k+1) + g_rat(i,k)*pe(i,k+2))*r3 - g_rat(i,k)*p1(i)
-#ifdef MOIST_CAPPA
           dz2(i,k) = -dm2(i,k)*rgas*pt2(i,k)*exp((cp2(i,k)-1.)*log(max(p_fac*pm2(i,k),p1(i)+pm2(i,k))))
-#else
-          dz2(i,k) = -dm2(i,k)*rgas*pt2(i,k)*exp(capa1*log(max(p_fac*pm2(i,k),p1(i)+pm2(i,k))))
-#endif
        enddo
     enddo
 
@@ -1379,11 +1412,7 @@ CONTAINS
     beta = 1. - alpha
       ra = 1. / alpha
       t2 = beta / alpha
-#ifdef MOIST_CAPPA
      t1g = 2.*(alpha*dt)**2
-#else
-     t1g = 2.*gama*(alpha*dt)**2
-#endif
      rdt = 1. / dt
    capa1 = kappa - 1.
 
@@ -1391,11 +1420,7 @@ CONTAINS
       do i=is, ie
           w1(i,k) = w2(i,k)
 ! P_g perturbation
-#ifdef MOIST_CAPPA
          pe2(i,k) = exp(gm2(i,k)*log(-dm2(i,k)/dz2(i,k)*rgas*pt2(i,k))) - pm2(i,k)
-#else
-         pe2(i,k) = exp(gama*log(-dm2(i,k)/dz2(i,k)*rgas*pt2(i,k))) - pm2(i,k)
-#endif
       enddo
    enddo
 
@@ -1437,11 +1462,7 @@ CONTAINS
 
     do k=2, km
        do i=is, ie
-#ifdef MOIST_CAPPA
           aa(i,k) = t1g*0.5*(gm2(i,k-1)+gm2(i,k))/(dz2(i,k-1)+dz2(i,k))*pe2(i,k)
-#else
-          aa(i,k) = t1g/(dz2(i,k-1)+dz2(i,k))*pe2(i,k)
-#endif
           wk(i,k) = t2*aa(i,k)*(w1(i,k-1)-w1(i,k))
           aa(i,k) = aa(i,k) - scale_m*dm2(i,1)
        enddo
@@ -1462,11 +1483,7 @@ CONTAINS
     enddo
 ! Bottom: k=km
     do i=is, ie
-#ifdef MOIST_CAPPA
           wk1(i) = t1g*gm2(i,km)/dz2(i,km)*pe2(i,km+1)
-#else
-          wk1(i) = t1g/dz2(i,km)*pe2(i,km+1)
-#endif
        gam(i,km) = aa(i,km) / bet(i)
           bet(i) =  dm2(i,km) - (aa(i,km)+wk1(i) + aa(i,km)*gam(i,km))
         w2(i,km) = (dm2(i,km)*w1(i,km) + dt*(pp(i,km+1)-pp(i,km)) - wk(i,km) +  &
@@ -1500,22 +1517,14 @@ CONTAINS
 
     do i=is, ie
            p1(i) = (pe2(i,km)+ 2.*pe2(i,km+1))*r3
-#ifdef MOIST_CAPPA
        dz2(i,km) = -dm2(i,km)*rgas*pt2(i,km)*exp((cp2(i,km)-1.)*log(max(p_fac*pm2(i,km),p1(i)+pm2(i,km))))
-#else
-       dz2(i,km) = -dm2(i,km)*rgas*pt2(i,km)*exp(capa1*log(max(p_fac*pm2(i,km),p1(i)+pm2(i,km))))
-#endif
     enddo
 
     do k=km-1, 1, -1
        do i=is, ie
              p1(i) = (pe2(i,k)+bb(i,k)*pe2(i,k+1)+g_rat(i,k)*pe2(i,k+2))*r3 - g_rat(i,k)*p1(i)
 ! delz = -dm*R*T_m / p_gas
-#ifdef MOIST_CAPPA
           dz2(i,k) = -dm2(i,k)*rgas*pt2(i,k)*exp((cp2(i,k)-1.)*log(max(p_fac*pm2(i,k),p1(i)+pm2(i,k))))
-#else
-          dz2(i,k) = -dm2(i,k)*rgas*pt2(i,k)*exp(capa1*log(max(p_fac*pm2(i,k),p1(i)+pm2(i,k))))
-#endif
        enddo
     enddo
 
@@ -1753,31 +1762,23 @@ CONTAINS
   end subroutine edge_profile1
 
  subroutine nh_bc(ptop, grav, kappa, cp, delp, delzBC, pt, phis, &
-#ifdef USE_COND
-      q_con, &
-#ifdef MOIST_CAPPA
-      cappa, &
-#endif
-#endif
-      pkc, gz, pk3, &
+      q_con, cappa, pkc, gz, pk3, &
       BC_step, BC_split, &
-      npx, npy, npz, bounded_domain, pkc_pertn, computepk3, fullhalo, bd)
+      npx, npy, npz, bounded_domain, pkc_pertn, computepk3, fullhalo, &
+      use_cond, moist_kappa, bd)
 
       !INPUT: delp, delz (BC), pt
       !OUTPUT: gz, pkc, pk3 (optional)
       integer, intent(IN) :: npx, npy, npz
       logical, intent(IN) :: pkc_pertn, computepk3, fullhalo, bounded_domain
+      logical, intent(IN) :: use_cond, moist_kappa
       real, intent(IN) :: ptop, kappa, cp, grav, BC_step, BC_split
       type(fv_grid_bounds_type), intent(IN) :: bd
       real, intent(IN) :: phis(bd%isd:bd%ied,bd%jsd:bd%jed)
       real, intent(IN),  dimension(bd%isd:bd%ied,bd%jsd:bd%jed,npz):: pt, delp
       type(fv_nest_BC_type_3d), intent(IN) :: delzBC
-#ifdef USE_COND
-      real, intent(IN),  dimension(bd%isd:bd%ied,bd%jsd:bd%jed,npz):: q_con
-#ifdef MOIST_CAPPA
-      real, intent(INOUT),  dimension(bd%isd:bd%ied,bd%jsd:bd%jed,npz):: cappa
-#endif
-#endif
+      real, intent(IN),  dimension(bd%isd:,bd%jsd:,1:):: q_con
+      real, intent(INOUT),  dimension(bd%isd:,bd%jsd:,1:):: cappa
       real, intent(INOUT), dimension(bd%isd:bd%ied,bd%jsd:bd%jed,npz+1):: gz, pkc, pk3
 
       integer :: i,j,k
@@ -1801,30 +1802,22 @@ CONTAINS
       if (is == 1) then
 
          call nh_BC_k(ptop, grav, kappa, cp, delp, delzBC%west_t0, delzBC%west_t1, pt, phis, &
-#ifdef USE_COND
-              q_con, &
-#ifdef MOIST_CAPPA
-              cappa, &
-#endif
-#endif
+              q_con, cappa, &
               pkc, gz, pk3, &
               BC_step, BC_split, &
-              pkc_pertn, computepk3, isd, ied, isd, 0, isd, 0, jsd, jed, jsd, jed, npz)
+              pkc_pertn, computepk3, use_cond, moist_kappa, &
+              isd, ied, isd, 0, isd, 0, jsd, jed, jsd, jed, npz)
 
       endif
 
       if (ie == npx-1) then
 
          call nh_BC_k(ptop, grav, kappa, cp, delp, delzBC%east_t0, delzBC%east_t1, pt, phis, &
-#ifdef USE_COND
-              q_con, &
-#ifdef MOIST_CAPPA
-              cappa, &
-#endif
-#endif
+              q_con, cappa, &
               pkc, gz, pk3, &
               BC_step, BC_split, &
-              pkc_pertn, computepk3, isd, ied, npx, ied, npx, ied, jsd, jed, jsd, jed, npz)
+              pkc_pertn, computepk3, use_cond, moist_kappa, &
+              isd, ied, npx, ied, npx, ied, jsd, jed, jsd, jed, npz)
 
       endif
 
@@ -1842,59 +1835,42 @@ CONTAINS
       if (js == 1) then
 
          call nh_BC_k(ptop, grav, kappa, cp, delp, delzBC%south_t0, delzBC%south_t1, pt, phis, &
-#ifdef USE_COND
-              q_con, &
-#ifdef MOIST_CAPPA
-              cappa, &
-#endif
-#endif
+              q_con, cappa, &
               pkc, gz, pk3, &
               BC_step, BC_split, &
-              pkc_pertn, computepk3, isd, ied, isd, ied, istart, iend, jsd, jed, jsd, 0, npz)
+              pkc_pertn, computepk3, use_cond, moist_kappa, &
+              isd, ied, isd, ied, istart, iend, jsd, jed, jsd, 0, npz)
 
       end if
 
       if (je == npy-1) then
 
          call nh_BC_k(ptop, grav, kappa, cp, delp, delzBC%north_t0, delzBC%north_t1, pt, phis, &
-#ifdef USE_COND
-              q_con, &
-#ifdef MOIST_CAPPA
-              cappa, &
-#endif
-#endif
+              q_con, cappa, &
               pkc, gz, pk3, &
               BC_step, BC_split, &
-              pkc_pertn, computepk3, isd, ied, isd, ied, istart, iend, jsd, jed, npy, jed, npz)
+              pkc_pertn, computepk3, use_cond, moist_kappa, &
+              isd, ied, isd, ied, istart, iend, jsd, jed, npy, jed, npz)
       endif
 
 end subroutine nh_bc
 
 subroutine nh_BC_k(ptop, grav, kappa, cp, delp, delzBC_t0, delzBC_t1, pt, phis, &
-#ifdef USE_COND
-      q_con, &
-#ifdef MOIST_CAPPA
-      cappa, &
-#endif
-#endif
-      pkc, gz, pk3, &
+      q_con, cappa, pkc, gz, pk3, &
       BC_step, BC_split, &
-      pkc_pertn, computepk3, isd, ied, isd_BC, ied_BC, istart, iend, jsd, jed, jstart, jend, npz)
+      pkc_pertn, computepk3, use_cond, moist_kappa, &
+      isd, ied, isd_BC, ied_BC, istart, iend, jsd, jed, jstart, jend, npz)
 
    integer, intent(IN) :: isd, ied, isd_BC, ied_BC, istart, iend, jsd, jed, jstart, jend, npz
    real, intent(IN),    dimension(isd_BC:ied_BC,jstart:jend,npz) :: delzBC_t0, delzBC_t1
    real, intent(IN)    :: BC_step, BC_split
 
-   logical, intent(IN) :: pkc_pertn, computepk3
+   logical, intent(IN) :: pkc_pertn, computepk3, use_cond, moist_kappa
    real, intent(IN) :: ptop, kappa, cp, grav
    real, intent(IN) :: phis(isd:ied,jsd:jed)
    real, intent(IN),  dimension(isd:ied,jsd:jed,npz):: pt, delp
-#ifdef USE_COND
-   real, intent(IN),  dimension(isd:ied,jsd:jed,npz):: q_con
-#ifdef MOIST_CAPPA
-   real, intent(INOUT),  dimension(isd:ied,jsd:jed,npz):: cappa
-#endif
-#endif
+   real, intent(IN),  dimension(isd:,jsd:,1:):: q_con
+   real, intent(INOUT),  dimension(isd:,jsd:,1:):: cappa
    real, intent(INOUT), dimension(isd:ied,jsd:jed,npz+1):: gz, pkc, pk3
 
    integer :: i,j,k
@@ -1902,9 +1878,7 @@ subroutine nh_BC_k(ptop, grav, kappa, cp, delp, delzBC_t0, delzBC_t1, pt, phis, 
    real :: ptk, rgrav, rkap, peln1, rdg, denom
 
    real, dimension(istart:iend, npz+1, jstart:jend ) :: pe, peln
-#ifdef USE_COND
    real, dimension(istart:iend, npz+1 ) :: peg, pelng
-#endif
    real, dimension(istart:iend, npz) :: gam, bb, dd, pkz
    real, dimension(istart:iend, npz-1) :: g_rat
    real, dimension(istart:iend) :: bet
@@ -1938,43 +1912,63 @@ subroutine nh_BC_k(ptop, grav, kappa, cp, delp, delzBC_t0, delzBC_t1, pt, phis, 
       do i=istart,iend
          pe(i,1,j) = ptop
          peln(i,1,j) = peln1
-#ifdef USE_COND
          peg(i,1) = ptop
          pelng(i,1) = peln1
-#endif
       enddo
       do k=2,npz+1
-         do i=istart,iend
-            pe(i,k,j) = pe(i,k-1,j) + delp(i,j,k-1)
-            peln(i,k,j) = log(pe(i,k,j))
-#ifdef USE_COND
-            peg(i,k) = peg(i,k-1) + delp(i,j,k-1)*(1.-q_con(i,j,k-1))
-            pelng(i,k) = log(peg(i,k))
-#endif
-         enddo
+         if (use_cond) then
+            do i=istart,iend
+               pe(i,k,j) = pe(i,k-1,j) + delp(i,j,k-1)
+               peln(i,k,j) = log(pe(i,k,j))
+               peg(i,k) = peg(i,k-1) + delp(i,j,k-1)*(1.-q_con(i,j,k-1))
+               pelng(i,k) = log(peg(i,k))
+            enddo
+         else
+            do i=istart,iend
+               pe(i,k,j) = pe(i,k-1,j) + delp(i,j,k-1)
+               peln(i,k,j) = log(pe(i,k,j))
+            enddo
+         endif !use_cond
       enddo
 
       !Perturbation nonhydro layer-mean pressure (NOT to the kappa)
-      do k=1,npz
+      if (moist_kappa) then
+         do k=1,npz
          do i=istart,iend
             delz_int = (delzBC_t0(i,j,k)*(BC_split-BC_step) + BC_step*delzBC_t1(i,j,k))*denom
-
             !Full p
-#ifdef MOIST_CAPPA
             pkz(i,k) = exp(1./(1.-cappa(i,j,k))*log(rdg*delp(i,j,k)/delz_int*pt(i,j,k)))
-#else
+         enddo
+         enddo
+      else
+         do k=1,npz
+         do i=istart,iend
+            delz_int = (delzBC_t0(i,j,k)*(BC_split-BC_step) + BC_step*delzBC_t1(i,j,k))*denom
+            !Full p
             pkz(i,k) = exp(gama*log(-delp(i,j,k)*rgrav/delz_int*rdgas*pt(i,j,k)))
-#endif
+         enddo
+         enddo
+      endif !moist_kappa
+
+      if (use_cond) then
+         do k=1,npz
+         do i=istart,iend
             !hydro
-#ifdef USE_COND
             pm = (peg(i,k+1)-peg(i,k))/(pelng(i,k+1)-pelng(i,k))
-#else
-            pm = delp(i,j,k)/(peln(i,k+1,j)-peln(i,k,j))
-#endif
             !Remove hydro cell-mean pressure
             pkz(i,k) = pkz(i,k) - pm
          enddo
-      enddo
+         enddo
+      else
+         do k=1,npz
+         do i=istart,iend
+            !hydro
+            pm = delp(i,j,k)/(peln(i,k+1,j)-peln(i,k,j))
+            !Remove hydro cell-mean pressure
+            pkz(i,k) = pkz(i,k) - pm
+         enddo
+         enddo
+      endif
 
       !pressure solver
       do k=1,npz-1

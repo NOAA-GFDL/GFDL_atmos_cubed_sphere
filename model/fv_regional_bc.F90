@@ -65,7 +65,7 @@ module fv_regional_mod
    use fv_grid_utils_mod, only: g_sum,mid_pt_sphere,get_unit_vect2      &
                                ,get_latlon_vector,inner_prod            &
                                ,cell_center2
-   use fv_mapz_mod,       only: mappm, moist_cp, moist_cv
+   use fv_operators_mod,  only: mappm
    use fv_mp_mod,         only: is_master, mp_reduce_min, mp_reduce_max
    use fv_fill_mod,       only: fillz
    use fv_eta_mod,        only: get_eta_level
@@ -176,15 +176,9 @@ module fv_regional_mod
       type fv_regional_BC_variables
         real,dimension(:,:,:),allocatable :: delp_BC, divgd_BC, u_BC, v_BC, uc_BC, vc_BC
         real,dimension(:,:,:,:),allocatable :: q_BC
-#ifndef SW_DYNAMICS
         real,dimension(:,:,:),allocatable :: pt_BC, w_BC, delz_BC
-#ifdef USE_COND
         real,dimension(:,:,:),allocatable :: q_con_BC
-#ifdef MOIST_CAPPA
         real,dimension(:,:,:),allocatable :: cappa_BC
-#endif
-#endif
-#endif
       end type fv_regional_BC_variables
 
       type fv_domain_sides
@@ -491,6 +485,8 @@ contains
                                         ,klev_out                            &
                                         ,ntracers                            &
                                         ,BC_t1%north                         &
+                                        ,Atm%thermostruct%use_cond           &
+                                        ,Atm%thermostruct%moist_kappa        &
                                         ,delz_auxiliary%north )
 !
         call allocate_regional_BC_arrays('north'                             &
@@ -510,7 +506,9 @@ contains
                                         ,Atm%regional_bc_bounds%je_north_uvw &
                                         ,klev_out                            &
                                         ,ntracers                            &
-                                        ,BC_t0%north )
+                                        ,BC_t0%north                         &
+                                        ,Atm%thermostruct%use_cond           &
+                                        ,Atm%thermostruct%moist_kappa )
 !
         bc_north_t0=>BC_t0%north
         bc_north_t1=>BC_t1%north
@@ -536,6 +534,8 @@ contains
                                         ,klev_out                            &
                                         ,ntracers                            &
                                         ,BC_t1%south                         &
+                                        ,Atm%thermostruct%use_cond           &
+                                        ,Atm%thermostruct%moist_kappa        &
                                         ,delz_auxiliary%south )
 !
         call allocate_regional_BC_arrays('south'                             &
@@ -555,7 +555,9 @@ contains
                                         ,Atm%regional_bc_bounds%je_south_uvw &
                                         ,klev_out                            &
                                         ,ntracers                            &
-                                        ,BC_t0%south )
+                                        ,BC_t0%south                         &
+                                        ,Atm%thermostruct%use_cond           &
+                                        ,Atm%thermostruct%moist_kappa )
 !
         bc_south_t0=>BC_t0%south
         bc_south_t1=>BC_t1%south
@@ -581,6 +583,8 @@ contains
                                         ,klev_out                            &
                                         ,ntracers                            &
                                         ,BC_t1%east                          &
+                                        ,Atm%thermostruct%use_cond           &
+                                        ,Atm%thermostruct%moist_kappa        &
                                         ,delz_auxiliary%east )
 !
         call allocate_regional_BC_arrays('east '                             &
@@ -600,7 +604,9 @@ contains
                                         ,Atm%regional_bc_bounds%je_east_uvw  &
                                         ,klev_out                            &
                                         ,ntracers                            &
-                                        ,BC_t0%east )
+                                        ,BC_t0%east                          &
+                                        ,Atm%thermostruct%use_cond           &
+                                        ,Atm%thermostruct%moist_kappa )
 !
         bc_east_t0=>BC_t0%east
         bc_east_t1=>BC_t1%east
@@ -626,6 +632,8 @@ contains
                                         ,klev_out                            &
                                         ,ntracers                            &
                                         ,BC_t1%west                          &
+                                        ,Atm%thermostruct%use_cond           &
+                                        ,Atm%thermostruct%moist_kappa        &
                                         ,delz_auxiliary%west )
 !
         call allocate_regional_BC_arrays('west '                             &
@@ -645,7 +653,9 @@ contains
                                         ,Atm%regional_bc_bounds%je_west_uvw  &
                                         ,klev_out                            &
                                         ,ntracers                            &
-                                        ,BC_t0%west )
+                                        ,BC_t0%west                          &
+                                        ,Atm%thermostruct%use_cond           &
+                                        ,Atm%thermostruct%moist_kappa)
 !
         bc_west_t0=>BC_t0%west
         bc_west_t1=>BC_t1%west
@@ -1296,7 +1306,9 @@ contains
       call regional_bc_t1_to_t0(BC_t1, BC_t0                            &  !
                                ,Atm%npz                                 &  !<-- Move BC t1 data to t0.
                                ,ntracers                                &
-                               ,Atm%regional_bc_bounds )                   !
+                               ,Atm%regional_bc_bounds                  &
+                               ,Atm%thermostruct%use_cond               &
+                               ,Atm%thermostruct%moist_kappa)
 !
       bc_hour=bc_hour+bc_update_interval
 !
@@ -1535,7 +1547,9 @@ contains
         call regional_bc_t1_to_t0(BC_t1, BC_t0                          &
                                  ,Atm%npz                               &
                                  ,ntracers                              &
-                                 ,Atm%regional_bc_bounds )
+                                 ,Atm%regional_bc_bounds                &
+                                 ,Atm%thermostruct%use_cond             &
+                                 ,Atm%thermostruct%moist_kappa )
 !
 !-----------------------------------------------------------------------
 !***  Fill time level t1 from the BC file containing data from
@@ -2434,24 +2448,21 @@ contains
 !***  Fill the total condensate in the regional boundary array.
 !-----------------------------------------------------------------------
 !
-#ifdef USE_COND
-      call fill_q_con_BC
-#endif
+      if (Atm%thermostruct%use_cond) call fill_q_con_BC
 !
 !-----------------------------------------------------------------------
 !***  Fill moist kappa in the regional domain boundary array.
 !-----------------------------------------------------------------------
 !
-#ifdef MOIST_CAPPA
-      call fill_cappa_BC
-#endif
+      if (Atm%thermostruct%moist_kappa) call fill_cappa_BC
 !
 !-----------------------------------------------------------------------
 !***  Convert the boundary region sensible temperature array to
 !***  FV3's modified virtual potential temperature.
 !-----------------------------------------------------------------------
 !
-      call convert_to_virt_pot_temp(isd,ied,jsd,jed,npz)
+      call convert_to_virt_pot_temp(isd,ied,jsd,jed,npz,&
+           Atm%thermostruct%use_cond, Atm%thermostruct%moist_kappa)
 !
 !-----------------------------------------------------------------------
 !***  If nudging of the specific humidity has been selected then
@@ -2849,7 +2860,6 @@ contains
 !+++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++
 !-----------------------------------------------------------------------
 !
-#ifdef USE_COND
       subroutine fill_q_con_BC
 !
 !-----------------------------------------------------------------------
@@ -2937,13 +2947,11 @@ contains
 !-----------------------------------------------------------------------
 !
       end subroutine fill_q_con_BC
-#endif
 !
 !-----------------------------------------------------------------------
 !+++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++
 !-----------------------------------------------------------------------
 !
-#ifdef MOIST_CAPPA
       subroutine fill_cappa_BC
 !
 !-----------------------------------------------------------------------
@@ -3076,7 +3084,6 @@ contains
 !-----------------------------------------------------------------------
 !
       end subroutine compute_cappa
-#endif
 !
 !-----------------------------------------------------------------------
 !
@@ -3393,7 +3400,8 @@ contains
                                             ,klev                       &
                                             ,ntracers                   &
                                             ,BC_side                    &
-                                            ,delz_side )
+                                            ,use_cond,moist_kappa       &
+                                            ,delz_side)
 !
 !-----------------------------------------------------------------------
       implicit none
@@ -3412,6 +3420,7 @@ contains
       character(len=5),intent(in) :: side                                !<-- Which side are we allocating?
 !
       logical,intent(in) :: north_bc,south_bc,east_bc,west_bc            !<-- Which sides is this task on?
+      logical,intent(in) :: use_cond, moist_kappa
 !
       type(fv_regional_BC_variables),intent(out) :: BC_side
 !
@@ -3444,12 +3453,12 @@ contains
           allocate(delz_side (is_0:ie_0,js_0:je_0,klev)) ; delz_side=real_snan
         endif
       endif
-#ifdef USE_COND
-      allocate(BC_side%q_con_BC(is_0:ie_0,js_0:je_0,klev)) ; BC_side%q_con_BC=real_snan
-#ifdef MOIST_CAPPA
-      allocate(BC_side%cappa_BC(is_0:ie_0,js_0:je_0,klev)) ; BC_side%cappa_BC=real_snan
-#endif
-#endif
+      if (use_cond) then
+         allocate(BC_side%q_con_BC(is_0:ie_0,js_0:je_0,klev)) ; BC_side%q_con_BC=real_snan
+         if (moist_kappa) then
+            allocate(BC_side%cappa_BC(is_0:ie_0,js_0:je_0,klev)) ; BC_side%cappa_BC=real_snan
+         endif
+      endif
 #endif
 !
 !--------------------
@@ -4040,16 +4049,13 @@ subroutine remap_scalar_nggps_regional_bc(Atm                         &
 !---------------------------------------------------------------------
 
       subroutine set_regional_BCs(delp,w,pt                           &
-#ifdef USE_COND
                                  ,q_con                               &
-#endif
-#ifdef MOIST_CAPPA
                                  ,cappa                               &
-#endif
                                  ,q                                   &
                                  ,u,v,uc,vc                           &
                                  ,bd, nlayers                         &
-                                 ,fcst_time )
+                                 ,fcst_time                           &
+                                 ,use_cond,moist_kappa)
 !
 !---------------------------------------------------------------------
 !***  Select the boundary variables' boundary data at the two
@@ -4071,6 +4077,7 @@ subroutine remap_scalar_nggps_regional_bc(Atm                         &
 !
       type(fv_grid_bounds_type),intent(in) :: bd                         !<-- Task subdomain indices
 !
+      logical, intent(IN) :: use_cond, moist_kappa
 !----------------------
 !***  Output variables
 !----------------------
@@ -4080,18 +4087,12 @@ subroutine remap_scalar_nggps_regional_bc(Atm                         &
                                                                ,pt
 !
       real,dimension(bd%isd:,bd%jsd:,1:),intent(out) :: w
-#ifdef USE_COND
       real,dimension(bd%isd:,bd%jsd:,1:),intent(out) :: q_con
-#endif
 
 !
       real,dimension(bd%isd:bd%ied,bd%jsd:bd%jed,npz,ntracers),intent(out) :: q
 !
-#ifdef MOIST_CAPPA
-      real,dimension(bd%isd:bd%ied,bd%jsd:bd%jed,npz),intent(out) :: cappa
-!#else
-!      real,dimension(isd:isd,jsd:jsd,1),intent(out) :: cappa
-#endif
+      real,dimension(bd%isd:,bd%jsd:,1:),intent(out) :: cappa
 !
       real,dimension(bd%isd:bd%ied,bd%jsd:bd%jed+1,npz),intent(out) :: u,vc
 !
@@ -4131,7 +4132,7 @@ subroutine remap_scalar_nggps_regional_bc(Atm                         &
                                   ,bd%isd                             &
                                   ,bd%ied+1                           &
                                   ,bd%jsd                             &
-                                  ,bd%js-1)
+                                  ,bd%js-1, use_cond, moist_kappa)
       endif
 !
       if(south_bc)then
@@ -4148,7 +4149,7 @@ subroutine remap_scalar_nggps_regional_bc(Atm                         &
                                   ,bd%isd                             &
                                   ,bd%ied+1                           &
                                   ,bd%je+1                            &
-                                  ,bd%jed )
+                                  ,bd%jed, use_cond, moist_kappa )
       endif
 !
       if(east_bc)then
@@ -4165,7 +4166,7 @@ subroutine remap_scalar_nggps_regional_bc(Atm                         &
                                   ,bd%isd                             &
                                   ,bd%is-1                            &
                                   ,bd%js                              &
-                                  ,bd%je  )
+                                  ,bd%je, use_cond, moist_kappa  )
       endif
 !
       if(west_bc)then
@@ -4182,7 +4183,7 @@ subroutine remap_scalar_nggps_regional_bc(Atm                         &
                                   ,bd%ie+2                            &
                                   ,bd%ied+1                           &
                                   ,bd%js                              &
-                                  ,bd%je  )
+                                  ,bd%je, use_cond, moist_kappa  )
       endif
 !
 !---------------------------------------------------------------------
@@ -4195,7 +4196,8 @@ subroutine remap_scalar_nggps_regional_bc(Atm                         &
                                       ,side                           &
                                       ,i1,i2,j1,j2                    &
                                       ,i1_uvs,i2_uvs,j1_uvs,j2_uvs    &
-                                      ,i1_uvw,i2_uvw,j1_uvw,j2_uvw )
+                                      ,i1_uvw,i2_uvw,j1_uvw,j2_uvw    &
+                                      ,use_cond,moist_kappa)
 !
 !---------------------------------------------------------------------
 !***  Apply boundary values to the prognostic arrays at the
@@ -4216,6 +4218,7 @@ subroutine remap_scalar_nggps_regional_bc(Atm                         &
       integer,intent(in) :: i1,i2,j1,j2                               &
                            ,i1_uvs,i2_uvs,j1_uvs,j2_uvs               &
                            ,i1_uvw,i2_uvw,j1_uvw,j2_uvw
+      logical, intent(in) :: use_cond, moist_kappa
 !
 !---------------------
 !***  Local arguments
@@ -4265,7 +4268,7 @@ subroutine remap_scalar_nggps_regional_bc(Atm                         &
                      +(side_t1%delp_BC(i,j,k)-side_t0%delp_BC(i,j,k)) &
                       *fraction_interval
 #ifndef SW_DYNAMICS
-          pt(i,j,k)=side_t0%pt_BC(i,j,k)                              &
+           pt(i,j,k)=side_t0%pt_BC(i,j,k)                              &
                      +(side_t1%pt_BC(i,j,k)-side_t0%pt_BC(i,j,k))     &
                       *fraction_interval
 !          delz(i,j,k)=side_t0%delz_BC(i,j,k)                            &
@@ -4274,17 +4277,17 @@ subroutine remap_scalar_nggps_regional_bc(Atm                         &
            delz_ptr(i,j,k)=side_t0%delz_BC(i,j,k)                            &
                           +(side_t1%delz_BC(i,j,k)-side_t0%delz_BC(i,j,k))   &
                            *fraction_interval
-#ifdef MOIST_CAPPA
-          cappa(i,j,k)=side_t0%cappa_BC(i,j,k)                          &
+           if (moist_kappa) then
+              cappa(i,j,k)=side_t0%cappa_BC(i,j,k)                          &
                      +(side_t1%cappa_BC(i,j,k)-side_t0%cappa_BC(i,j,k)) &
                       *fraction_interval
-#endif
-#ifdef USE_COND
-          q_con(i,j,k)=side_t0%q_con_BC(i,j,k)                          &
+           endif
+           if (use_cond) then
+              q_con(i,j,k)=side_t0%q_con_BC(i,j,k)                          &
                      +(side_t1%q_con_BC(i,j,k)-side_t0%q_con_BC(i,j,k)) &
                       *fraction_interval
-#endif
-          w(i,j,k)=side_t0%w_BC(i,j,k)                                  &
+           endif
+           w(i,j,k)=side_t0%w_BC(i,j,k)                                  &
                      +(side_t1%w_BC(i,j,k)-side_t0%w_BC(i,j,k))         &
                       *fraction_interval
 #endif
@@ -4724,16 +4727,12 @@ subroutine remap_scalar_nggps_regional_bc(Atm                         &
         case ('divgd')
           bc_t0=>bc_side_t0%divgd_BC
           bc_t1=>bc_side_t1%divgd_BC
-#ifdef MOIST_CAPPA
         case ('cappa')
           bc_t0=>bc_side_t0%cappa_BC
           bc_t1=>bc_side_t1%cappa_BC
-#endif
-#ifdef USE_COND
         case ('q_con')
           bc_t0=>bc_side_t0%q_con_BC
           bc_t1=>bc_side_t1%q_con_BC
-#endif
         case ('q')
           if(iq<1)then
             call mpp_error(FATAL,' iq<1 is not a valid index for q_BC array in retrieve_bc_variable_data')
@@ -4977,7 +4976,8 @@ subroutine remap_scalar_nggps_regional_bc(Atm                         &
 !---------------------------------------------------------------------
 !
       subroutine regional_bc_t1_to_t0(BC_t1,BC_t0                     &
-                                     ,nlev,ntracers,bnds )
+                                     ,nlev,ntracers,bnds              &
+                                     ,use_cond,moist_kappa)
 !
 !---------------------------------------------------------------------
 !***  BC data has been read into the time level t1 object.  Now
@@ -5000,6 +5000,7 @@ subroutine remap_scalar_nggps_regional_bc(Atm                         &
 !
       type(fv_domain_sides),target,intent(inout) :: BC_t0
 !
+      logical, intent(in) :: use_cond, moist_kappa
 !---------------------
 !***  Local variables
 !---------------------
@@ -5133,24 +5134,38 @@ subroutine remap_scalar_nggps_regional_bc(Atm                         &
             enddo
           enddo
 !
+#ifndef SW_DYNAMICS
           do k=1,nlev
             do j=js_c,je_c
             do i=is_c,ie_c
-#ifndef SW_DYNAMICS
               bc_side_t0%w_BC(i,j,k)    =bc_side_t1%w_BC(i,j,k)
               bc_side_t0%pt_BC(i,j,k)   =bc_side_t1%pt_BC(i,j,k)
               bc_side_t0%delz_BC(i,j,k) =bc_side_t1%delz_BC(i,j,k)
-#ifdef USE_COND
-              bc_side_t0%q_con_BC(i,j,k)=bc_side_t1%q_con_BC(i,j,k)
-#ifdef MOIST_CAPPA
-              bc_side_t0%cappa_BC(i,j,k)=bc_side_t1%cappa_BC(i,j,k)
-#endif
-#endif
-#endif
             enddo
             enddo
           enddo
+#endif
 !
+          if (use_cond) then
+             do k=1,nlev
+             do j=js_c,je_c
+             do i=is_c,ie_c
+                bc_side_t0%q_con_BC(i,j,k)=bc_side_t1%q_con_BC(i,j,k)
+             enddo
+             enddo
+             enddo
+             if (moist_kappa) then
+                do k=1,nlev
+                do j=js_c,je_c
+                do i=is_c,ie_c
+                   bc_side_t0%cappa_BC(i,j,k)=bc_side_t1%cappa_BC(i,j,k)
+                enddo
+                enddo
+                enddo
+             endif
+          endif
+!
+
           do k=1,nlev
             do j=js_s,je_s
             do i=is_s,ie_s
@@ -5185,7 +5200,7 @@ subroutine remap_scalar_nggps_regional_bc(Atm                         &
 !+++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++
 !---------------------------------------------------------------------
 !
-      subroutine convert_to_virt_pot_temp(isd,ied,jsd,jed,npz)
+      subroutine convert_to_virt_pot_temp(isd,ied,jsd,jed,npz,use_cond,moist_kappa)
 !
 !-----------------------------------------------------------------------
 !***  Convert the incoming sensible temperature to virtual potential
@@ -5199,6 +5214,7 @@ subroutine remap_scalar_nggps_regional_bc(Atm                         &
 !------------------------
 !
       integer,intent(in) :: isd,ied,jsd,jed,npz
+      logical,intent(in) :: use_cond, moist_kappa
 !
 !---------------------
 !***  Local variables
@@ -5209,12 +5225,8 @@ subroutine remap_scalar_nggps_regional_bc(Atm                         &
       real :: rdg
 !
       real,dimension(:,:,:),pointer :: delp,delz,pt
-#ifdef USE_COND
       real,dimension(:,:,:),pointer :: q_con
-#endif
-#ifdef MOIST_CAPPA
       real,dimension(:,:,:),pointer ::cappa
-#endif
 !
       real,dimension(:,:,:,:),pointer :: q
 !
@@ -5235,16 +5247,12 @@ subroutine remap_scalar_nggps_regional_bc(Atm                         &
         j2=regional_bounds%je_north
         q    =>BC_t1%north%q_BC
 #ifndef SW_DYNAMICS
-#ifdef USE_COND
         q_con=>BC_t1%north%q_con_BC
-#endif
         delp =>BC_t1%north%delp_BC
         delz =>BC_t1%north%delz_BC
-#ifdef MOIST_CAPPA
         cappa=>BC_t1%north%cappa_BC
-#endif
         pt   =>BC_t1%north%pt_BC
-        call compute_vpt             !<-- Compute the virtual potential temperature.
+        call compute_vpt(use_cond,moist_kappa)             !<-- Compute the virtual potential temperature.
 #endif
       endif
 !
@@ -5255,16 +5263,12 @@ subroutine remap_scalar_nggps_regional_bc(Atm                         &
         j2=regional_bounds%je_south
         q    =>BC_t1%south%q_BC
 #ifndef SW_DYNAMICS
-#ifdef USE_COND
         q_con=>BC_t1%south%q_con_BC
-#endif
         delp =>BC_t1%south%delp_BC
         delz =>BC_t1%south%delz_BC
-#ifdef MOIST_CAPPA
         cappa=>BC_t1%south%cappa_BC
-#endif
         pt   =>BC_t1%south%pt_BC
-        call compute_vpt             !<-- Compute the virtual potential temperature.
+        call compute_vpt(use_cond,moist_kappa)             !<-- Compute the virtual potential temperature.
 #endif
       endif
 !
@@ -5275,16 +5279,12 @@ subroutine remap_scalar_nggps_regional_bc(Atm                         &
         j2=regional_bounds%je_east
         q    =>BC_t1%east%q_BC
 #ifndef SW_DYNAMICS
-#ifdef USE_COND
         q_con=>BC_t1%east%q_con_BC
-#endif
         delp =>BC_t1%east%delp_BC
         delz =>BC_t1%east%delz_BC
-#ifdef MOIST_CAPPA
         cappa=>BC_t1%east%cappa_BC
-#endif
         pt   =>BC_t1%east%pt_BC
-        call compute_vpt             !<-- Compute the virtual potential temperature.
+        call compute_vpt(use_cond,moist_kappa)             !<-- Compute the virtual potential temperature.
 #endif
       endif
 !
@@ -5295,16 +5295,12 @@ subroutine remap_scalar_nggps_regional_bc(Atm                         &
         j2=regional_bounds%je_west
         q    =>BC_t1%west%q_BC
 #ifndef SW_DYNAMICS
-#ifdef USE_COND
         q_con=>BC_t1%west%q_con_BC
-#endif
         delp =>BC_t1%west%delp_BC
         delz =>BC_t1%west%delz_BC
-#ifdef MOIST_CAPPA
         cappa=>BC_t1%west%cappa_BC
-#endif
         pt   =>BC_t1%west%pt_BC
-        call compute_vpt             !<-- Compute the virtual potential temperature.
+        call compute_vpt(use_cond,moist_kappa)             !<-- Compute the virtual potential temperature.
 #endif
       endif
 !
@@ -5314,7 +5310,7 @@ subroutine remap_scalar_nggps_regional_bc(Atm                         &
 
 !-----------------------------------------------------------------------
 !
-      subroutine compute_vpt
+      subroutine compute_vpt(use_cond, moist_kappa)
 !
 !-----------------------------------------------------------------------
 !***  Compute the virtual potential temperature as done in fv_dynamics.
@@ -5324,6 +5320,7 @@ subroutine remap_scalar_nggps_regional_bc(Atm                         &
 !***  Local variables
 !---------------------
 !
+      logical, intent(in) :: use_cond, moist_kappa
       integer :: i,j,k
 !
       real :: cvm,dp1,pkz
@@ -5332,31 +5329,45 @@ subroutine remap_scalar_nggps_regional_bc(Atm                         &
 !***********************************************************************
 !-----------------------------------------------------------------------
 !
-      do k=1,npz
-!
-        do j=j1,j2
-        do i=i1,i2
-          dp1 = zvir*q(i,j,k,sphum_index)
-#ifdef USE_COND
-#ifdef MOIST_CAPPA
-          cvm=(1.-q(i,j,k,sphum_index)+q_con(i,j,k))*cv_air             &
-             +q(i,j,k,sphum_index)*cv_vap+q(i,j,k,liq_water_index)*c_liq
-          pkz=exp(cappa(i,j,k)*log(rdg*delp(i,j,k)*pt(i,j,k)            &
-              *(1.+dp1)*(1.-q_con(i,j,k))/delz(i,j,k)))
-#else
-          pkz=exp(kappa*log(rdg*delp(i,j,k)*pt(i,j,k)                   &
-              *(1.+dp1)*(1.-q_con(i,j,k))/delz(i,j,k)))
-#endif
-          pt(i,j,k)=pt(i,j,k)*(1.+dp1)*(1.-q_con(i,j,k))/pkz
-#else
-          pkz=exp(kappa*log(rdg*delp(i,j,k)*pt(i,j,k)                   &
-              *(1.+dp1)/delz(i,j,k)))
-          pt(i,j,k)=pt(i,j,k)*(1.+dp1)/pkz
-#endif
-        enddo
-        enddo
-!
-      enddo
+      if (use_cond) then
+
+         if (moist_kappa) then
+            do k=1,npz
+            do j=j1,j2
+            do i=i1,i2
+              dp1 = zvir*q(i,j,k,sphum_index)
+              cvm=(1.-q(i,j,k,sphum_index)+q_con(i,j,k))*cv_air             &
+                 +q(i,j,k,sphum_index)*cv_vap+q(i,j,k,liq_water_index)*c_liq
+              pkz=exp(cappa(i,j,k)*log(rdg*delp(i,j,k)*pt(i,j,k)            &
+                  *(1.+dp1)*(1.-q_con(i,j,k))/delz(i,j,k)))
+              pt(i,j,k)=pt(i,j,k)*(1.+dp1)*(1.-q_con(i,j,k))/pkz
+            enddo
+            enddo
+            enddo
+         else
+            do k=1,npz
+            do j=j1,j2
+            do i=i1,i2
+              dp1 = zvir*q(i,j,k,sphum_index)
+              pkz=exp(kappa*log(rdg*delp(i,j,k)*pt(i,j,k)                   &
+                  *(1.+dp1)*(1.-q_con(i,j,k))/delz(i,j,k)))
+              pt(i,j,k)=pt(i,j,k)*(1.+dp1)*(1.-q_con(i,j,k))/pkz
+            enddo
+            enddo
+            enddo
+         endif !moist_kappa
+      else
+         do k=1,npz
+         do j=j1,j2
+         do i=i1,i2
+           dp1 = zvir*q(i,j,k,sphum_index)
+           pkz=exp(kappa*log(rdg*delp(i,j,k)*pt(i,j,k)                   &
+               *(1.+dp1)/delz(i,j,k)))
+           pt(i,j,k)=pt(i,j,k)*(1.+dp1)/pkz
+         enddo
+         enddo
+         enddo
+      endif !use_cond
 !
 !-----------------------------------------------------------------------
 !
