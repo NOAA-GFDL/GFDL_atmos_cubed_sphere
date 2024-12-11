@@ -33,8 +33,8 @@ jobs:
     # so this salloc will prompt 46 nodes to startup and stay active for 20 min
     # this is enough nodes for the first 17 tests to run in parallel, and we
     # have 17 runners configured.
-    - run: salloc --partition=p2 -N 46 -J $GITHUB_SHA sleep 20m &
-    - run: /contrib/fv3/GFDL_atmos_cubed_sphere_CI/checkout.sh $GITHUB_REF $GITHUB_SHA
+    - run: salloc --partition=compute -N 46 -J $GITHUB_SHA sleep 20m &
+    - run: /contrib/fv3/GFDL_atmos_cubed_sphere_CI/checkout.sh -b $GITHUB_REF -h $GITHUB_SHA
     
   build:
     if: github.repository == 'NOAA-GFDL/GFDL_atmos_cubed_sphere'
@@ -43,15 +43,21 @@ jobs:
     needs: [checkout]
     strategy:
       fail-fast: true
-      max-parallel: 3
+      max-parallel: 17
       matrix:
-        runpath: [/contrib/fv3/GFDL_atmos_cubed_sphere_CI/]
-        runscript: [swcompile.sh, nhcompile.sh, hydrocompile.sh]
+        runscript: [/contrib/fv3/GFDL_atmos_cubed_sphere_CI/compile.sh]
+        config: [solo]
+        hydro: [sw, nh, hydro]
+        bit: [64bit]
+        mode: [repro]
     steps:
       - env:
-          RUNPATH: ${{ matrix.runpath }}
           RUNSCRIPT: ${{ matrix.runscript }}
-        run: $RUNPATH/$RUNSCRIPT $GITHUB_REF $GITHUB_SHA
+          CONFIG: ${{ matrix.config }}
+          HYDRO: ${{ matrix.hydro }}
+          BIT: ${{ matrix.bit }}
+          MODE: ${{ matrix.mode }}
+        run: $RUNSCRIPT -b $GITHUB_REF -h $GITHUB_SHA -c $CONFIG --hydro $HYDRO --bit $BIT -m $MODE
         
   test:
     if: github.repository == 'NOAA-GFDL/GFDL_atmos_cubed_sphere'
@@ -62,55 +68,55 @@ jobs:
       fail-fast: false
       max-parallel: 17
       matrix:
-        runpath: [/contrib/fv3/GFDL_atmos_cubed_sphere_CI/]
-        runscript:
+        runscript: [/contrib/fv3/GFDL_atmos_cubed_sphere_CI/run_test.sh]
+        argument:
           # These are placed in order of largest to smallest jobs
           #layout 8,8 needs 8 nodes on dvcimultiintel cluster
-          - C512r20.solo.superC.sh
-          - C768.sw.BTwave.sh
+          - C512r20.solo.superC
+          - C768.sw.BTwave
           #layout 4,8 needs 4 nodes on dvcimultiintel cluster
-          - C256r20.solo.superC.sh
-          - C384.sw.BLvortex.sh
+          - C256r20.solo.superC
+          - C384.sw.BLvortex
           #layout 4,4 needs 2 nodes on dvcimultiintel cluster
-          - C128r20.solo.superC.sh
-          - C128r3.solo.TC.d1.sh
-          - C128r3.solo.TC.h6.sh
-          - C128r3.solo.TC.sh
-          - C128r3.solo.TC.tr8.sh
-          - C192.sw.BLvortex.sh
-          - C192.sw.BTwave.sh
-          - C192.sw.modon.sh
-          - C384.sw.BTwave.sh
+          - C128r20.solo.superC
+          - C128r3.solo.TC.d1
+          - C128r3.solo.TC.h6
+          - C128r3.solo.TC
+          - C128r3.solo.TC.tr8
+          - C192.sw.BLvortex
+          - C192.sw.BTwave
+          - C192.sw.modon
+          - C384.sw.BTwave
           #layout 4,1 and 2,2 need 1 node on dvcimultiintel cluster
-          - C96.solo.BCdry.hyd.sh
-          - C96.solo.BCdry.sh
-          - C96.solo.BCmoist.hyd.d3.sh
-          - C96.solo.BCmoist.hyd.sh
-          - C96.solo.BCmoist.nhK.sh
-          - C96.solo.BCmoist.sh
-          - C96.solo.mtn_rest.hyd.diff2.sh
-          - C96.solo.mtn_rest.hyd.sh
-          - C96.solo.mtn_rest.nonmono.diff2.sh
-          - C96.solo.mtn_rest.sh
-          - C96.sw.BLvortex.sh
-          - C96.sw.BTwave.sh
-          - C96.sw.modon.sh
-          - C96.sw.RHwave.sh
-          - d96_1k.solo.mtn_rest_shear.olddamp.sh
-          - d96_1k.solo.mtn_rest_shear.sh
-          - d96_1k.solo.mtn_schar.mono.sh
-          - d96_1k.solo.mtn_schar.sh
-          - d96_2k.solo.bubble.n0.sh
-          - d96_2k.solo.bubble.nhK.sh
-          - d96_2k.solo.bubble.sh
-          - d96_500m.solo.mtn_schar.sh
+          - C96.solo.BCdry.hyd
+          - C96.solo.BCdry
+          - C96.solo.BCmoist.hyd.d3
+          - C96.solo.BCmoist.hyd
+          - C96.solo.BCmoist.nhK
+          - C96.solo.BCmoist
+          - C96.solo.mtn_rest.hyd.diff2
+          - C96.solo.mtn_rest.hyd
+          - C96.solo.mtn_rest.nonmono.diff2
+          - C96.solo.mtn_rest
+          - C96.sw.BLvortex
+          - C96.sw.BTwave
+          - C96.sw.modon
+          - C96.sw.RHwave
+          - d96_1k.solo.mtn_rest_shear.olddamp
+          - d96_1k.solo.mtn_rest_shear
+          - d96_1k.solo.mtn_schar.mono
+          - d96_1k.solo.mtn_schar
+          - d96_2k.solo.bubble.n0
+          - d96_2k.solo.bubble.nhK
+          - d96_2k.solo.bubble
+          - d96_500m.solo.mtn_schar
     steps:
       # This will end the slurm job started in the checkout job
       - run: scancel -n $GITHUB_SHA
       - env:
-          RUNPATH: ${{ matrix.runpath }}
           RUNSCRIPT: ${{ matrix.runscript }}
-        run: $RUNPATH/$RUNSCRIPT $GITHUB_REF $GITHUB_SHA
+          ARG1: ${{ matrix.argument }}
+        run: $RUNSCRIPT -t $ARG1 -b $GITHUB_REF -h $GITHUB_SHA
   shutdown:
     if: always() && github.repository == 'NOAA-GFDL/GFDL_atmos_cubed_sphere'
     runs-on: [gfdlacsciintel]
