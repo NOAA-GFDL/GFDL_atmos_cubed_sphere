@@ -20,7 +20,11 @@
 !***********************************************************************
 
 module fv_dynamics_mod
+#ifdef OVERLOAD_R4
+   use constantsR4_mod,     only: grav, pi=>pi_8, hlv, rdgas, rvgas, cp_vapor
+#else
    use constants_mod,       only: grav, pi=>pi_8, hlv, rdgas, rvgas, cp_vapor
+#endif
    use fv_arrays_mod,       only: radius, omega ! scaled for small earth
    use dyn_core_mod,        only: dyn_core, del2_cubed, init_ijk_mem
    use fv_mapz_mod,         only: compute_total_energy, Lagrangian_to_Eulerian, moist_cv, moist_cp

@@ -47,8 +47,13 @@ module fv_regional_mod
    use time_manager_mod,  only: get_time                                &
                                ,operator(-),operator(/)                 &
                                ,time_type,time_type_to_real
-   use constants_mod,     only: cp_air, cp_vapor, grav, kappa           &
+#ifdef OVERLOAD_R4
+   use constantsR4_mod,  only: cp_air, cp_vapor, grav, kappa           &
                                ,pi=>pi_8,rdgas, rvgas
+#else
+  use constants_mod,     only: cp_air, cp_vapor, grav, kappa           &
+                              ,pi=>pi_8,rdgas, rvgas
+#endif
    use fv_arrays_mod,     only: fv_atmos_type                           &
                                ,fv_grid_bounds_type                     &
                                ,fv_regional_bc_bounds_type              &

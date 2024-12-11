@@ -27,7 +27,11 @@
 
 module intermediate_phys_mod
 
+#ifdef OVERLOAD_R4
+    use constantsR4_mod, only: rdgas, grav
+#else
     use constants_mod, only: rdgas, grav
+#endif
     use fv_grid_utils_mod, only: cubed_to_latlon, update_dwinds_phys
     use fv_arrays_mod, only: fv_grid_type, fv_grid_bounds_type, inline_mp_type
     use mpp_domains_mod, only: domain2d, mpp_update_domains
