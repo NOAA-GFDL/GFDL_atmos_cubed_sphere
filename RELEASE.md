@@ -1,6 +1,6 @@
 # RELEASE NOTES for FV3 202411: Summary
 FV3-202411-public --- November 2024  
-Lucas Harris, GFDL lucas.harris@noaa.gov  
+Primary Point of Contact: Lucas Harris, GFDL lucas.harris@noaa.gov  
 
 This version has been tested with:  
 SHiELD physics release FV3-202411-public from https://github.com/NOAA-GFDL/SHiELD_physics  
@@ -32,7 +32,7 @@ This release includes the following:
   - Removed unused Keihl et al. (1994) cloud water effective radius diagnosis
 - Driver update (Joseph):
   - Implemented a new atmosphere driver to run SHiELD and SHiEMOM with the full FMScoupler.
-- Updates to $2\deltaz$ filter (fv_sg) (Lucas, Linjiong):
+- Updates to $2\delta z$ filter (fv_sg) (Lucas, Linjiong):
   - Included a missing term in the energy conservation formula (credit: Tristan Abbott).  May affect  prediction of processes depending strongly on microphysics. Compile the model with `-DENG_CNV_OLD` to revert this change.
   - Added option, `fv_sg_adj_weak`, to apply a weaker 2dz filter below sg_cutoff. This may be useful in controlling tropospheric instabilities without interfering with the behavior of the PBL scheme.
   - Renamed routines and eliminated ifdefs for SHiELD vs. AM4 versions.
