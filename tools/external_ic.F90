@@ -34,7 +34,7 @@ module external_ic_mod
                                  FmsNetcdfFile_t, FmsNetcdfDomainFile_t, read_restart, &
                                  register_restart_field, register_axis, get_dimension_size, &
                                  get_variable_dimension_names, get_variable_num_dimensions
-   use mpp_mod,            only: mpp_error, FATAL, NOTE, WARNING, mpp_pe, mpp_root_pe
+   use mpp_mod,            only: mpp_error, FATAL, NOTE, WARNING, mpp_pe, mpp_root_pe, mpp_broadcast
    use mpp_mod,            only: stdlog, input_nml_file, mpp_npes, mpp_get_current_pelist
    use mpp_parameter_mod,  only: AGRID_PARAM=>AGRID
    use mpp_domains_mod,    only: mpp_get_tile_id, domain2d, mpp_update_domains, NORTH, EAST
@@ -349,6 +349,7 @@ contains
     real(kind=R_GRID), dimension(3):: e1, e2, ex, ey
     integer:: i,j,k,nts, ks, naxis_dims
     integer:: liq_wat, ice_wat, rainwat, snowwat, graupel, tke, ntclamt
+    integer:: dum_i4(2) ! used for the broadcast of ntrac and levsp
     namelist /external_ic_nml/ filtered_terrain, levp, gfs_dwinds, &
                                checker_tr, nt_checker
 
@@ -397,16 +398,22 @@ contains
 
     allocate(pes(mpp_npes()))
     call mpp_get_current_pelist(pes)
-    if( open_file(Gfs_ctl, fn_gfs_ctl, "read", pelist=pes) ) then
+    if (mpp_pe() == pes(1)) then
+      if( open_file(Gfs_ctl, fn_gfs_ctl, "read", pelist=pes(1:1)) ) then
 !--- read in the number of tracers in the NCEP NGGPS ICs
-      call read_data (Gfs_ctl, 'ntrac', ntrac)
+        call read_data (Gfs_ctl, 'ntrac', dum_i4(1))
 !--- read in the number of levp
-      call get_dimension_size(Gfs_ctl, 'levsp', levsp)
-      call close_file(Gfs_ctl)
-    else
-      call mpp_error(FATAL,'==> Error in External_ic::get_nggps_ic: file '//trim(fn_gfs_ctl)//' for NGGPS IC does not exist')
+        call get_dimension_size(Gfs_ctl, 'levsp', dum_i4(2))
+        call close_file(Gfs_ctl)
+      else
+        call mpp_error(FATAL,'==> Error in External_ic::get_nggps_ic: file '//trim(fn_gfs_ctl)//' for NGGPS IC does not exist')
+      endif
     endif
+    call mpp_broadcast(dum_i4, size(dum_i4), pes(1), pes)
     deallocate(pes)
+    ntrac = dum_i4(1)
+    levsp = dum_i4(2)
+
     call mpp_error(NOTE,'==> External_ic::get_nggps_ic: using control file '//trim(fn_gfs_ctl)//' for NGGPS IC')
 
     if (ntrac > ntracers) call mpp_error(FATAL,'==> External_ic::get_nggps_ic: more NGGPS tracers &
@@ -734,14 +741,16 @@ contains
 
         allocate(pes(mpp_npes()))
         call mpp_get_current_pelist(pes)
-        if( open_file(Gfs_ctl, fn_gfs_ctl, "read", pelist=pes) ) then
-          call read_data(Gfs_ctl,'vcoord',wk2)
-          ak(1:levp+1) = wk2(1:levp+1,1)
-          bk(1:levp+1) = wk2(1:levp+1,2)
-          deallocate (wk2)
-          call close_file(Gfs_ctl)
+        if (mpp_pe() == pes(1)) then
+          if( open_file(Gfs_ctl, fn_gfs_ctl, "read", pelist=pes(1:1)) ) then
+            call read_data(Gfs_ctl,'vcoord',wk2)
+            call close_file(Gfs_ctl)
+          endif
         endif
-        deallocate(pes)
+        call mpp_broadcast(wk2, size(wk2), pes(1), pes)
+        ak(1:levp+1) = wk2(1:levp+1,1)
+        bk(1:levp+1) = wk2(1:levp+1,2)
+        deallocate (wk2, pes)
 
         allocate (zh(is:ie,js:je,levp+1))   ! SJL
         allocate (ps(is:ie,js:je))
@@ -870,6 +879,7 @@ contains
       real(kind=R_GRID), dimension(3):: e1, e2, ex, ey
       integer:: i,j,k,nts, ks
       integer:: liq_wat, ice_wat, rainwat, snowwat, graupel, tke, ntclamt
+      integer:: dum_i4(2)
       namelist /external_ic_nml/ filtered_terrain, levp, gfs_dwinds, &
                                  checker_tr, nt_checker
       ! variables for reading the dimension from the hrrr_ctrl
@@ -909,29 +919,38 @@ contains
 
       allocate(pes(mpp_npes()))
       call mpp_get_current_pelist(pes)
-      if( open_file(Hrr_ctl, fn_hrr_ctl, "read", pelist=pes) ) then
+      if (mpp_pe() == pes(1)) then
+        if( open_file(Hrr_ctl, fn_hrr_ctl, "read", pelist=pes(1:1)) ) then
 !--- read in the number of tracers in the HRRR ICs
-        call read_data (Hrr_ctl, 'ntrac', ntrac)
-        if (ntrac > ntracers) call mpp_error(FATAL,'==> External_ic::get_hrrr_ic: more HRRR tracers &
-                                   &than defined in field_table '//trim(fn_hrr_ctl)//' for HRRR IC')
+          call read_data (Hrr_ctl, 'ntrac', ntrac)
+          if (ntrac > ntracers) call mpp_error(FATAL,'==> External_ic::get_hrrr_ic: more HRRR tracers &
+                                     &than defined in field_table '//trim(fn_hrr_ctl)//' for HRRR IC')
 
 !--- read in ak and bk from the HRRR control file using fms_io read_data ---
-        call get_dimension_size(Hrr_ctl, 'levsp', levsp)
+          call get_dimension_size(Hrr_ctl, 'levsp', levsp)
 
-        levp = levsp-1
+          levp = levsp-1
 
-        allocate (wk2(levp+1,2))
-        allocate (ak(levp+1))
-        allocate (bk(levp+1))
-        call read_data(Hrr_ctl,'vcoord',wk2)
-        ak(1:levp+1) = wk2(1:levp+1,1)
-        bk(1:levp+1) = wk2(1:levp+1,2)
-        deallocate (wk2)
-        call close_file(Hrr_ctl)
+          allocate (wk2(levp+1,2))
+          call read_data(Hrr_ctl,'vcoord',wk2)
+          call close_file(Hrr_ctl)
+          call mpp_broadcast(wk2, size(wk2), pes(1), pes)
+        else
+          call mpp_error(FATAL,'==> Error in External_ic::get_hrrr_ic: file '//trim(fn_hrr_ctl)//' for HRRR IC does not exist')
+        endif
       else
-        call mpp_error(FATAL,'==> Error in External_ic::get_hrrr_ic: file '//trim(fn_hrr_ctl)//' for HRRR IC does not exist')
+        call mpp_broadcast(dum_i4, size(dum_i4), pes(1), pes)
+        ntrac = dum_i4(1)
+        levsp = dum_i4(2)
+        levp = levsp-1
+        allocate (wk2(levp+1,2))
+        call mpp_broadcast(wk2, size(wk2), pes(1), pes)
       endif
-      deallocate(pes)
+      allocate (ak(levp+1))
+      allocate (bk(levp+1))
+      ak(1:levp+1) = wk2(1:levp+1,1)
+      bk(1:levp+1) = wk2(1:levp+1,2)
+      deallocate (wk2, pes)
       call mpp_error(NOTE,'==> External_ic::get_hrrr_ic: using control file '//trim(fn_hrr_ctl)//' for HRRR IC')
 
       allocate (zh(is:ie,js:je,levp+1))
@@ -1920,14 +1939,16 @@ contains
           allocate (bk_gfs(levp_gfs+1))
           allocate(pes(mpp_npes()))
           call mpp_get_current_pelist(pes)
-          if( open_file(Gfs_ctl, fn_gfs_ctl, "read", pelist=pes) ) then
-            call read_data(Gfs_ctl,'vcoord',wk2)
-            call close_file(Gfs_ctl)
+          if (mpp_pe() == pes(1)) then
+            if( open_file(Gfs_ctl, fn_gfs_ctl, "read", pelist=pes(1:1)) ) then
+              call read_data(Gfs_ctl,'vcoord',wk2)
+              call close_file(Gfs_ctl)
+            endif
           endif
-          deallocate(pes)
+          call mpp_broadcast(wk2, size(wk2), pes(1), pes)
           ak_gfs(1:levp_gfs+1) = wk2(1:levp_gfs+1,1)
           bk_gfs(1:levp_gfs+1) = wk2(1:levp_gfs+1,2)
-          deallocate (wk2)
+          deallocate (wk2, pes)
 
           if ( bk_gfs(1) < 1.E-9 ) ak_gfs(1) = max(1.e-9, ak_gfs(1))
 
