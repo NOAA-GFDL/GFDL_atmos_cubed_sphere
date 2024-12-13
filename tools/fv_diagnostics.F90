@@ -1860,7 +1860,7 @@ contains
 
        if ( id_vort200>0 .or. id_vort500>0 .or. id_vort850>0 .or. id_vorts>0   &
             .or. id_vort>0 .or. id_pv>0 .or. id_pv350k>0 .or. id_pv550k>0 &
-            .or. id_rh>0 .or. id_x850>0 .or. id_uh03>0 .or. id_uh25>0 &
+            .or. id_srh>0 .or. id_x850>0 .or. id_uh03>0 .or. id_uh25>0 &
             .or. id_srh1 > 0 .or. id_srh3 > 0 .or. id_srh25 > 0 &
             .or. id_ustm > 0 .or. id_vstm > 0) then
           call get_vorticity(isc, iec, jsc, jec, isd, ied, jsd, jed, npz, Atm(n)%u, Atm(n)%v, wk, &
