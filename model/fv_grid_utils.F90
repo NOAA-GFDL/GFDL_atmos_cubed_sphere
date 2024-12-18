@@ -63,7 +63,7 @@
  public cos_angle
  public update_dwinds_phys, update2d_dwinds_phys, latlon2xyz, gnomonic_grids, &
         global_mx, unit_vect_latlon,  &
-        cubed_to_latlon, c2l_ord2, g_sum, global_qsum, great_circle_dist,  &
+        cubed_to_latlon, g_sum, global_qsum, great_circle_dist,  &
         v_prod, get_unit_vect2, project_sphere_v
  public mid_pt_sphere,  mid_pt_cart, vect_cross, grid_utils_init, grid_utils_end, &
         spherical_angle, cell_center2, get_area, inner_prod, fill_ghost, &
@@ -81,12 +81,12 @@
 
  contains
 
-   subroutine grid_utils_init(Atm, npx, npy, npz, non_ortho, grid_type, c2l_order)
+   subroutine grid_utils_init(Atm, npx, npy, npz, non_ortho, grid_type)
 ! Initialize 2D memory and geometrical factors
       type(fv_atmos_type), intent(inout), target :: Atm
       logical, intent(in):: non_ortho
       integer, intent(in):: npx, npy, npz
-      integer, intent(in):: grid_type, c2l_order
+      integer, intent(in):: grid_type
 !
 ! Super (composite) grid:
 
@@ -675,7 +675,7 @@
   enddo
 
 ! Initialize cubed_sphere to lat-lon transformation:
-     call init_cubed_to_latlon( Atm%gridstruct, Atm%flagstruct%hydrostatic, agrid, grid_type, c2l_order, Atm%bd )
+     call init_cubed_to_latlon( Atm%gridstruct, Atm%flagstruct%hydrostatic, agrid, grid_type, Atm%bd )
 
      call global_mx(area, Atm%ng, Atm%gridstruct%da_min, Atm%gridstruct%da_max, Atm%bd)
      if( is_master() ) write(*,'(A, G20.8)') 'da_max/da_min=', Atm%gridstruct%da_max/Atm%gridstruct%da_min
@@ -2252,12 +2252,11 @@
   end function v_prod
 
 
-  subroutine init_cubed_to_latlon( gridstruct, hydrostatic, agrid, grid_type, ord, bd )
+  subroutine init_cubed_to_latlon( gridstruct, hydrostatic, agrid, grid_type, bd )
   type(fv_grid_bounds_type), intent(IN) :: bd
   logical, intent(in):: hydrostatic
   real(kind=R_GRID),    intent(in) :: agrid(bd%isd:bd%ied,bd%jsd:bd%jed,2)
   integer, intent(in) :: grid_type
-  integer, intent(in) :: ord
   type(fv_grid_type), intent(INOUT), target :: gridstruct
   integer i, j
 

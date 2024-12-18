@@ -30,18 +30,23 @@ module coarse_grained_diagnostics_mod
   use field_manager_mod,  only: MODEL_ATMOS
   use fv_arrays_mod, only: fv_atmos_type, fv_coarse_graining_type
   use fv_diagnostics_mod, only: cs3_interpolator, get_height_given_pressure, get_vorticity, interpolate_vertical
-  use fv_mapz_mod, only: moist_cp, moist_cv
+  use fv_diagnostics_mod, only: nplev, levs, id_plev
+  use fv_thermodynamics_mod, only: moist_cp, moist_cv
   use mpp_domains_mod, only: domain2d, EAST, NORTH
   use mpp_mod, only: FATAL, mpp_error
-  use coarse_graining_mod, only: block_sum, get_fine_array_bounds, get_coarse_array_bounds, MODEL_LEVEL, &
-                                 weighted_block_average, PRESSURE_LEVEL, vertically_remap_field, &
+  use coarse_graining_mod, only: MODEL_LEVEL_MASS_WEIGHTED, MODEL_LEVEL_AREA_WEIGHTED
+  use coarse_graining_mod, only: PRESSURE_LEVEL, PRESSURE_LEVEL_EXTRAPOLATE, BLENDED_AREA_WEIGHTED
+  use coarse_graining_mod, only: block_sum, get_fine_array_bounds, get_coarse_array_bounds, &
+                                 weighted_block_average, vertically_remap_field, &
                                  vertical_remapping_requirements, mask_area_weights, &
                                  block_edge_sum_x, block_edge_sum_y,&
                                  eddy_covariance_2d_weights, eddy_covariance_3d_weights
-
+  use coarse_graining_mod, only: compute_blending_weights_agrid, blended_area_weighted_coarse_grain_field
+                                 
   use time_manager_mod, only: time_type
   use tracer_manager_mod, only: get_tracer_index, get_tracer_names
-
+  use gfdl_mp_mod, only: mqs3d
+  
   implicit none
   private
 
@@ -62,11 +67,12 @@ module coarse_grained_diagnostics_mod
     character(len=64) :: reduction_method
     logical :: vertically_integrated = .false.
     logical :: scaled_by_specific_heat_and_vertically_integrated = .false.
-    logical :: always_model_level_coarse_grain = .false.
+    logical :: always_model_level_area_weighted_coarse_grain = .false.
     integer :: pressure_level = -1  ! If greater than 0, interpolate to this pressure level (in hPa)
     integer :: iv = 0  ! Controls type of pressure-level interpolation performed (-1, 0, or 1)
     character(len=64) :: special_case = ''  ! E.g. height is computed differently on pressure surfaces
     type(data_subtype) :: data
+    logical :: plev_diag = .false.
   end type coarse_diag_type
 
   public :: fv_coarse_diag_init, fv_coarse_diag
@@ -150,7 +156,7 @@ contains
     coarse_diagnostics(index)%description = 'coarse-grained pressure thickness'
     coarse_diagnostics(index)%units = 'Pa'
     coarse_diagnostics(index)%reduction_method = AREA_WEIGHTED
-    coarse_diagnostics(index)%always_model_level_coarse_grain = .true.
+    coarse_diagnostics(index)%always_model_level_area_weighted_coarse_grain = .true.
     coarse_diagnostics(index)%data%var3 => Atm(tile_count)%delp(is:ie,js:je,1:npz)
 
     index = index + 1
@@ -170,7 +176,7 @@ contains
        coarse_diagnostics(index)%description = 'coarse-grained height thickness'
        coarse_diagnostics(index)%units = 'm'
        coarse_diagnostics(index)%reduction_method = AREA_WEIGHTED
-       coarse_diagnostics(index)%always_model_level_coarse_grain = .true.
+       coarse_diagnostics(index)%always_model_level_area_weighted_coarse_grain = .true.
        coarse_diagnostics(index)%data%var3 => Atm(tile_count)%delz(is:ie,js:je,1:npz)
 
        index = index + 1
@@ -374,7 +380,7 @@ contains
     coarse_diagnostics(index)%name = 'delp_dt_nudge_coarse'
     coarse_diagnostics(index)%description = 'coarse-grained pressure thickness tendency from nudging'
     coarse_diagnostics(index)%units = 'Pa/s'
-    coarse_diagnostics(index)%always_model_level_coarse_grain = .true.
+    coarse_diagnostics(index)%always_model_level_area_weighted_coarse_grain = .true.
     coarse_diagnostics(index)%reduction_method = AREA_WEIGHTED
 
     index = index + 1
@@ -391,6 +397,14 @@ contains
     coarse_diagnostics(index)%name = 'v_dt_nudge_coarse'
     coarse_diagnostics(index)%description = 'coarse-grained meridional wind tendency from nudging'
     coarse_diagnostics(index)%units = 'm/s/s'
+    coarse_diagnostics(index)%reduction_method = MASS_WEIGHTED
+
+    index = index + 1
+    coarse_diagnostics(index)%axes = 3
+    coarse_diagnostics(index)%module_name = DYNAMICS
+    coarse_diagnostics(index)%name = 'qv_dt_nudge_coarse'
+    coarse_diagnostics(index)%description = 'coarse-grained specific humidity tendency from nudging'
+    coarse_diagnostics(index)%units = 'kg/kg/s'
     coarse_diagnostics(index)%reduction_method = MASS_WEIGHTED
 
     index = index + 1
@@ -637,6 +651,15 @@ contains
     coarse_diagnostics(index)%name = 'int_v_dt_nudge_coarse'
     coarse_diagnostics(index)%description = 'coarse-grained vertically integrated meridional wind tendency from nudging'
     coarse_diagnostics(index)%units = 'kg/m s/s'
+    coarse_diagnostics(index)%vertically_integrated = .true.
+    coarse_diagnostics(index)%reduction_method = AREA_WEIGHTED
+
+    index = index + 1
+    coarse_diagnostics(index)%axes = 2
+    coarse_diagnostics(index)%module_name = DYNAMICS
+    coarse_diagnostics(index)%name = 'int_qv_dt_nudge_coarse'
+    coarse_diagnostics(index)%description = 'coarse-grained vertically integrated specific humidity tendency from nudging'
+    coarse_diagnostics(index)%units = 'kg/m**2/s'
     coarse_diagnostics(index)%vertically_integrated = .true.
     coarse_diagnostics(index)%reduction_method = AREA_WEIGHTED
 
@@ -918,6 +941,116 @@ contains
          coarse_diagnostics(index)%iv = -1
       endif
     enddo
+
+    if (Atm(tile_count)%flagstruct%write_3d_diags) then
+      index = index + 1
+      coarse_diagnostics(index)%axes = 3
+      coarse_diagnostics(index)%module_name = DYNAMICS
+      coarse_diagnostics(index)%name = 'u_plev_coarse'
+      coarse_diagnostics(index)%description = 'coarse-grained zonal wind'
+      coarse_diagnostics(index)%units = 'm/s'
+      coarse_diagnostics(index)%reduction_method = AREA_WEIGHTED
+      coarse_diagnostics(index)%data%var3 => Atm(tile_count)%ua(is:ie,js:je,1:npz)
+      coarse_diagnostics(index)%plev_diag = .true.
+      coarse_diagnostics(index)%iv = -1
+
+      index = index + 1
+      coarse_diagnostics(index)%axes = 3
+      coarse_diagnostics(index)%module_name = DYNAMICS
+      coarse_diagnostics(index)%name = 'v_plev_coarse'
+      coarse_diagnostics(index)%description = 'coarse-grained meridional wind'
+      coarse_diagnostics(index)%units = 'm/s'
+      coarse_diagnostics(index)%reduction_method = AREA_WEIGHTED
+      coarse_diagnostics(index)%data%var3 => Atm(tile_count)%va(is:ie,js:je,1:npz)
+      coarse_diagnostics(index)%plev_diag = .true.
+      coarse_diagnostics(index)%iv = -1
+
+      index = index + 1
+      coarse_diagnostics(index)%axes = 3
+      coarse_diagnostics(index)%module_name = DYNAMICS
+      coarse_diagnostics(index)%name = 't_plev_coarse'
+      coarse_diagnostics(index)%description = 'coarse-grained temperature'
+      coarse_diagnostics(index)%units = 'K'
+      coarse_diagnostics(index)%reduction_method = AREA_WEIGHTED
+      coarse_diagnostics(index)%data%var3 => Atm(tile_count)%pt(is:ie,js:je,1:npz)
+      coarse_diagnostics(index)%plev_diag = .true.
+      coarse_diagnostics(index)%iv = 1
+
+      index = index + 1
+      coarse_diagnostics(index)%axes = 3
+      coarse_diagnostics(index)%module_name = DYNAMICS
+      coarse_diagnostics(index)%name = 'omega_plev_coarse'
+      coarse_diagnostics(index)%description = 'coarse-grained pressure velocity'
+      coarse_diagnostics(index)%units = 'Pa/s'
+      coarse_diagnostics(index)%reduction_method = AREA_WEIGHTED
+      coarse_diagnostics(index)%data%var3 => Atm(tile_count)%omga(is:ie,js:je,1:npz)
+      coarse_diagnostics(index)%plev_diag = .true.
+      coarse_diagnostics(index)%iv = -1
+      
+      if (.not. Atm(tile_count)%flagstruct%hydrostatic) then
+         index = index + 1
+         coarse_diagnostics(index)%axes = 3
+         coarse_diagnostics(index)%module_name = DYNAMICS
+         coarse_diagnostics(index)%name = 'w_plev_coarse'
+         coarse_diagnostics(index)%description = 'coarse-grained vertical wind'
+         coarse_diagnostics(index)%units = 'm/s'
+         coarse_diagnostics(index)%reduction_method = AREA_WEIGHTED
+         coarse_diagnostics(index)%data%var3 => Atm(tile_count)%w(is:ie,js:je,1:npz)
+         coarse_diagnostics(index)%plev_diag = .true.
+         coarse_diagnostics(index)%iv = -1
+      endif
+
+      do t = 1, n_tracers
+         call get_tracer_names(MODEL_ATMOS, t, tracer_name, tracer_long_name, tracer_units)
+         index = index + 1
+         coarse_diagnostics(index)%axes = 3
+         coarse_diagnostics(index)%module_name = DYNAMICS
+         coarse_diagnostics(index)%name = trim(tracer_name) // '_plev_coarse'
+         coarse_diagnostics(index)%description = 'coarse-grained ' // trim(tracer_long_name)
+         coarse_diagnostics(index)%units = tracer_units
+         coarse_diagnostics(index)%reduction_method = AREA_WEIGHTED
+         if (t .gt. n_prognostic) then
+           coarse_diagnostics(index)%data%var3 => Atm(tile_count)%qdiag(is:ie,js:je,1:npz,t)
+         else
+           coarse_diagnostics(index)%data%var3 => Atm(tile_count)%q(is:ie,js:je,1:npz,t)
+         endif
+         coarse_diagnostics(index)%plev_diag = .true.
+         coarse_diagnostics(index)%iv = 0
+      enddo
+
+      index = index + 1
+      coarse_diagnostics(index)%axes = 3
+      coarse_diagnostics(index)%module_name = DYNAMICS
+      coarse_diagnostics(index)%name = 'h_plev_coarse'
+      coarse_diagnostics(index)%description = 'coarse-grained height'
+      coarse_diagnostics(index)%units = 'm'
+      coarse_diagnostics(index)%reduction_method = AREA_WEIGHTED
+      coarse_diagnostics(index)%special_case = 'height'
+      coarse_diagnostics(index)%plev_diag = .true.
+
+      index = index + 1
+      coarse_diagnostics(index)%axes = 3
+      coarse_diagnostics(index)%module_name = DYNAMICS
+      coarse_diagnostics(index)%name = 'vort_plev_coarse'
+      coarse_diagnostics(index)%description = 'coarse-grained vorticity'
+      coarse_diagnostics(index)%units = '1/s'
+      coarse_diagnostics(index)%reduction_method = AREA_WEIGHTED
+      coarse_diagnostics(index)%special_case = 'vorticity'
+      coarse_diagnostics(index)%plev_diag = .true.
+      coarse_diagnostics(index)%iv = -1
+
+      index = index + 1
+      coarse_diagnostics(index)%axes = 3
+      coarse_diagnostics(index)%module_name = DYNAMICS
+      coarse_diagnostics(index)%name = 'rh_plev_coarse'
+      coarse_diagnostics(index)%description = 'coarse-grained relative humidity'
+      coarse_diagnostics(index)%units = '%'
+      coarse_diagnostics(index)%reduction_method = AREA_WEIGHTED
+      coarse_diagnostics(index)%special_case = 'rh'
+      coarse_diagnostics(index)%plev_diag = .true.
+      coarse_diagnostics(index)%iv = 0
+    endif
+
   end subroutine populate_coarse_diag_type
 
   subroutine register_coarse_diagnostics(Atm, coarse_diagnostics, Time, &
@@ -929,27 +1062,40 @@ contains
     integer, intent(in) :: id_x_coarse, id_y_coarse
 
     integer :: index, n_valid_diagnostics
-    integer :: axes_t(3), axes(3)
+    integer :: axes_t(3), axes(3), axes_p(3)
     real :: missing_value = -1.0e10  ! Following fv_diagnostics.F90
 
     axes_t = (/  id_xt_coarse, id_yt_coarse, id_pfull_coarse /)
     axes = (/  id_x_coarse, id_y_coarse, id_pfull_coarse /)
+    axes_p = (/ id_xt_coarse, id_yt_coarse, id_plev /)
     do index = 1, DIAG_SIZE
       if (trim(coarse_diagnostics(index)%name) == '') exit
       n_valid_diagnostics = index
     enddo
 
     do index = 1, n_valid_diagnostics
-      coarse_diagnostics(index)%id = register_diag_field( &
-        trim(coarse_diagnostics(index)%module_name), &
-        trim(coarse_diagnostics(index)%name), &
-        axes_t(1:coarse_diagnostics(index)%axes), &
-        Time, &
-        trim(coarse_diagnostics(index)%description), &
-        trim(coarse_diagnostics(index)%units), &
-        missing_value=missing_value &
-      )
-      call maybe_allocate_reference_array(Atm, coarse_diagnostics(index))
+      if (coarse_diagnostics(index)%plev_diag) then
+            coarse_diagnostics(index)%id = register_diag_field( &
+            trim(coarse_diagnostics(index)%module_name), &
+            trim(coarse_diagnostics(index)%name), &
+            axes_p, &
+            Time, &
+            trim(coarse_diagnostics(index)%description), &
+            trim(coarse_diagnostics(index)%units), &
+            missing_value=missing_value &
+         )
+      else
+         coarse_diagnostics(index)%id = register_diag_field( &
+            trim(coarse_diagnostics(index)%module_name), &
+            trim(coarse_diagnostics(index)%name), &
+            axes_t(1:coarse_diagnostics(index)%axes), &
+            Time, &
+            trim(coarse_diagnostics(index)%description), &
+            trim(coarse_diagnostics(index)%units), &
+            missing_value=missing_value &
+         )
+        call maybe_allocate_reference_array(Atm, coarse_diagnostics(index))
+      endif
     enddo
 
     call register_coarse_static_diagnostics(Atm, Time, axes_t, axes)
@@ -1056,6 +1202,12 @@ contains
           if (.not. allocated(Atm(tile_count)%nudge_diag%nudge_v_dt)) then
              allocate(Atm(tile_count)%nudge_diag%nudge_v_dt(is:ie,js:je,1:npz))
              Atm(tile_count)%nudge_diag%nudge_v_dt(is:ie,js:je,1:npz) = 0.0
+          endif
+          coarse_diagnostic%data%var3 => Atm(tile_count)%nudge_diag%nudge_v_dt(is:ie,js:je,1:npz)
+       elseif (ends_with(coarse_diagnostic%name, 'qv_dt_nudge_coarse')) then
+          if (.not. allocated(Atm(tile_count)%nudge_diag%nudge_qv_dt)) then
+             allocate(Atm(tile_count)%nudge_diag%nudge_qv_dt(is:ie,js:je,1:npz))
+             Atm(tile_count)%nudge_diag%nudge_qv_dt(is:ie,js:je,1:npz) = 0.0
           endif
           coarse_diagnostic%data%var3 => Atm(tile_count)%nudge_diag%nudge_v_dt(is:ie,js:je,1:npz)
        elseif (ends_with(coarse_diagnostic%name, 'qv_dt_gfdlmp_coarse')) then
@@ -1236,14 +1388,17 @@ contains
     real, allocatable :: work_2d(:,:), work_2d_coarse(:,:), work_3d_coarse(:,:,:)
     real, allocatable :: mass(:,:,:), height_on_interfaces(:,:,:), masked_area(:,:,:)
     real, allocatable :: phalf(:,:,:), upsampled_coarse_phalf(:,:,:)
-    real, allocatable, target :: vorticity(:,:,:)
+    real, allocatable :: blending_weights(:,:,:)
+    real, allocatable, target :: vorticity(:,:,:), rh(:,:,:)
     real, allocatable :: zsurf(:,:)
     integer :: is, ie, js, je, is_coarse, ie_coarse, js_coarse, je_coarse, npz
     integer :: isd, ied, jsd, jed
     logical :: used
     logical :: need_2d_work_array, need_3d_work_array, need_mass_array, need_height_array, need_masked_area_array
-    logical :: need_vorticity_array
+    logical :: extrapolate
+    logical :: need_vorticity_array, need_rh_array
     integer :: index, i, j
+    integer :: nwat
     character(len=256) :: error_message
 
     call get_need_nd_work_array(2, need_2d_work_array)
@@ -1251,6 +1406,7 @@ contains
     call get_need_mass_array(Atm(tile_count)%coarse_graining%strategy, need_mass_array)
     call get_need_height_array(need_height_array)
     call get_need_vorticity_array(need_vorticity_array)
+    call get_need_rh_array(need_rh_array)
     call get_need_masked_area_array(Atm(tile_count)%coarse_graining%strategy, need_masked_area_array)
 
     call get_fine_array_bounds(is, ie, js, je)
@@ -1267,7 +1423,8 @@ contains
 
     if (need_3d_work_array) then
        allocate(work_3d_coarse(is_coarse:ie_coarse,js_coarse:je_coarse,1:npz))
-       if (trim(Atm(tile_count)%coarse_graining%strategy) .eq. PRESSURE_LEVEL) then
+       if (trim(Atm(tile_count)%coarse_graining%strategy) .eq. PRESSURE_LEVEL .or. &
+           trim(Atm(tile_count)%coarse_graining%strategy) .eq. PRESSURE_LEVEL_EXTRAPOLATE) then
         allocate(phalf(is:ie,js:je,1:npz+1))
         allocate(upsampled_coarse_phalf(is:ie,js:je,1:npz+1))
 
@@ -1277,6 +1434,18 @@ contains
               Atm(tile_count)%ptop, &
               phalf, &
               upsampled_coarse_phalf)
+       elseif (trim(Atm(tile_count)%coarse_graining%strategy) .eq. BLENDED_AREA_WEIGHTED) then
+        allocate(phalf(is:ie,js:je,1:npz+1))      
+        allocate(upsampled_coarse_phalf(is:ie,js:je,1:npz+1))
+        allocate(blending_weights(is_coarse:ie_coarse,js_coarse:je_coarse,1:npz))
+
+        call vertical_remapping_requirements( &
+              Atm(tile_count)%delp(is:ie,js:je,1:npz), &
+              Atm(tile_count)%gridstruct%area(is:ie,js:je), &
+              Atm(tile_count)%ptop, &
+              phalf, &
+              upsampled_coarse_phalf, &
+              blending_weights)        
        endif
     endif
 
@@ -1287,10 +1456,12 @@ contains
 
     if (need_masked_area_array) then
       allocate(masked_area(is:ie,js:je,1:npz))
+      extrapolate = trim(Atm(tile_count)%coarse_graining%strategy) .eq. PRESSURE_LEVEL_EXTRAPOLATE
       call mask_area_weights( &
            Atm(tile_count)%gridstruct%area(is:ie,js:je), &
            phalf, &
            upsampled_coarse_phalf, &
+           extrapolate, &
            masked_area)
     endif
 
@@ -1316,8 +1487,17 @@ contains
        allocate(vorticity(is:ie,js:je,1:npz))
        call get_vorticity(is, ie, js, je, isd, ied, jsd, jed, npz, Atm(tile_count)%u, Atm(tile_count)%v, vorticity, &
                Atm(tile_count)%gridstruct%dx, Atm(tile_count)%gridstruct%dy, Atm(tile_count)%gridstruct%rarea)
-       call associate_vorticity_pointers(is, ie, js, je, npz, vorticity)
+       call associate_variable_pointers(is, ie, js, je, npz, vorticity, 'vorticity')
     endif
+
+    if (need_rh_array) then
+      nwat = Atm(tile_count)%flagstruct%nwat
+      allocate(rh(is:ie,js:je,1:npz))
+      call get_rh(is, ie, js, je, npz, nwat, Atm(tile_count)%q(is:ie,js:je,1:npz,1:nwat), &
+                  Atm(tile_count)%delp(is:ie,js:je,1:npz), Atm(tile_count)%peln(is:ie,1:npz+1,js:je), &           
+                  Atm(tile_count)%pt(is:ie,js:je,1:npz), rh)
+      call associate_variable_pointers(is, ie, js, je, npz, rh, 'rh')
+   endif
 
     do index = 1, DIAG_SIZE
       if (coarse_diagnostics(index)%id .gt. 0) then
@@ -1325,19 +1505,37 @@ contains
           call coarse_grain_2D_field(is, ie, js, je, npz, is_coarse, ie_coarse, js_coarse, je_coarse, &
                                      Atm(tile_count), coarse_diagnostics(index), height_on_interfaces, work_2d_coarse)
           used = send_data(coarse_diagnostics(index)%id, work_2d_coarse, Time)
-       elseif (coarse_diagnostics(index)%axes .eq. 3) then
-          if (trim(Atm(tile_count)%coarse_graining%strategy) .eq. MODEL_LEVEL .or. coarse_diagnostics(index)%always_model_level_coarse_grain) then
-            call coarse_grain_3D_field_on_model_levels(is, ie, js, je, is_coarse, ie_coarse, js_coarse, je_coarse, npz, &
+        elseif (coarse_diagnostics(index)%plev_diag) then
+          call coarse_grain_3D_plev_field(is, ie, js, je, npz, is_coarse, ie_coarse, js_coarse, je_coarse, &
+               Atm(tile_count), coarse_diagnostics(index), height_on_interfaces, work_3d_coarse(:,:,1:nplev))
+          used = send_data(coarse_diagnostics(index)%id, work_3d_coarse(:,:,1:nplev), Time)
+        elseif (coarse_diagnostics(index)%axes .eq. 3) then
+          if (trim(Atm(tile_count)%coarse_graining%strategy) .eq. MODEL_LEVEL_MASS_WEIGHTED) then
+            call coarse_grain_3D_field_model_level_mass_weighted(is, ie, js, je, is_coarse, ie_coarse, js_coarse, je_coarse, npz, &
                  coarse_diagnostics(index), Atm(tile_count)%gridstruct%area(is:ie,js:je),&
                  mass, &
                  Atm(tile_count)%omga(is:ie,js:je,1:npz), &
                  work_3d_coarse)
-          else if (trim(Atm(tile_count)%coarse_graining%strategy) .eq. PRESSURE_LEVEL) then
+          elseif (trim(Atm(tile_count)%coarse_graining%strategy) .eq. MODEL_LEVEL_AREA_WEIGHTED .or. coarse_diagnostics(index)%always_model_level_area_weighted_coarse_grain) then
+            call coarse_grain_3D_field_model_level_area_weighted(is, ie, js, je, is_coarse, ie_coarse, js_coarse, je_coarse, npz, &
+                 coarse_diagnostics(index), Atm(tile_count)%gridstruct%area(is:ie,js:je),&
+                 Atm(tile_count)%omga(is:ie,js:je,1:npz), &
+                 work_3d_coarse)
+          elseif (trim(Atm(tile_count)%coarse_graining%strategy) .eq. PRESSURE_LEVEL .or. &
+                  trim(Atm(tile_count)%coarse_graining%strategy) .eq. PRESSURE_LEVEL_EXTRAPOLATE) then
              call coarse_grain_3D_field_on_pressure_levels(is, ie, js, je, is_coarse, ie_coarse, js_coarse, je_coarse, npz, &
                  coarse_diagnostics(index), masked_area, phalf, &
                  upsampled_coarse_phalf, Atm(tile_count)%ptop, &
                  Atm(tile_count)%omga(is:ie,js:je,1:npz),&
                  work_3d_coarse)
+          elseif (trim(Atm(tile_count)%coarse_graining%strategy) .eq. BLENDED_AREA_WEIGHTED) then
+            call coarse_grain_3D_field_blended_area_weighted(is, ie, js, je, is_coarse, ie_coarse, js_coarse, je_coarse, npz, &
+                                                             coarse_diagnostics(index), masked_area, phalf, &
+                                                             upsampled_coarse_phalf, Atm(tile_count)%ptop, &
+                                                             Atm(tile_count)%omga(is:ie,js:je,1:npz), &
+                                                             Atm(tile_count)%gridstruct%area(is:ie,js:je), &
+                                                             blending_weights, &
+                                                             work_3d_coarse)
           else
             write(error_message, *) 'fv_coarse_diag: invalid coarse-graining strategy provided for 3D variables, ' // &
             trim(Atm(tile_count)%coarse_graining%strategy)
@@ -1349,7 +1547,7 @@ contains
     enddo
   end subroutine fv_coarse_diag
 
-   subroutine coarse_grain_3D_field_on_model_levels(is, ie, js, je, is_coarse, ie_coarse, js_coarse, je_coarse, &
+   subroutine coarse_grain_3D_field_model_level_mass_weighted(is, ie, js, je, is_coarse, ie_coarse, js_coarse, je_coarse, &
                                                     npz, coarse_diag, area, mass, omega, result)
     integer, intent(in) :: is, ie, js, je, is_coarse, ie_coarse, js_coarse, je_coarse, npz
     type(coarse_diag_type) :: coarse_diag
@@ -1389,12 +1587,44 @@ contains
             result &
        )
     else
-      write(error_message, *) 'coarse_grain_3D_field_on_model_levels: invalid reduction_method, ' // &
+      write(error_message, *) 'coarse_grain_3D_field_model_level_mass_weighted: invalid reduction_method, ' // &
         trim(coarse_diag%reduction_method) // ', provided for 3D variable, ' // &
         trim(coarse_diag%name)
       call mpp_error(FATAL, error_message)
     endif
-   end subroutine coarse_grain_3D_field_on_model_levels
+   end subroutine coarse_grain_3D_field_model_level_mass_weighted
+
+   subroutine coarse_grain_3D_field_model_level_area_weighted(is, ie, js, je, is_coarse, ie_coarse, js_coarse, je_coarse, &
+                                                    npz, coarse_diag, area, omega, result)
+    integer, intent(in) :: is, ie, js, je, is_coarse, ie_coarse, js_coarse, je_coarse, npz
+    type(coarse_diag_type) :: coarse_diag
+    real, intent(in) :: area(is:ie,js:je)
+    real, intent(in) :: omega(is:ie,js:je,1:npz)
+    real, intent(out) :: result(is_coarse:ie_coarse,js_coarse:je_coarse,1:npz)
+
+    character(len=256) :: error_message
+
+    if (trim(coarse_diag%reduction_method) .eq. AREA_WEIGHTED .or. &
+        trim(coarse_diag%reduction_method) .eq. MASS_WEIGHTED) then
+      call weighted_block_average( &
+        area(is:ie,js:je), &
+        coarse_diag%data%var3, &
+        result &
+      )
+    elseif (trim(coarse_diag%reduction_method) .eq. EDDY_COVARIANCE) then
+       call eddy_covariance_2d_weights( &
+            area(is:ie,js:je), &
+            omega(is:ie,js:je,1:npz), &
+            coarse_diag%data%var3, &
+            result &
+       )
+    else
+      write(error_message, *) 'coarse_grain_3D_field_model_level_area_weighted: invalid reduction_method, ' // &
+        trim(coarse_diag%reduction_method) // ', provided for 3D variable, ' // &
+        trim(coarse_diag%name)
+      call mpp_error(FATAL, error_message)
+    endif
+   end subroutine coarse_grain_3D_field_model_level_area_weighted
 
    subroutine coarse_grain_3D_field_on_pressure_levels(is, ie, js, je, is_coarse, ie_coarse, js_coarse, je_coarse, &
         npz, coarse_diag, masked_area, phalf, upsampled_coarse_phalf, &
@@ -1421,12 +1651,14 @@ contains
     endif
 
     allocate(remapped_field(is:ie,js:je,1:npz))
+
     call vertically_remap_field( &
-      phalf, &
-      var3, &
-      upsampled_coarse_phalf, &
-      ptop, &
-      remapped_field)
+         phalf, &
+         var3, &
+         upsampled_coarse_phalf, &
+         ptop, &
+         remapped_field)
+   
     if (trim(coarse_diag%reduction_method) .eq. EDDY_COVARIANCE) then
        allocate(remapped_omega(is:ie,js:je,1:npz))
        call vertically_remap_field( &
@@ -1458,6 +1690,118 @@ contains
       call mpp_error(FATAL, error_message)
     endif
    end subroutine coarse_grain_3D_field_on_pressure_levels
+
+   subroutine coarse_grain_3D_field_blended_area_weighted(is, ie, js, je, is_coarse, ie_coarse, js_coarse, je_coarse, &
+                                                          npz, coarse_diag, masked_area, phalf, upsampled_coarse_phalf, &
+                                                          ptop, omega, area, blending_weights, result)
+    integer, intent(in) :: is, ie, js, je, is_coarse, ie_coarse, js_coarse, je_coarse, npz
+    type(coarse_diag_type) :: coarse_diag
+    real, intent(in) :: masked_area(is:ie,js:je,1:npz)
+    real, intent(in) :: phalf(is:ie,js:je,1:npz+1), upsampled_coarse_phalf(is:ie,js:je,1:npz+1)
+    real, intent(in) :: ptop
+    real, intent(in) :: omega(is:ie,js:je,1:npz)
+    real, intent(in) :: area(is:ie,js:je)
+    real, intent(in) :: blending_weights(is_coarse:ie_coarse,js_coarse:je_coarse,1:npz)
+    real, intent(out) :: result(is_coarse:ie_coarse,js_coarse:je_coarse,1:npz)
+
+    real, allocatable :: remapped_field(:,:,:), remapped_omega(:,:,:)
+    real, allocatable :: pressure_coarse_grained(:,:,:)
+    character(len=256) :: error_message
+
+    if (trim(coarse_diag%reduction_method) .ne. EDDY_COVARIANCE) then
+      call blended_area_weighted_coarse_grain_field(&
+        coarse_diag%data%var3, &
+        phalf, &
+        upsampled_coarse_phalf, &
+        ptop, &
+        masked_area, &
+        area, &
+        blending_weights, &
+        result)
+    else
+      allocate(remapped_field(is:ie,js:je,1:npz))
+      allocate(remapped_omega(is:ie,js:je,1:npz))
+      allocate(pressure_coarse_grained(is_coarse:ie_coarse,js_coarse:je_coarse,1:npz))
+
+      call eddy_covariance_2d_weights( &
+         area(is:ie,js:je), &
+         omega(is:ie,js:je,1:npz), &
+         coarse_diag%data%var3, &
+         result &
+      )
+
+      call vertically_remap_field( &
+        phalf, &
+        coarse_diag%data%var3, &
+        upsampled_coarse_phalf, &
+        ptop, &
+        remapped_field)
+      call vertically_remap_field( &
+        phalf, &
+        omega, &
+        upsampled_coarse_phalf, &
+        ptop, &
+        remapped_omega)
+      call eddy_covariance_3d_weights( &
+        masked_area(is:ie,js:je,1:npz), &
+        remapped_omega(is:ie,js:je,1:npz), &
+        remapped_field(is:ie,js:je,1:npz), &
+        pressure_coarse_grained &
+      )
+
+      result = blending_weights * pressure_coarse_grained + (1 - blending_weights) * result
+    endif
+   end subroutine coarse_grain_3D_field_blended_area_weighted
+   
+   subroutine coarse_grain_3D_plev_field(is, ie, js, je, npz, is_coarse, ie_coarse, js_coarse, je_coarse, &
+      Atm, coarse_diag, height_on_interfaces, result)
+      integer, intent(in) :: is, ie, js, je, npz, is_coarse, ie_coarse, js_coarse, je_coarse
+      type(fv_atmos_type), intent(in) :: Atm
+      type(coarse_diag_type), intent(in) :: coarse_diag
+      real, intent(in) :: height_on_interfaces(is:ie,js:je,1:npz+1)
+      real, intent(out) :: result(is_coarse:ie_coarse,js_coarse:je_coarse,nplev)
+
+      character(len=256) :: error_message
+      real, allocatable :: work_3d(:,:,:)
+      integer :: k
+
+      allocate(work_3d(is:ie,js:je,nplev))
+
+      do k = 1,nplev
+        if (trim(coarse_diag%special_case) .eq. 'height') then
+          call height_given_pressure_level( &
+               is, &
+               ie, &
+               js, &
+               je, &
+               npz, &
+               height_on_interfaces(is:ie,js:je,1:npz+1), &
+               Atm%peln(is:ie,1:npz+1,js:je), &
+               levs(k), &
+               work_3d(is:ie,js:je,k) &
+          )
+        else
+          call interpolate_to_pressure_level( &
+               is, &
+               ie, &
+               js, &
+               je, &
+               npz, &
+               coarse_diag%data%var3, &
+               height_on_interfaces(is:ie,js:je,1:npz+1), &
+               Atm%peln(is:ie,1:npz+1,js:je), &
+               levs(k), &
+               coarse_diag%iv, &
+               work_3d(is:ie,js:je,k) &
+          )
+        endif
+        call weighted_block_average( &
+             Atm%gridstruct%area(is:ie,js:je), &
+             work_3d(is:ie,js:je,k), &
+             result(is_coarse:ie_coarse,js_coarse:je_coarse,k) &
+        )
+      enddo
+   end subroutine coarse_grain_3D_plev_field
 
    subroutine coarse_grain_2D_field(is, ie, js, je, npz, is_coarse, ie_coarse, js_coarse, je_coarse, &
                                     Atm, coarse_diag, height_on_interfaces, result)
@@ -1655,7 +1999,7 @@ contains
      integer :: index
 
      need_mass_array = .false.
-     valid_strategy = trim(coarsening_strategy) .eq. MODEL_LEVEL
+     valid_strategy = trim(coarsening_strategy) .eq. MODEL_LEVEL_MASS_WEIGHTED
      if (.not. valid_strategy) return
      do index = 1, DIAG_SIZE
         valid_axes = coarse_diagnostics(index)%axes .eq. 3
@@ -1675,9 +2019,10 @@ contains
 
     need_height_array = .false.
     do index = 1, DIAG_SIZE
-      if ((coarse_diagnostics(index)%axes == 2) .and. &
+      if (((coarse_diagnostics(index)%axes == 2) .and. &
           (coarse_diagnostics(index)%pressure_level > 0) .and. &
-          (coarse_diagnostics(index)%id > 0)) then
+          (coarse_diagnostics(index)%id > 0)) .or. &
+          coarse_diagnostics(index)%plev_diag) then
           need_height_array = .true.
           exit
       endif
@@ -1699,6 +2044,21 @@ contains
     enddo
  end subroutine get_need_vorticity_array
 
+ subroutine get_need_rh_array(need_rh_array)
+   logical, intent(out) :: need_rh_array
+
+   integer :: index
+
+   need_rh_array = .false.
+   do index = 1, DIAG_SIZE
+     if (trim(coarse_diagnostics(index)%special_case) .eq. 'rh' .and. &
+         coarse_diagnostics(index)%id .gt. 0) then
+         need_rh_array = .true.
+         exit
+     endif
+   enddo
+end subroutine get_need_rh_array
+
   subroutine get_need_masked_area_array(coarsening_strategy, need_masked_area_array)
     character(len=64), intent(in) :: coarsening_strategy
     logical, intent(out) :: need_masked_area_array
@@ -1707,7 +2067,9 @@ contains
     integer :: index
 
     need_masked_area_array = .false.
-    valid_strategy = trim(coarsening_strategy) .eq. PRESSURE_LEVEL
+    valid_strategy = (trim(coarsening_strategy) .eq. PRESSURE_LEVEL .or. &
+                      trim(coarsening_strategy) .eq. PRESSURE_LEVEL_EXTRAPOLATE .or. &
+                      trim(coarsening_strategy) .eq. BLENDED_AREA_WEIGHTED)
     if (.not. valid_strategy) return
     do index = 1, DIAG_SIZE
        valid_axes = coarse_diagnostics(index)%axes .eq. 3
@@ -1717,19 +2079,20 @@ contains
    enddo
  end subroutine get_need_masked_area_array
 
- subroutine associate_vorticity_pointers(is, ie, js, je, npz, vorticity)
+ subroutine associate_variable_pointers(is, ie, js, je, npz, work_3d, special_case)
    integer, intent(in) :: is, ie, js, je, npz
-   real, target, intent(in) :: vorticity(is:ie,js:je,1:npz)
+   real, target, intent(in) :: work_3d(is:ie,js:je,1:npz)
+   character(len=*), intent(in) :: special_case
 
-    integer :: index
+   integer :: index
 
-    do index = 1, DIAG_SIZE
-      if (trim(coarse_diagnostics(index)%special_case) .eq. 'vorticity' .and. &
-          coarse_diagnostics(index)%id .gt. 0) then
-          coarse_diagnostics(index)%data%var3 => vorticity(is:ie,js:je,1:npz)
-      endif
-    enddo
- end subroutine associate_vorticity_pointers
+   do index = 1, DIAG_SIZE
+     if (trim(coarse_diagnostics(index)%special_case) .eq. trim(special_case) .and. &
+         coarse_diagnostics(index)%id .gt. 0) then
+         coarse_diagnostics(index)%data%var3 => work_3d(is:ie,js:je,1:npz)
+     endif
+   enddo
+ end subroutine associate_variable_pointers
 
   subroutine compute_mass(Atm, is, ie, js, je, npz, mass)
     type(fv_atmos_type), intent(in) :: Atm
@@ -1757,7 +2120,7 @@ contains
     output_pressures = log(100.0 * real(pressure_level))  ! convert to Pa then take log to match expectation of cs3_interpolator
     allocate(work(is:ie,js:je,n_pressure_levels))
 
-    call cs3_interpolator(is, ie, js, je, npz, field, n_pressure_levels, output_pressures, height, phalf, ids, work, iv)
+    call cs3_interpolator(is, ie, js, je, npz, field, n_pressure_levels, output_pressures, phalf, ids, work, iv)
     result = work(is:ie,js:je,1)
   end subroutine interpolate_to_pressure_level
 
@@ -2079,4 +2442,30 @@ contains
       iw = iw + ginv * sum(q(is:ie,js:je,1:npz,graupel) * delp(is:ie,js:je,1:npz), 3)
    endif
  end subroutine ice_water_path
+ 
+ subroutine get_rh(is, ie, js, je, npz, nwat, q, delp, peln, pt, rh)
+   integer, intent(in) :: is, ie, js, je, npz, nwat
+   real, intent(in) :: q(is:ie,js:je,1:npz,1:nwat), delp(is:ie,js:je,1:npz), peln(is:ie,1:npz+1,js:je)
+   real, intent(in) :: pt(is:ie,js:je,1:npz)
+   real, intent(out) :: rh(is:ie,js:je,npz)
+   
+   integer :: sphum, i, j, k
+   real:: work_2d(is:ie,js:je)
+
+   sphum = get_tracer_index (MODEL_ATMOS, 'sphum')
+   do k=1,npz
+     do j=js,je
+       do i=is,ie
+         work_2d(i,j) = delp(i,j,k)/(peln(i,k+1,j)-peln(i,k,j))
+       enddo
+     enddo
+     call mqs3d(ie-is+1, je-js+1, 1, pt(is:ie,js:je,k), work_2d, &
+                q(is:ie,js:je,k,sphum), rh(is:ie,js:je,k))
+     do j=js,je
+       do i=is,ie
+         rh(i,j,k) = 100.*q(i,j,k,sphum)/rh(i,j,k)
+       enddo
+     enddo
+   enddo
+ end subroutine get_rh
 end module coarse_grained_diagnostics_mod

@@ -704,7 +704,7 @@ contains
            Atm(n)%gridstruct, &
            Atm(n)%npx, Atm(n)%npy, npz, 1, &
            Atm(n)%gridstruct%grid_type, Atm(n)%domain, &
-           Atm(n)%gridstruct%bounded_domain, Atm(n)%flagstruct%c2l_ord, Atm(n)%bd)
+           Atm(n)%gridstruct%bounded_domain, 4, Atm(n)%bd)
       call prt_maxmin('UA ', Atm(n)%ua, isc, iec, jsc, jec, Atm(n)%ng, npz, 1.)
       call prt_maxmin('VA ', Atm(n)%va, isc, iec, jsc, jec, Atm(n)%ng, npz, 1.)
 
@@ -741,7 +741,7 @@ contains
               Atm(n)%gridstruct, &
               Atm(n)%npx, Atm(n)%npy, npz, 1, &
               Atm(n)%gridstruct%grid_type, Atm(n)%domain, &
-              Atm(n)%gridstruct%bounded_domain, Atm(n)%flagstruct%c2l_ord, Atm(n)%bd)
+              Atm(n)%gridstruct%bounded_domain, 4, Atm(n)%bd)
          do j=jsc,jec
             do i=isc,iec
                Atm(n)%u_srf(i,j) = Atm(n)%ua(i,j,npz)

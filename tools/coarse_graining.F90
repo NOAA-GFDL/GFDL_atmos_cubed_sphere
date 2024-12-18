@@ -29,14 +29,19 @@ module coarse_graining_mod
   implicit none
   private
 
+  public :: MODEL_LEVEL_MASS_WEIGHTED, MODEL_LEVEL_AREA_WEIGHTED
+  public :: PRESSURE_LEVEL, PRESSURE_LEVEL_EXTRAPOLATE, BLENDED_AREA_WEIGHTED
   public :: block_sum, compute_mass_weights, get_fine_array_bounds, &
        get_coarse_array_bounds, coarse_graining_init, weighted_block_average, &
-       weighted_block_edge_average_x, weighted_block_edge_average_y, MODEL_LEVEL, &
-       block_upsample, mask_area_weights, PRESSURE_LEVEL, vertical_remapping_requirements, &
-       vertically_remap_field, remap_edges_along_x, remap_edges_along_y, &
-       block_edge_sum_x, block_edge_sum_y, block_mode, block_min, block_max, &
-       eddy_covariance, eddy_covariance_2d_weights, eddy_covariance_3d_weights
+       weighted_block_edge_average_x, weighted_block_edge_average_y, &
+       block_upsample, mask_area_weights, vertical_remapping_requirements, vertically_remap_field, &
+       remap_edges_along_x, remap_edges_along_y, block_edge_sum_x, block_edge_sum_y, &
+       block_mode, block_min, eddy_covariance, eddy_covariance_2d_weights, &
+       eddy_covariance_3d_weights
+  public :: compute_blending_weights_agrid, compute_blending_weights_dgrid_u, compute_blending_weights_dgrid_v
+  public :: blended_area_weighted_coarse_grain_field, blended_length_weighted_coarse_grain_u, blended_length_weighted_coarse_grain_v
 
+  
   interface block_sum
      module procedure block_sum_2d_real4
      module procedure block_sum_2d_real8
@@ -96,7 +101,7 @@ module coarse_graining_mod
      module procedure eddy_covariance_2d_weights
      module procedure eddy_covariance_3d_weights
   end interface eddy_covariance
-
+  
   interface block_mode
      module procedure block_mode_2d_real4
      module procedure masked_block_mode_2d_real4
@@ -105,18 +110,15 @@ module coarse_graining_mod
   end interface block_mode
 
   interface block_min
-     module procedure masked_block_min_2d_real4
-     module procedure masked_block_min_2d_real8
+     module procedure block_min_2d_real4
+     module procedure block_min_2d_real8
   end interface block_min
 
-  interface block_max
-     module procedure masked_block_max_2d_real4
-     module procedure masked_block_max_2d_real8
-  end interface block_max
-
   interface vertical_remapping_requirements
-     module procedure vertical_remapping_requirements_real4
-     module procedure vertical_remapping_requirements_real8
+     module procedure vertical_remapping_requirements_pressure_level_real4
+     module procedure vertical_remapping_requirements_pressure_level_real8
+     module procedure vertical_remapping_requirements_blended_area_weighted_real4
+     module procedure vertical_remapping_requirements_blended_area_weighted_real8     
   end interface vertical_remapping_requirements
 
   interface compute_phalf_from_delp
@@ -133,7 +135,12 @@ module coarse_graining_mod
      module procedure vertically_remap_field_real4
      module procedure vertically_remap_field_real8
   end interface vertically_remap_field
-
+  
+  interface compute_pfull_from_phalf
+     module procedure compute_pfull_from_phalf_real4
+     module procedure compute_pfull_from_phalf_real8
+  end interface compute_pfull_from_phalf
+  
   interface mappm
      module procedure mappm_real4
      module procedure mappm_real8
@@ -159,22 +166,46 @@ module coarse_graining_mod
      module procedure ppm_limiters_real8
   end interface ppm_limiters
 
+  interface compute_blending_weights_agrid
+     module procedure compute_blending_weights_agrid_real4
+     module procedure compute_blending_weights_agrid_real8
+  end interface compute_blending_weights_agrid
+
+  interface pressure_coarse_grain_field
+     module procedure pressure_coarse_grain_field_real4
+     module procedure pressure_coarse_grain_field_real8
+  end interface pressure_coarse_grain_field
+  
+  interface blended_area_weighted_coarse_grain_field
+     module procedure blended_area_weighted_coarse_grain_field_real4
+     module procedure blended_area_weighted_coarse_grain_field_real8
+  end interface blended_area_weighted_coarse_grain_field
+  
+  interface compute_coarse_pfull
+     module procedure compute_coarse_pfull_real4
+     module procedure compute_coarse_pfull_real8
+  end interface compute_coarse_pfull
+  
   ! Global variables for the module, initialized in coarse_graining_init
   integer :: is, ie, js, je, npz
   integer :: is_coarse, ie_coarse, js_coarse, je_coarse
-  character(len=11) :: MODEL_LEVEL = 'model_level'
-  character(len=14) :: PRESSURE_LEVEL = 'pressure_level'
-
-  ! GLobal variables for mappm
+  character(len=25), parameter :: MODEL_LEVEL_MASS_WEIGHTED = 'model_level_mass_weighted'
+  character(len=25), parameter :: MODEL_LEVEL_AREA_WEIGHTED = 'model_level_area_weighted'
+  character(len=14), parameter :: PRESSURE_LEVEL = 'pressure_level'
+  character(len=26), parameter :: PRESSURE_LEVEL_EXTRAPOLATE = 'pressure_level_extrapolate'
+  character(len=21), parameter :: BLENDED_AREA_WEIGHTED = 'blended_area_weighted'
+  
+  ! Global variables for mappm
   real(kind=4), parameter:: r3_real4 = 1./3., r23_real4 = 2./3., r12_real4 = 1./12.
   real(kind=8), parameter:: r3_real8 = 1./3., r23_real8 = 2./3., r12_real8 = 1./12.
 
   ! Namelist parameters initialized with default values
   integer :: coarsening_factor = 8  !< factor the coarse grid is downsampled by (e.g. 8 if coarsening from C384 to C48 resolution)
   integer :: coarse_io_layout(2) = (/1, 1/)  !< I/O layout for coarse-grid fields
-  character(len=64) :: strategy = 'model_level'  !< Valid values are 'model_level' and 'pressure_level'
-
-  namelist /coarse_graining_nml/ coarsening_factor, coarse_io_layout, strategy
+  character(len=64) :: strategy = MODEL_LEVEL_MASS_WEIGHTED  !< Valid values are 'model_level_mass_weighted', 'model_level_area_weighted', 'pressure_level', 'pressure_level_extrapolate', 'blended_area_weighted'
+  real :: sigma_blend = 0.9  ! Constant defining sigma level at which we switch to pressure-level coarsening in the blended method.
+  
+  namelist /coarse_graining_nml/ coarsening_factor, coarse_io_layout, strategy, sigma_blend
 
 contains
 
@@ -244,8 +275,12 @@ contains
 
     character(len=256) :: error_message
 
-    if (trim(strategy) .ne. MODEL_LEVEL .and. trim(strategy) .ne. PRESSURE_LEVEL) then
-       write(error_message, *) 'Invalid coarse graining strategy provided.'
+    if (trim(strategy) .ne. MODEL_LEVEL_MASS_WEIGHTED .and. &
+        trim(strategy) .ne. MODEL_LEVEL_AREA_WEIGHTED .and. &
+        trim(strategy) .ne. PRESSURE_LEVEL .and. &
+        trim(strategy) .ne. PRESSURE_LEVEL_EXTRAPOLATE .and. &
+        trim(strategy) .ne. BLENDED_AREA_WEIGHTED) then
+       write(error_message, *) 'Invalid coarse graining strategy provided, ', trim(strategy)
        call mpp_error(FATAL, error_message)
     endif
   end subroutine assert_valid_strategy
@@ -284,6 +319,7 @@ contains
 
     integer :: k
 
+!$OMP parallel do default(none) shared(npz,mass,area,delp)
     do k = 1, npz
        mass(:,:,k) = area * delp(:,:,k)
     enddo
@@ -296,6 +332,8 @@ contains
     integer :: i, j, i_coarse, j_coarse, offset
 
     offset = coarsening_factor - 1
+!$OMP parallel do default(none) shared(is,ie,js,je,coarsening_factor,coarse,fine,offset) &
+!$OMP                           private(i_coarse,j_coarse)
     do i = is, ie, coarsening_factor
        i_coarse = (i - 1) / coarsening_factor + 1
        do j = js, je, coarsening_factor
@@ -312,6 +350,8 @@ contains
     integer :: i, j, i_coarse, j_coarse, offset
 
     offset = coarsening_factor - 1
+!$OMP parallel do default(none) shared(is,ie,js,je,coarsening_factor,coarse,fine,offset) &
+!$OMP                           private(i_coarse,j_coarse)
     do i = is, ie, coarsening_factor
        i_coarse = (i - 1) / coarsening_factor + 1
        do j = js, je, coarsening_factor
@@ -329,6 +369,8 @@ contains
     integer :: i, j, i_coarse, j_coarse, offset
 
     offset = coarsening_factor - 1
+!$OMP parallel do default(none) shared(is,ie,js,je,coarsening_factor,coarse,fine,offset,mask) &
+!$OMP                           private(i_coarse,j_coarse)
     do i = is, ie, coarsening_factor
        i_coarse = (i - 1) / coarsening_factor + 1
        do j = js, je, coarsening_factor
@@ -346,6 +388,8 @@ contains
     integer :: i, j, i_coarse, j_coarse, offset
 
     offset = coarsening_factor - 1
+!$OMP parallel do default(none) shared(is,ie,js,je,coarsening_factor,coarse,fine,offset,mask) &
+!$OMP                           private(i_coarse,j_coarse)
     do i = is, ie, coarsening_factor
        i_coarse = (i - 1) / coarsening_factor + 1
        do j = js, je, coarsening_factor
@@ -429,6 +473,8 @@ contains
 
     integer :: k
 
+!$OMP parallel do default(none) shared(nz,is,ie,js,je,weights,fine,mask,coarse, &
+!$OMP                                  is_coarse,ie_coarse,js_coarse,je_coarse)
     do k = 1, nz
        call masked_weighted_block_average_2d_real4(weights, fine(is:ie,js:je,k), mask, coarse(is_coarse:ie_coarse,js_coarse:je_coarse,k))
     enddo
@@ -442,6 +488,8 @@ contains
 
     integer :: k
 
+!$OMP parallel do default(none) shared(nz,is,ie,js,je,weights,fine,mask,coarse, &
+!$OMP                                  is_coarse,ie_coarse,js_coarse,je_coarse)
     do k = 1, nz
        call masked_weighted_block_average_2d_real8(weights, fine(is:ie,js:je,k), mask, coarse(is_coarse:ie_coarse,js_coarse:je_coarse,k))
     enddo
@@ -453,6 +501,8 @@ contains
 
     integer :: k
 
+!$OMP parallel do default(none) shared(npz,is,ie,js,je,weights,fine,coarse, &
+!$OMP                                  is_coarse,ie_coarse,js_coarse,je_coarse)
     do k = 1, npz
        call weighted_block_average_2d_real4(weights, fine(is:ie,js:je,k), coarse(is_coarse:ie_coarse,js_coarse:je_coarse,k))
     enddo
@@ -464,6 +514,8 @@ contains
 
     integer :: k
 
+!$OMP parallel do default(none) shared(npz,is,ie,js,je,weights,fine,coarse, &
+!$OMP                                  is_coarse,ie_coarse,js_coarse,je_coarse)
     do k = 1, npz
        call weighted_block_average_2d_real8(weights, fine(is:ie,js:je,k), coarse(is_coarse:ie_coarse,js_coarse:je_coarse,k))
     enddo
@@ -475,6 +527,8 @@ contains
 
     integer :: k
 
+!$OMP parallel do default(none) shared(npz,is,ie,js,je,weights,fine,coarse, &
+!$OMP                                  is_coarse,ie_coarse,js_coarse,je_coarse)
     do k = 1, npz
        call weighted_block_average_2d_real4(weights(is:ie,js:je,k), fine(is:ie,js:je,k), coarse(is_coarse:ie_coarse,js_coarse:je_coarse,k))
     enddo
@@ -486,6 +540,8 @@ contains
 
     integer :: k
 
+!$OMP parallel do default(none) shared(npz,is,ie,js,je,weights,fine,coarse, &
+!$OMP                                  is_coarse,ie_coarse,js_coarse,je_coarse)
     do k = 1, npz
        call weighted_block_average_2d_real8(weights(is:ie,js:je,k), fine(is:ie,js:je,k), coarse(is_coarse:ie_coarse,js_coarse:je_coarse,k))
     enddo
@@ -589,6 +645,8 @@ contains
     integer :: i, j, i_coarse, j_coarse, offset
 
     offset = coarsening_factor - 1
+!$OMP parallel do default(none) shared(is,ie,js,je,coarsening_factor,coarse,fine,offset) &
+!$OMP                           private(i_coarse,j_coarse)
     do i = is, ie, coarsening_factor
        i_coarse = (i - 1) / coarsening_factor + 1
        do j = js, je, coarsening_factor
@@ -606,6 +664,8 @@ contains
     integer :: i, j, i_coarse, j_coarse, offset
 
     offset = coarsening_factor - 1
+!$OMP parallel do default(none) shared(is,ie,js,je,coarsening_factor,coarse,fine,offset,mask) &
+!$OMP                           private(i_coarse,j_coarse)
     do i = is, ie, coarsening_factor
        i_coarse = (i - 1) / coarsening_factor + 1
        do j = js, je, coarsening_factor
@@ -622,6 +682,8 @@ contains
     integer :: i, j, i_coarse, j_coarse, offset
 
     offset = coarsening_factor - 1
+!$OMP parallel do default(none) shared(is,ie,js,je,coarsening_factor,coarse,fine,offset) &
+!$OMP                           private(i_coarse,j_coarse)
     do i = is, ie, coarsening_factor
        i_coarse = (i - 1) / coarsening_factor + 1
        do j = js, je, coarsening_factor
@@ -639,6 +701,8 @@ contains
     integer :: i, j, i_coarse, j_coarse, offset
 
     offset = coarsening_factor - 1
+!$OMP parallel do default(none) shared(is,ie,js,je,coarsening_factor,coarse,fine,offset,mask) &
+!$OMP                           private(i_coarse,j_coarse)
     do i = is, ie, coarsening_factor
        i_coarse = (i - 1) / coarsening_factor + 1
        do j = js, je, coarsening_factor
@@ -648,74 +712,78 @@ contains
     enddo
   end subroutine masked_block_mode_2d_real4
 
-  subroutine masked_block_min_2d_real8(fine, mask, coarse)
-    real(kind=8), intent(in) :: fine(is:ie,js:je)
-    logical, intent(in) :: mask(is:ie,js:je)
-    real(kind=8), intent(out) :: coarse(is_coarse:ie_coarse,js_coarse:je_coarse)
-
-    integer :: i, j, i_coarse, j_coarse, offset
-
-    offset = coarsening_factor - 1
-    do i = is, ie, coarsening_factor
-       i_coarse = (i - 1) / coarsening_factor + 1
-       do j = js, je, coarsening_factor
-          j_coarse = (j - 1) / coarsening_factor + 1
-          coarse(i_coarse, j_coarse) = minval(fine(i:i+offset,j:j+offset), mask=mask(i:i + offset,j:j + offset))
-       enddo
-    enddo
-  end subroutine masked_block_min_2d_real8
-
-  subroutine masked_block_max_2d_real8(fine, mask, coarse)
-    real(kind=8), intent(in) :: fine(is:ie,js:je)
-    logical, intent(in) :: mask(is:ie,js:je)
-    real(kind=8), intent(out) :: coarse(is_coarse:ie_coarse,js_coarse:je_coarse)
-
-    integer :: i, j, i_coarse, j_coarse, offset
-
-    offset = coarsening_factor - 1
-    do i = is, ie, coarsening_factor
-       i_coarse = (i - 1) / coarsening_factor + 1
-       do j = js, je, coarsening_factor
-          j_coarse = (j - 1) / coarsening_factor + 1
-          coarse(i_coarse, j_coarse) = maxval(fine(i:i+offset,j:j+offset), mask=mask(i:i + offset,j:j + offset))
-       enddo
-    enddo
-  end subroutine masked_block_max_2d_real8
-
-  subroutine masked_block_min_2d_real4(fine, mask, coarse)
+  subroutine block_min_2d_real4(fine, coarse)
     real(kind=4), intent(in) :: fine(is:ie,js:je)
-    logical, intent(in) :: mask(is:ie,js:je)
     real(kind=4), intent(out) :: coarse(is_coarse:ie_coarse,js_coarse:je_coarse)
 
     integer :: i, j, i_coarse, j_coarse, offset
 
     offset = coarsening_factor - 1
+!$OMP parallel do default(none) shared(is,ie,js,je,coarsening_factor,coarse,fine,offset) &
+!$OMP                           private(i_coarse,j_coarse)
     do i = is, ie, coarsening_factor
-       i_coarse = (i - 1) / coarsening_factor + 1
-       do j = js, je, coarsening_factor
-          j_coarse = (j - 1) / coarsening_factor + 1
-          coarse(i_coarse, j_coarse) = minval(fine(i:i+offset,j:j+offset), mask=mask(i:i + offset,j:j + offset))
-       enddo
+      i_coarse = (i - 1) / coarsening_factor + 1
+      do j = js, je, coarsening_factor
+        j_coarse = (j - 1) / coarsening_factor + 1
+        coarse(i_coarse, j_coarse) = minval(fine(i:i+offset,j:j+offset))
+      enddo
     enddo
-  end subroutine masked_block_min_2d_real4
+  end subroutine block_min_2d_real4
 
-  subroutine masked_block_max_2d_real4(fine, mask, coarse)
-    real(kind=4), intent(in) :: fine(is:ie,js:je)
-    logical, intent(in) :: mask(is:ie,js:je)
-    real(kind=4), intent(out) :: coarse(is_coarse:ie_coarse,js_coarse:je_coarse)
+  subroutine block_min_2d_real8(fine, coarse)
+    real(kind=8), intent(in) :: fine(is:ie,js:je)
+    real(kind=8), intent(out) :: coarse(is_coarse:ie_coarse,js_coarse:je_coarse)
 
     integer :: i, j, i_coarse, j_coarse, offset
 
     offset = coarsening_factor - 1
+!$OMP parallel do default(none) shared(is,ie,js,je,coarsening_factor,coarse,fine,offset) &
+!$OMP                           private(i_coarse,j_coarse)
     do i = is, ie, coarsening_factor
-       i_coarse = (i - 1) / coarsening_factor + 1
-       do j = js, je, coarsening_factor
-          j_coarse = (j - 1) / coarsening_factor + 1
-          coarse(i_coarse, j_coarse) = maxval(fine(i:i+offset,j:j+offset), mask=mask(i:i + offset,j:j + offset))
-       enddo
+      i_coarse = (i - 1) / coarsening_factor + 1
+      do j = js, je, coarsening_factor
+        j_coarse = (j - 1) / coarsening_factor + 1
+        coarse(i_coarse, j_coarse) = minval(fine(i:i+offset,j:j+offset))
+      enddo
     enddo
-  end subroutine masked_block_max_2d_real4
+  end subroutine block_min_2d_real8
 
+  ! Compute the minimum of the input array along the x-dimension within coarse
+  ! grid cell edges assuming that the input array is pre-downsampled to the
+  ! coarse grid along the y-dimension.
+  subroutine block_edge_min_x(fine, coarse)
+    real, intent(in) :: fine(is:ie,js_coarse:je_coarse+1)
+    real, intent(out) :: coarse(is_coarse:ie_coarse,js_coarse:je_coarse+1)
+
+    integer :: i, j_coarse, i_coarse, offset
+
+    offset = coarsening_factor - 1
+    do i = is, ie, coarsening_factor
+      i_coarse = (i - 1) / coarsening_factor + 1
+      do j_coarse = js_coarse, je_coarse+1
+        coarse(i_coarse, j_coarse) = minval(fine(i:i+offset,j_coarse))
+      enddo
+    enddo
+   end subroutine block_edge_min_x
+   
+  ! Compute the minimum of the input array along the y-dimension within coarse
+  ! grid cell edges assuming that the input array is pre-downsampled to the
+  ! coarse grid along the x-dimension.
+  subroutine block_edge_min_y(fine, coarse)
+    real, intent(in) :: fine(is_coarse:ie_coarse+1,js:je)
+    real, intent(out) :: coarse(is_coarse:ie_coarse+1,js_coarse:je_coarse)
+
+    integer :: i_coarse, j, j_coarse, offset
+
+    offset = coarsening_factor - 1
+    do i_coarse = is_coarse, ie_coarse+1
+      do j = js, je, coarsening_factor
+        j_coarse = (j - 1) / coarsening_factor + 1
+        coarse(i_coarse, j_coarse) = minval(fine(i_coarse,j:j+offset))
+      enddo
+    enddo
+  end subroutine block_edge_min_y
+  
   subroutine vertically_remap_field_real4(phalf_in, field, phalf_out, ptop, field_out)
     real(kind=4), intent(in) :: phalf_in(is:ie,js:je,1:npz+1), phalf_out(is:ie,js:je,1:npz+1)
     real(kind=4), intent(in) :: field(is:ie,js:je,1:npz)
@@ -783,6 +851,8 @@ contains
 
     integer :: k
 
+!$OMP parallel do default(none) shared(nz, coarse, fine, &
+!$OMP                                  is,ie,js,je, is_coarse, ie_coarse, js_coarse, je_coarse)
     do k = 1, nz
       call block_upsample_2d_real4(coarse(is_coarse:ie_coarse,js_coarse:je_coarse,k), fine(is:ie,js:je,k))
     enddo
@@ -811,6 +881,8 @@ contains
 
     integer :: k
 
+!$OMP parallel do default(none) shared(nz, coarse, fine, &
+!$OMP                                  is,ie,js,je, is_coarse, ie_coarse, js_coarse, je_coarse)
     do k = 1, nz
       call block_upsample_2d_real8(coarse(is_coarse:ie_coarse,js_coarse:je_coarse,k), fine(is:ie,js:je,k))
     enddo
@@ -952,7 +1024,7 @@ contains
   end subroutine compute_phalf_from_delp_real8
 
  ! Routine for computing the common requirements for pressure-level coarse-graining.
-  subroutine vertical_remapping_requirements_real4(delp, area, ptop, phalf, upsampled_coarse_phalf)
+  subroutine vertical_remapping_requirements_pressure_level_real4(delp, area, ptop, phalf, upsampled_coarse_phalf)
     real(kind=4), intent(in) :: delp(is:ie,js:je,1:npz)
     real(kind=4), intent(in) :: area(is:ie,js:je)
     real(kind=4), intent(in) :: ptop
@@ -971,9 +1043,9 @@ contains
 
     deallocate(coarse_delp)
     deallocate(coarse_phalf)
-   end subroutine vertical_remapping_requirements_real4
+   end subroutine vertical_remapping_requirements_pressure_level_real4
 
-  subroutine vertical_remapping_requirements_real8(delp, area, ptop, phalf, upsampled_coarse_phalf)
+  subroutine vertical_remapping_requirements_pressure_level_real8(delp, area, ptop, phalf, upsampled_coarse_phalf)
     real(kind=8), intent(in) :: delp(is:ie,js:je,1:npz)
     real(kind=8), intent(in) :: area(is:ie,js:je)
     real(kind=8), intent(in) :: ptop
@@ -992,40 +1064,143 @@ contains
 
     deallocate(coarse_delp)
     deallocate(coarse_phalf)
-   end subroutine vertical_remapping_requirements_real8
+   end subroutine vertical_remapping_requirements_pressure_level_real8
 
-   subroutine mask_area_weights_real4(area, phalf, upsampled_coarse_phalf, masked_area_weights)
+ ! Routine for computing the common requirements for blended-area-weighted coarse-graining.
+  subroutine vertical_remapping_requirements_blended_area_weighted_real4(delp, area, ptop, phalf, upsampled_coarse_phalf, blending_weights)
+    real(kind=4), intent(in) :: delp(is:ie,js:je,1:npz)
+    real(kind=4), intent(in) :: area(is:ie,js:je)
+    real(kind=4), intent(in) :: ptop
+    real(kind=4), intent(out) :: phalf(is:ie,js:je,1:npz+1)
+    real(kind=4), intent(out) :: upsampled_coarse_phalf(is:ie,js:je,1:npz+1)
+    real(kind=4), intent(out) :: blending_weights(is_coarse:ie_coarse,js_coarse:je_coarse,1:npz)
+    
+    real(kind=4), allocatable :: coarse_delp(:,:,:), coarse_phalf(:,:,:)
+    integer :: x_pad, y_pad
+    
+    allocate(coarse_delp(is_coarse:ie_coarse,js_coarse:je_coarse,1:npz))
+    allocate(coarse_phalf(is_coarse:ie_coarse,js_coarse:je_coarse,1:npz+1))
+
+    call compute_phalf_from_delp(delp(is:ie,js:je,1:npz), ptop, is, ie, js, je, phalf)
+    call weighted_block_average(area(is:ie,js:je), delp(is:ie,js:je,1:npz), coarse_delp)
+    call compute_phalf_from_delp(coarse_delp, ptop, is_coarse, ie_coarse, js_coarse, je_coarse, coarse_phalf)
+    call block_upsample(coarse_phalf, upsampled_coarse_phalf, npz+1)
+
+    x_pad = 0
+    y_pad = 0
+    call compute_blending_weights_agrid(phalf, coarse_phalf, blending_weights, x_pad, y_pad)
+    
+    deallocate(coarse_delp)
+    deallocate(coarse_phalf)
+   end subroutine vertical_remapping_requirements_blended_area_weighted_real4
+
+  subroutine vertical_remapping_requirements_blended_area_weighted_real8(delp, area, ptop, phalf, upsampled_coarse_phalf, blending_weights)
+    real(kind=8), intent(in) :: delp(is:ie,js:je,1:npz)
+    real(kind=8), intent(in) :: area(is:ie,js:je)
+    real(kind=8), intent(in) :: ptop
+    real(kind=8), intent(out) :: phalf(is:ie,js:je,1:npz+1)
+    real(kind=8), intent(out) :: upsampled_coarse_phalf(is:ie,js:je,1:npz+1)
+    real(kind=8), intent(out) :: blending_weights(is_coarse:ie_coarse,js_coarse:je_coarse,1:npz)
+    
+    real(kind=8), allocatable :: coarse_delp(:,:,:), coarse_phalf(:,:,:)
+    integer :: x_pad, y_pad
+    
+    allocate(coarse_delp(is_coarse:ie_coarse,js_coarse:je_coarse,1:npz))
+    allocate(coarse_phalf(is_coarse:ie_coarse,js_coarse:je_coarse,1:npz+1))
+
+    call compute_phalf_from_delp(delp(is:ie,js:je,1:npz), ptop, is, ie, js, je, phalf)
+    call weighted_block_average(area(is:ie,js:je), delp(is:ie,js:je,1:npz), coarse_delp)
+    call compute_phalf_from_delp(coarse_delp, ptop, is_coarse, ie_coarse, js_coarse, je_coarse, coarse_phalf)
+    call block_upsample(coarse_phalf, upsampled_coarse_phalf, npz+1)
+
+    x_pad = 0
+    y_pad = 0
+    call compute_blending_weights_agrid(phalf, coarse_phalf, blending_weights, x_pad, y_pad)
+    
+    deallocate(coarse_delp)
+    deallocate(coarse_phalf)
+   end subroutine vertical_remapping_requirements_blended_area_weighted_real8
+   
+   subroutine mask_area_weights_real4(area, phalf, upsampled_coarse_phalf, extrapolate, masked_area_weights)
     real(kind=4), intent(in) :: area(is:ie,js:je)
     real(kind=4), intent(in) :: phalf(is:ie,js:je,1:npz+1)
     real(kind=4), intent(in) :: upsampled_coarse_phalf(is:ie,js:je,1:npz+1)
+    logical, intent(in) :: extrapolate
     real(kind=4), intent(out) :: masked_area_weights(is:ie,js:je,1:npz)
 
+    real(kind=4), allocatable :: upsampled_coarse_pfull(:,:,:)
     integer :: k
 
-    do k = 1, npz
-      where (upsampled_coarse_phalf(is:ie,js:je,k+1) .lt. phalf(is:ie,js:je,npz+1))
-        masked_area_weights(is:ie,js:je,k) = area(is:ie,js:je)
-      elsewhere
-        masked_area_weights(is:ie,js:je,k) = 0.0
-      endwhere
-    enddo
+    ! Even in "extrapolation" mode we extrapolate in a limited sense.  We use
+    ! nearest neighbor extrapolation in the event that the pressure at the
+    ! vertical midpoint of the cell is less than that of the surface pressure
+    ! in the fine-grid column; otherwise do not attempt to extrapolate and
+    ! mask the points when computing horizontal averages.  This approach
+    ! allows us to generally use all grid cells in the lowest model level
+    ! over ocean, while maintaining masking in land regions with variable
+    ! topography; our stricter no-extrapolation approach often masks 50% or so
+    ! of the grid cells there.
+    if (extrapolate) then
+      allocate(upsampled_coarse_pfull(is:ie,js:je,1:npz))
+      call compute_pfull_from_phalf(upsampled_coarse_phalf, upsampled_coarse_pfull)
+
+      do k = 1, npz
+         where (upsampled_coarse_pfull(is:ie,js:je,k) .lt. phalf(is:ie,js:je,npz+1))
+           masked_area_weights(is:ie,js:je,k) = area(is:ie,js:je)
+         elsewhere
+           masked_area_weights(is:ie,js:je,k) = 0.0
+         endwhere
+      enddo
+    else
+      do k = 1, npz
+        where (upsampled_coarse_phalf(is:ie,js:je,k+1) .lt. phalf(is:ie,js:je,npz+1))
+          masked_area_weights(is:ie,js:je,k) = area(is:ie,js:je)
+        elsewhere
+          masked_area_weights(is:ie,js:je,k) = 0.0
+        endwhere
+      enddo
+    endif
    end subroutine mask_area_weights_real4
 
-   subroutine mask_area_weights_real8(area, phalf, upsampled_coarse_phalf, masked_area_weights)
+   subroutine mask_area_weights_real8(area, phalf, upsampled_coarse_phalf, extrapolate, masked_area_weights)
     real(kind=8), intent(in) :: area(is:ie,js:je)
     real(kind=8), intent(in) :: phalf(is:ie,js:je,1:npz+1)
     real(kind=8), intent(in) :: upsampled_coarse_phalf(is:ie,js:je,1:npz+1)
+    logical, intent(in) :: extrapolate
     real(kind=8), intent(out) :: masked_area_weights(is:ie,js:je,1:npz)
 
+    real(kind=8), allocatable :: upsampled_coarse_pfull(:,:,:)
     integer :: k
 
-    do k = 1, npz
-      where (upsampled_coarse_phalf(is:ie,js:je,k+1) .lt. phalf(is:ie,js:je,npz+1))
-        masked_area_weights(is:ie,js:je,k) = area(is:ie,js:je)
-      elsewhere
-        masked_area_weights(is:ie,js:je,k) = 0.0
-      endwhere
-    enddo
+    ! Even in "extrapolation" mode we extrapolate in a limited sense.  We use
+    ! nearest neighbor extrapolation in the event that the pressure at the
+    ! vertical midpoint of the cell is less than that of the surface pressure
+    ! in the fine-grid column; otherwise do not attempt to extrapolate and
+    ! mask the points when computing horizontal averages.  This approach
+    ! allows us to generally use all grid cells in the lowest model level
+    ! over ocean, while maintaining masking in land regions with variable
+    ! topography; our stricter no-extrapolation approach often masks 50% or so
+    ! of the grid cells there.
+    if (extrapolate) then
+      allocate(upsampled_coarse_pfull(is:ie,js:je,1:npz))
+      call compute_pfull_from_phalf(upsampled_coarse_phalf, upsampled_coarse_pfull)
+
+      do k = 1, npz
+         where (upsampled_coarse_pfull(is:ie,js:je,k) .lt. phalf(is:ie,js:je,npz+1))
+           masked_area_weights(is:ie,js:je,k) = area(is:ie,js:je)
+         elsewhere
+           masked_area_weights(is:ie,js:je,k) = 0.0
+         endwhere
+      enddo
+    else
+      do k = 1, npz
+        where (upsampled_coarse_phalf(is:ie,js:je,k+1) .lt. phalf(is:ie,js:je,npz+1))
+          masked_area_weights(is:ie,js:je,k) = area(is:ie,js:je)
+        elsewhere
+          masked_area_weights(is:ie,js:je,k) = 0.0
+        endwhere
+      enddo
+    endif    
    end subroutine mask_area_weights_real8
 
    ! A naive routine for interpolating a field from the A-grid to the y-boundary
@@ -1119,14 +1294,16 @@ contains
     enddo
    end subroutine upsample_d_grid_x
 
-   subroutine remap_edges_along_x(field, phalf, dx, ptop, result)
+   subroutine remap_edges_along_x(field, phalf, dx, ptop, extrapolate, result)
     real, intent(in) :: field(is:ie,js:je+1,1:npz)
     real, intent(in) :: phalf(is-1,ie+1,js-1,je+1,1:npz+1)
     real, intent(in) :: dx(is:ie,js:je+1)
     real, intent(in) :: ptop
+    logical, intent(in) :: extrapolate
     real, intent(out) :: result(is_coarse:ie_coarse,js_coarse:je_coarse+1,1:npz)
 
     real, allocatable, dimension(:,:,:) :: phalf_d_grid, coarse_phalf_d_grid, coarse_phalf_d_grid_on_fine, remapped
+    real, allocatable, dimension(:,:,:) :: coarse_pfull_d_grid_on_fine
     logical, allocatable :: mask(:,:,:)
 
     integer :: i, i_coarse, j, j_coarse, k, kn, km, kord, iv
@@ -1160,13 +1337,35 @@ contains
     enddo
 
     ! 5. Create mask
-    do k = 1, npz
-      where (coarse_phalf_d_grid_on_fine(:,:,k+1) .lt. phalf_d_grid(:,:,npz+1))
-        mask(:,:,k) = .true.
-      elsewhere
-        mask(:,:,k) = .false.
-      endwhere
-    enddo
+    if (extrapolate) then
+      allocate(coarse_pfull_d_grid_on_fine(is:ie,js_coarse:je_coarse+1,1:npz))
+      call compute_pfull_from_phalf_d_grid_x(coarse_phalf_d_grid_on_fine, coarse_pfull_d_grid_on_fine)
+
+      ! Even in "extrapolation" mode we extrapolate in a limited sense.  We use
+      ! nearest neighbor extrapolation in the event that the pressure at the
+      ! vertical midpoint of the cell is less than that of the surface pressure
+      ! in the fine-grid column; otherwise do not attempt to extrapolate and
+      ! mask the points when computing horizontal averages.  This approach
+      ! allows us to generally use all grid cells in the lowest model level
+      ! over ocean, while maintaining masking in land regions with variable
+      ! topography; our stricter no-extrapolation approach often masks 50% or so
+      ! of the grid cells there.
+      do k = 1, npz
+         where (coarse_pfull_d_grid_on_fine(:,:,k) .lt. phalf_d_grid(:,:,npz+1))
+           mask(:,:,k) = .true.
+         elsewhere
+           mask(:,:,k) = .false.
+         endwhere
+       enddo
+    else
+      do k = 1, npz
+        where (coarse_phalf_d_grid_on_fine(:,:,k+1) .lt. phalf_d_grid(:,:,npz+1))
+          mask(:,:,k) = .true.
+        elsewhere
+          mask(:,:,k) = .false.
+        endwhere
+      enddo
+    endif
 
     ! 6. Coarsen the remapped field
     call weighted_block_edge_average_x_pre_downsampled(remapped, dx, result, mask, npz)
@@ -1264,16 +1463,18 @@ contains
     enddo
   end subroutine upsample_d_grid_y
 
-  subroutine remap_edges_along_y(field, phalf, dy, ptop, result)
+  subroutine remap_edges_along_y(field, phalf, dy, ptop, extrapolate, result)
     real, intent(in) :: field(is:ie+1,js:je,1:npz)
     real, intent(in) :: phalf(is-1:ie+1,js-1:je+1,1:npz+1)
     real, intent(in) :: dy(is:ie+1,js:je)
     real, intent(in) :: ptop
+    logical, intent(in) :: extrapolate
     real, intent(out) :: result(is_coarse:ie_coarse+1,js_coarse:je_coarse,1:npz)
 
     real, allocatable, dimension(:,:,:) :: phalf_d_grid, coarse_phalf_d_grid, coarse_phalf_d_grid_on_fine, remapped
+    real, allocatable, dimension(:,:,:) :: coarse_pfull_d_grid_on_fine
     logical, allocatable :: mask(:,:,:)
-
+    
     integer :: i, i_coarse, j, j_coarse, k, kn, km, kord, iv
 
     allocate(phalf_d_grid(is_coarse:ie_coarse+1,js:je,1:npz+1))
@@ -1305,13 +1506,35 @@ contains
     enddo
 
     ! 5. Create mask
-    do k = 1, npz
-      where (coarse_phalf_d_grid_on_fine(:,:,k+1) .lt. phalf_d_grid(:,:,npz+1))
-        mask(:,:,k) = .true.
-      elsewhere
-        mask(:,:,k) = .false.
-      endwhere
-    enddo
+    if (extrapolate) then
+      allocate(coarse_pfull_d_grid_on_fine(is_coarse:ie_coarse+1,js:je,1:npz))
+      call compute_pfull_from_phalf_d_grid_y(coarse_phalf_d_grid_on_fine, coarse_pfull_d_grid_on_fine)
+
+      ! Even in "extrapolation" mode we extrapolate in a limited sense.  We use
+      ! nearest neighbor extrapolation in the event that the pressure at the
+      ! vertical midpoint of the cell is less than that of the surface pressure
+      ! in the fine-grid column; otherwise do not attempt to extrapolate and
+      ! mask the points when computing horizontal averages.  This approach
+      ! allows us to generally use all grid cells in the lowest model level
+      ! over ocean, while maintaining masking in land regions with variable
+      ! topography; our stricter no-extrapolation approach often masks 50% or so
+      ! of the grid cells there.
+      do k = 1, npz
+         where (coarse_pfull_d_grid_on_fine(:,:,k) .lt. phalf_d_grid(:,:,npz+1))
+           mask(:,:,k) = .true.
+         elsewhere
+           mask(:,:,k) = .false.
+         endwhere
+       enddo
+    else
+      do k = 1, npz
+        where (coarse_phalf_d_grid_on_fine(:,:,k+1) .lt. phalf_d_grid(:,:,npz+1))
+          mask(:,:,k) = .true.
+        elsewhere
+          mask(:,:,k) = .false.
+        endwhere
+      enddo
+    endif
 
     ! 6. Coarsen the remapped field
     call weighted_block_edge_average_y_pre_downsampled(remapped, dy, result, mask, npz)
@@ -1428,6 +1651,316 @@ contains
     call weighted_block_average(weights, anom_a * anom_b, coarse)
   end subroutine eddy_covariance_3d_weights
 
+ subroutine compute_blending_weights_agrid_real4(phalf, coarse_phalf, blending_weights, x_pad, y_pad)
+   integer :: x_pad, y_pad
+   real(kind=4), intent(in) :: phalf(is-x_pad:ie+x_pad,js-y_pad:je+y_pad,1:npz+1)
+   real(kind=4), intent(in) :: coarse_phalf(is_coarse:ie_coarse,js_coarse:je_coarse,1:npz+1)
+   real(kind=4), intent(out) :: blending_weights(is_coarse:ie_coarse,js_coarse:je_coarse,1:npz)
+
+   real(kind=4), allocatable, dimension(:,:) :: blending_pressure, coarse_surface_pressure
+   real(kind=4), allocatable :: coarse_pfull(:,:,:)
+
+   integer :: k, x_pad_coarse, y_pad_coarse
+
+   allocate(blending_pressure(is_coarse:ie_coarse,js_coarse:je_coarse))
+   allocate(coarse_pfull(is_coarse:ie_coarse,js_coarse:je_coarse,1:npz))
+   allocate(coarse_surface_pressure(is_coarse:ie_coarse,js_coarse:je_coarse))
+
+   coarse_surface_pressure = coarse_phalf(is_coarse:ie_coarse,js_coarse:je_coarse,npz+1)
+
+   x_pad_coarse = 0
+   y_pad_coarse = 0
+   call compute_coarse_pfull(coarse_phalf, coarse_pfull, x_pad_coarse, y_pad_coarse)
+   call block_min(phalf(is:ie,js:je,npz+1), blending_pressure)
+   blending_pressure = sigma_blend * blending_pressure
+   do k = 1, npz
+     where (coarse_pfull(:,:,k) .gt. blending_pressure)
+       blending_weights(:,:,k) = (coarse_surface_pressure - coarse_pfull(:,:,k)) / &
+                                 (coarse_surface_pressure - blending_pressure)
+     elsewhere
+       blending_weights(:,:,k) = 1.0
+     endwhere
+   enddo
+ end subroutine compute_blending_weights_agrid_real4
+
+ subroutine compute_blending_weights_dgrid_u(phalf, dx, blending_weights)
+   real, intent(in) :: phalf(is-1:is+1,js-1:js+1,1:npz+1)
+   real, intent(in) :: dx(is:ie,js:je+1)
+   real, intent(out) :: blending_weights(is_coarse:ie_coarse,js_coarse:je_coarse+1,1:npz)
+
+   real, allocatable, dimension(:,:,:) :: phalf_d_grid, coarse_phalf_d_grid, coarse_pfull_d_grid
+   real, allocatable, dimension(:,:) :: blending_pressure, coarse_surface_pressure
+
+   integer :: k, x_pad, y_pad
+
+   allocate(phalf_d_grid(is:ie,js_coarse:je_coarse+1,1:npz+1))
+   allocate(coarse_phalf_d_grid(is_coarse:ie_coarse,js_coarse:je_coarse+1,1:npz+1))
+   allocate(coarse_pfull_d_grid(is_coarse:ie_coarse,js_coarse:je_coarse+1,1:npz))
+   allocate(blending_pressure(is_coarse:ie_coarse,js_coarse:je_coarse+1))
+   allocate(coarse_surface_pressure(is_coarse:ie_coarse,js_coarse:je_coarse+1))
+
+   call interpolate_to_d_grid_and_downsample_along_y(phalf, phalf_d_grid, npz+1)
+   call weighted_block_edge_average_x_pre_downsampled(phalf_d_grid, dx, coarse_phalf_d_grid, npz+1)
+
+   x_pad = 0
+   y_pad = 1
+   call compute_coarse_pfull(coarse_phalf_d_grid, coarse_pfull_d_grid, x_pad, y_pad)
+   call block_edge_min_x(phalf_d_grid(is:ie,js_coarse:je_coarse+1,npz+1), blending_pressure)
+   coarse_surface_pressure = coarse_phalf_d_grid(is_coarse:ie_coarse,js_coarse:je_coarse+1,npz+1)
+   blending_pressure = sigma_blend * blending_pressure
+
+   do k = 1, npz
+     where (coarse_pfull_d_grid(:,:,k) .gt. blending_pressure)
+       blending_weights(:,:,k) = (coarse_surface_pressure - coarse_pfull_d_grid(:,:,k)) / &
+                                 (coarse_surface_pressure - blending_pressure)
+     elsewhere
+       blending_weights(:,:,k) = 1.0
+     endwhere
+   enddo
+ end subroutine compute_blending_weights_dgrid_u
+
+ subroutine compute_blending_weights_dgrid_v(phalf, dy, blending_weights)
+   real, intent(in) :: phalf(is-1:is+1,js-1:js+1,1:npz+1)
+   real, intent(in) :: dy(is:ie+1,js:je)
+   real, intent(out) :: blending_weights(is_coarse:ie_coarse+1,js_coarse:je_coarse,1:npz)
+
+   real, allocatable, dimension(:,:,:) :: phalf_d_grid, coarse_phalf_d_grid, coarse_pfull_d_grid
+   real, allocatable, dimension(:,:) :: blending_pressure, coarse_surface_pressure
+
+   integer :: k, x_pad, y_pad
+
+   allocate(phalf_d_grid(is_coarse:ie_coarse+1,js:je,1:npz+1))
+   allocate(coarse_phalf_d_grid(is_coarse:ie_coarse+1,js_coarse:je_coarse,1:npz+1))
+   allocate(coarse_pfull_d_grid(is_coarse:ie_coarse+1,js_coarse:je_coarse,1:npz))
+   allocate(blending_pressure(is_coarse:ie_coarse+1,js_coarse:je_coarse))
+   allocate(coarse_surface_pressure(is_coarse:ie_coarse+1,js_coarse:je_coarse))
+
+   call interpolate_to_d_grid_and_downsample_along_x(phalf, phalf_d_grid, npz+1)
+   call weighted_block_edge_average_y_pre_downsampled(phalf_d_grid, dy, coarse_phalf_d_grid, npz+1)
+
+   x_pad = 1
+   y_pad = 0
+   call compute_coarse_pfull(coarse_phalf_d_grid, coarse_pfull_d_grid, x_pad, y_pad)
+   call block_edge_min_y(phalf_d_grid(is_coarse:ie_coarse+1,js:je,npz+1), blending_pressure)
+   coarse_surface_pressure = coarse_phalf_d_grid(is_coarse:ie_coarse+1,js_coarse:je_coarse,npz+1)
+   blending_pressure = sigma_blend * blending_pressure
+
+   do k = 1, npz
+     where (coarse_pfull_d_grid(:,:,k) .gt. blending_pressure)
+       blending_weights(:,:,k) = (coarse_surface_pressure - coarse_pfull_d_grid(:,:,k)) / &
+                                 (coarse_surface_pressure - blending_pressure)
+     elsewhere
+       blending_weights(:,:,k) = 1.0
+     endwhere
+   enddo
+ end subroutine compute_blending_weights_dgrid_v
+
+ subroutine compute_coarse_pfull_real4(coarse_phalf, coarse_pfull, x_pad, y_pad)
+   integer, intent(in) :: x_pad, y_pad
+   real(kind=4), intent(in) :: coarse_phalf(is_coarse:ie_coarse+x_pad,js_coarse:je_coarse+y_pad,1:npz+1)
+   real(kind=4), intent(out) :: coarse_pfull(is_coarse:ie_coarse+x_pad,js_coarse:je_coarse+y_pad,1:npz)
+   
+   coarse_pfull = (coarse_phalf(:,:,1:npz) - coarse_phalf(:,:,2:npz+1)) / &
+                  (log(coarse_phalf(:,:,1:npz)) - log(coarse_phalf(:,:,2:npz+1)))
+ end subroutine compute_coarse_pfull_real4
+
+ subroutine pressure_coarse_grain_field_real4(field, phalf, coarse_phalf_on_fine, ptop, masked_area_weights, result)
+   real(kind=4), intent(in), dimension(is:ie,js:je,1:npz) :: field, masked_area_weights
+   real(kind=4), intent(in), dimension(is:ie,js:je,1:npz+1) :: phalf, coarse_phalf_on_fine
+   real(kind=4), intent(in) :: ptop
+   real(kind=4), intent(out) :: result(is_coarse:ie_coarse,js_coarse:je_coarse,1:npz)
+
+   real(kind=4), allocatable :: remapped(:,:,:)
+
+   allocate(remapped(is:ie,js:je,1:npz))
+
+   call vertically_remap_field(phalf(is:ie,js:je,1:npz+1), field(is:ie,js:je,1:npz), coarse_phalf_on_fine, ptop, remapped)
+   call weighted_block_average(masked_area_weights, remapped, result)
+ end subroutine pressure_coarse_grain_field_real4
+
+ subroutine blended_area_weighted_coarse_grain_field_real4(field, phalf, coarse_phalf_on_fine, ptop, masked_area_weights,&
+   model_level_weights, blending_weights, result)
+   real(kind=4), intent(in), dimension(is:ie,js:je,1:npz) :: field, masked_area_weights
+   real(kind=4), intent(in), dimension(is:ie,js:je,1:npz+1) :: phalf, coarse_phalf_on_fine
+   real(kind=4), intent(in) :: ptop
+   real(kind=4), intent(in) :: model_level_weights(is:ie,js:je)
+   real(kind=4), intent(in) :: blending_weights(is_coarse:ie_coarse,js_coarse:je_coarse,1:npz)
+   real(kind=4), intent(out) :: result(is_coarse:ie_coarse,js_coarse:je_coarse,1:npz)
+
+   real(kind=4), allocatable, dimension(:,:,:) :: pressure_coarse_grained, remapped
+
+   allocate(remapped(is:ie,js:je,1:npz))
+   allocate(pressure_coarse_grained(is_coarse:ie_coarse,js_coarse:je_coarse,1:npz))
+
+   call pressure_coarse_grain_field(field, phalf, coarse_phalf_on_fine, ptop, masked_area_weights, pressure_coarse_grained)
+   call weighted_block_average(model_level_weights, field, result)
+   result = blending_weights * pressure_coarse_grained + (1 - blending_weights) * result
+ end subroutine blended_area_weighted_coarse_grain_field_real4
+
+ subroutine blended_length_weighted_coarse_grain_u(u, phalf, dx, ptop, blending_weights, u_coarse)
+   real, intent(in) :: u(is:ie,js:je+1,1:npz)
+   real, intent(in) :: phalf(is-1:ie+1,js-1:je+1,1:npz+1)
+   real, intent(in) :: dx(is:ie,js:je+1)
+   real, intent(in) :: ptop
+   real, intent(in) :: blending_weights(is_coarse:ie_coarse,js_coarse:je_coarse+1,1:npz)
+   real, intent(out) :: u_coarse(is_coarse:ie_coarse,js_coarse:je_coarse+1,1:npz)
+
+   logical :: extrapolate = .false.
+   real, allocatable :: pressure_coarse_grained(:,:,:)
+
+   allocate(pressure_coarse_grained(is_coarse:ie_coarse,js_coarse:je_coarse+1,1:npz))
+
+   call remap_edges_along_x(u, phalf, dx, ptop, extrapolate, pressure_coarse_grained)
+   call weighted_block_edge_average_x(dx, u, u_coarse)
+   u_coarse = blending_weights * pressure_coarse_grained + (1 - blending_weights) * u_coarse
+ end subroutine blended_length_weighted_coarse_grain_u
+
+ subroutine blended_length_weighted_coarse_grain_v(v, phalf, dy, ptop, blending_weights, v_coarse)
+   real, intent(in) :: v(is:ie+1,js:je,1:npz)
+   real, intent(in) :: phalf(is-1:ie+1,js-1:je+1,1:npz+1)
+   real, intent(in) :: dy(is:ie+1,js:je)
+   real, intent(in) :: ptop
+   real, intent(in) :: blending_weights(is_coarse:ie_coarse+1,js_coarse:je_coarse,1:npz)
+   real, intent(out) :: v_coarse(is_coarse:ie_coarse+1,js_coarse:je_coarse,1:npz)
+
+   logical :: extrapolate = .false.
+   real, allocatable :: pressure_coarse_grained(:,:,:)
+
+   allocate(pressure_coarse_grained(is_coarse:ie_coarse+1,js_coarse:je_coarse,1:npz))
+
+   call remap_edges_along_y(v, phalf, dy, ptop, extrapolate, pressure_coarse_grained)
+   call weighted_block_edge_average_y(dy, v, v_coarse)
+   v_coarse = blending_weights * pressure_coarse_grained + (1 - blending_weights) * v_coarse
+ end subroutine blended_length_weighted_coarse_grain_v
+ 
+ subroutine compute_blending_weights_agrid_real8(phalf, coarse_phalf, blending_weights, x_pad, y_pad)
+   integer :: x_pad, y_pad
+   real(kind=8), intent(in) :: phalf(is-x_pad:ie+x_pad,js-y_pad:je+y_pad,1:npz+1)
+   real(kind=8), intent(in) :: coarse_phalf(is_coarse:ie_coarse,js_coarse:je_coarse,1:npz+1)
+   real(kind=8), intent(out) :: blending_weights(is_coarse:ie_coarse,js_coarse:je_coarse,1:npz)
+
+   real(kind=8), allocatable, dimension(:,:) :: blending_pressure, coarse_surface_pressure
+   real(kind=8), allocatable :: coarse_pfull(:,:,:)
+
+   integer :: k, x_pad_coarse, y_pad_coarse
+
+   allocate(blending_pressure(is_coarse:ie_coarse,js_coarse:je_coarse))
+   allocate(coarse_pfull(is_coarse:ie_coarse,js_coarse:je_coarse,1:npz))
+   allocate(coarse_surface_pressure(is_coarse:ie_coarse,js_coarse:je_coarse))
+
+   coarse_surface_pressure = coarse_phalf(is_coarse:ie_coarse,js_coarse:je_coarse,npz+1)
+
+   x_pad_coarse = 0
+   y_pad_coarse = 0
+   call compute_coarse_pfull(coarse_phalf, coarse_pfull, x_pad_coarse, y_pad_coarse)
+   call block_min(phalf(is:ie,js:je,npz+1), blending_pressure)
+   blending_pressure = sigma_blend * blending_pressure
+   do k = 1, npz
+     where (coarse_pfull(:,:,k) .gt. blending_pressure)
+       blending_weights(:,:,k) = (coarse_surface_pressure - coarse_pfull(:,:,k)) / &
+                                 (coarse_surface_pressure - blending_pressure)
+     elsewhere
+       blending_weights(:,:,k) = 1.0
+     endwhere
+   enddo
+ end subroutine compute_blending_weights_agrid_real8
+
+ subroutine compute_coarse_pfull_real8(coarse_phalf, coarse_pfull, x_pad, y_pad)
+   integer, intent(in) :: x_pad, y_pad
+   real(kind=8), intent(in) :: coarse_phalf(is_coarse:ie_coarse+x_pad,js_coarse:je_coarse+y_pad,1:npz+1)
+   real(kind=8), intent(out) :: coarse_pfull(is_coarse:ie_coarse+x_pad,js_coarse:je_coarse+y_pad,1:npz)
+   
+   coarse_pfull = (coarse_phalf(:,:,1:npz) - coarse_phalf(:,:,2:npz+1)) / &
+                  (log(coarse_phalf(:,:,1:npz)) - log(coarse_phalf(:,:,2:npz+1)))
+ end subroutine compute_coarse_pfull_real8
+
+ subroutine pressure_coarse_grain_field_real8(field, phalf, coarse_phalf_on_fine, ptop, masked_area_weights, result)
+   real(kind=8), intent(in), dimension(is:ie,js:je,1:npz) :: field, masked_area_weights
+   real(kind=8), intent(in), dimension(is:ie,js:je,1:npz+1) :: phalf, coarse_phalf_on_fine
+   real(kind=8), intent(in) :: ptop
+   real(kind=8), intent(out) :: result(is_coarse:ie_coarse,js_coarse:je_coarse,1:npz)
+
+   real(kind=8), allocatable :: remapped(:,:,:)
+
+   allocate(remapped(is:ie,js:je,1:npz))
+
+   call vertically_remap_field(phalf(is:ie,js:je,1:npz+1), field(is:ie,js:je,1:npz), coarse_phalf_on_fine, ptop, remapped)
+   call weighted_block_average(masked_area_weights, remapped, result)
+ end subroutine pressure_coarse_grain_field_real8
+
+ subroutine blended_area_weighted_coarse_grain_field_real8(field, phalf, coarse_phalf_on_fine, ptop, masked_area_weights,&
+   model_level_weights, blending_weights, result)
+   real(kind=8), intent(in), dimension(is:ie,js:je,1:npz) :: field, masked_area_weights
+   real(kind=8), intent(in), dimension(is:ie,js:je,1:npz+1) :: phalf, coarse_phalf_on_fine
+   real(kind=8), intent(in) :: ptop
+   real(kind=8), intent(in) :: model_level_weights(is:ie,js:je)
+   real(kind=8), intent(in) :: blending_weights(is_coarse:ie_coarse,js_coarse:je_coarse,1:npz)
+   real(kind=8), intent(out) :: result(is_coarse:ie_coarse,js_coarse:je_coarse,1:npz)
+
+   real(kind=8), allocatable, dimension(:,:,:) :: pressure_coarse_grained, remapped
+
+   allocate(remapped(is:ie,js:je,1:npz))
+   allocate(pressure_coarse_grained(is_coarse:ie_coarse,js_coarse:je_coarse,1:npz))
+
+   call pressure_coarse_grain_field(field, phalf, coarse_phalf_on_fine, ptop, masked_area_weights, pressure_coarse_grained)
+   call weighted_block_average(model_level_weights, field, result)
+   result = blending_weights * pressure_coarse_grained + (1 - blending_weights) * result
+ end subroutine blended_area_weighted_coarse_grain_field_real8
+ 
+ ! Compute pressure at layer midpoints following Eq. 3.17 of Simmons
+ ! and Burridge (1981), MWR.
+ subroutine compute_pfull_from_phalf_real4(phalf, pfull)
+   real(kind=4), intent(in) :: phalf(is:ie,js:je,1:npz+1)
+   real(kind=4), intent(out) :: pfull(is:ie,js:je,1:npz)
+
+   integer :: k
+
+   do k = 1, npz
+      pfull(:,:,k) = &
+         (phalf(:,:,k+1) - phalf(:,:,k)) / &
+         (log(phalf(:,:,k+1)) - log(phalf(:,:,k)))
+   enddo
+ end subroutine compute_pfull_from_phalf_real4
+
+ subroutine compute_pfull_from_phalf_real8(phalf, pfull)
+   real(kind=8), intent(in) :: phalf(is:ie,js:je,1:npz+1)
+   real(kind=8), intent(out) :: pfull(is:ie,js:je,1:npz)
+
+   integer :: k
+
+   do k = 1, npz
+      pfull(:,:,k) = &
+         (phalf(:,:,k+1) - phalf(:,:,k)) / &
+         (log(phalf(:,:,k+1)) - log(phalf(:,:,k)))
+   enddo
+ end subroutine compute_pfull_from_phalf_real8
+
+ subroutine compute_pfull_from_phalf_d_grid_y(coarse_phalf_d_grid_on_fine, coarse_pfull_d_grid_on_fine)
+   real, intent(in) :: coarse_phalf_d_grid_on_fine(is_coarse:ie_coarse+1,js:je,1:npz+1)
+   real, intent(out) :: coarse_pfull_d_grid_on_fine(is_coarse:ie_coarse+1,js:je,1:npz)
+
+   integer :: k
+
+   do k = 1, npz
+      coarse_pfull_d_grid_on_fine(:,:,k) = &
+      (coarse_phalf_d_grid_on_fine(:,:,k+1) - coarse_phalf_d_grid_on_fine(:,:,k)) / &
+      (log(coarse_phalf_d_grid_on_fine(:,:,k+1)) - log(coarse_phalf_d_grid_on_fine(:,:,k)))
+   enddo
+ end subroutine
+
+ subroutine compute_pfull_from_phalf_d_grid_x(coarse_phalf_d_grid_on_fine, coarse_pfull_d_grid_on_fine)
+   real, intent(in) :: coarse_phalf_d_grid_on_fine(is:ie,js_coarse:je_coarse+1,1:npz+1)
+   real, intent(out) :: coarse_pfull_d_grid_on_fine(is:ie,js_coarse:je_coarse+1,1:npz)
+
+   integer :: k
+
+   do k = 1, npz
+      coarse_pfull_d_grid_on_fine(:,:,k) = &
+         (coarse_phalf_d_grid_on_fine(:,:,k+1) - coarse_phalf_d_grid_on_fine(:,:,k)) / &
+         (log(coarse_phalf_d_grid_on_fine(:,:,k+1)) - log(coarse_phalf_d_grid_on_fine(:,:,k)))
+   enddo
+ end subroutine
+ 
 ! Port mappm for single and double precision
  subroutine mappm_real4(km, pe1, q1, kn, pe2, q2, i1, i2, iv, kord, ptop)
 

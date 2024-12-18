@@ -68,6 +68,8 @@ module fv_control_mod
                                   mpp_max
    use fv_diagnostics_mod,  only: fv_diag_init_gn
    use coarse_grained_restart_files_mod, only: deallocate_coarse_restart_type
+   use tp_core_mod,         only: tp_mono_schemes, tp_PD_schemes, tp_unlim_schemes, tp_valid_schemes
+   use fv_thermodynamics_mod, only: fv_thermo_init
 
    implicit none
    private
@@ -121,7 +123,7 @@ module fv_control_mod
      integer, dimension(MAX_NNEST) :: tile_coarse = 0
      integer, dimension(MAX_NTILE) :: npes_nest_tile = 0
 
-     real :: sdt
+     real :: sdt, rdt
      integer :: unit, ens_root_pe, tile_id(1)
 
      !!!!!!!!!! POINTERS FOR READING NAMELISTS !!!!!!!!!!
@@ -143,9 +145,6 @@ module fv_control_mod
      integer , pointer :: kord_tm
      integer , pointer :: hord_tr
      integer , pointer :: kord_tr
-     real    , pointer :: scale_z
-     real    , pointer :: w_max
-     real    , pointer :: z_min
      real    , pointer :: d2bg_zq
      real    , pointer :: lim_fac
 
@@ -159,10 +158,6 @@ module fv_control_mod
      real    , pointer :: trdm2
      real    , pointer :: d2_bg_k1
      real    , pointer :: d2_bg_k2
-     real    , pointer :: d2_divg_max_k1
-     real    , pointer :: d2_divg_max_k2
-     real    , pointer :: damp_k_k1
-     real    , pointer :: damp_k_k2
      integer , pointer ::    n_zs_filter
      integer , pointer :: nord_zs_filter
      logical , pointer :: full_zs_filter
@@ -224,6 +219,7 @@ module fv_control_mod
      integer , pointer :: ntiles
      integer , pointer :: nf_omega
      integer , pointer :: fv_sg_adj
+     integer , pointer :: fv_sg_adj_weak
      real    , pointer :: sg_cutoff
 
      integer , pointer :: na_init
@@ -236,6 +232,7 @@ module fv_control_mod
 
      real    , pointer :: delt_max
      real    , pointer :: d_con
+     logical , pointer :: prevent_diss_cooling
      real    , pointer :: ke_bg
      real    , pointer :: consv_te
      real    , pointer :: tau
@@ -263,22 +260,18 @@ module fv_control_mod
      logical , pointer :: mountain
      logical , pointer :: remap_t
      logical , pointer :: z_tracer
-     logical , pointer :: w_limiter
 
-     logical , pointer :: old_divg_damp
      logical , pointer :: fv_land
-     logical , pointer :: do_am4_remap
      logical , pointer :: nudge
      logical , pointer :: nudge_ic
      logical , pointer :: ncep_ic
      logical , pointer :: nggps_ic
      logical , pointer :: hrrrv3_ic
      logical , pointer :: ecmwf_ic
+     logical , pointer :: do_diss_est
      logical , pointer :: use_gfsO3
      logical , pointer :: gfs_phil
      logical , pointer :: agrid_vel_rst
-     logical , pointer :: use_new_ncep
-     logical , pointer :: use_ncep_phy
      logical , pointer :: fv_diag_ic
      logical , pointer :: external_ic
      logical , pointer :: external_eta
@@ -294,9 +287,6 @@ module fv_control_mod
      logical , pointer :: make_hybrid_z
      logical , pointer :: nudge_qv
      real,     pointer :: add_noise
-
-     integer , pointer :: a2b_ord
-     integer , pointer :: c2l_ord
 
      integer, pointer :: ndims
 
@@ -463,6 +453,8 @@ module fv_control_mod
      call read_namelist_fv_core_nml(Atm(this_grid)) ! do options processing here too?
      call read_namelist_test_case_nml
      call read_namelist_integ_phys_nml
+     call fv_thermo_init(Atm(this_grid)%thermostruct,Atm(this_grid)%flagstruct) !thermo namelist and setup
+
      call mpp_get_current_pelist(Atm(this_grid)%pelist, commID=commID) ! for commID
      call mp_start(commID,halo_update_type)
 
@@ -566,8 +558,10 @@ module fv_control_mod
      call tm_register_tracers (MODEL_ATMOS, Atm(this_grid)%flagstruct%ncnst, Atm(this_grid)%flagstruct%nt_prog, &
           Atm(this_grid)%flagstruct%pnats, num_family)
      if(is_master()) then
-        write(*,*) 'ncnst=', ncnst,' num_prog=',Atm(this_grid)%flagstruct%nt_prog,' pnats=',Atm(this_grid)%flagstruct%pnats,' dnats=',dnats,&
-             ' num_family=',num_family
+        write(*,200) ncnst, Atm(this_grid)%flagstruct%nt_prog, Atm(this_grid)%flagstruct%pnats
+        write(*,201) dnats, num_family
+200     format('ncnst = ', I4, ' num_prog   = ', I4, ' pnats = ', I4)
+201     format('dnats = ', I4, ' num_family = ', I4)
         print*, ''
      endif
      if (dnrts < 0) dnrts = dnats
@@ -635,30 +629,39 @@ module fv_control_mod
 
      ! 8. grid_utils_init()
      ! Initialize the SW (2D) part of the model
-     call grid_utils_init(Atm(this_grid), Atm(this_grid)%flagstruct%npx, Atm(this_grid)%flagstruct%npy, Atm(this_grid)%flagstruct%npz, Atm(this_grid)%flagstruct%non_ortho, Atm(this_grid)%flagstruct%grid_type, Atm(this_grid)%flagstruct%c2l_ord)
+     call grid_utils_init(Atm(this_grid), Atm(this_grid)%flagstruct%npx, Atm(this_grid)%flagstruct%npy, Atm(this_grid)%flagstruct%npz, Atm(this_grid)%flagstruct%non_ortho, Atm(this_grid)%flagstruct%grid_type)
 
-     ! Finish up initialization; write damping coefficients dependent upon
+     ! Finish up initialization; write solver information and damping coefficients
 
      if ( is_master() ) then
-        sdt =  dt_atmos/real(Atm(this_grid)%flagstruct%n_split*Atm(this_grid)%flagstruct%k_split*abs(p_split))
         write(*,*) ' '
-        write(*,*) 'Divergence damping Coefficients'
-        write(*,*) 'For small dt=', sdt
-        write(*,*) 'External mode del-2 (m**2/s)=',  Atm(this_grid)%flagstruct%d_ext*Atm(this_grid)%gridstruct%da_min_c/sdt
-        write(*,*) 'Internal mode del-2 SMAG dimensionless coeff=',  Atm(this_grid)%flagstruct%dddmp
-        write(*,*) 'Internal mode del-2 background diff=', Atm(this_grid)%flagstruct%d2_bg*Atm(this_grid)%gridstruct%da_min_c/sdt
+        write(*,300) Atm(this_grid)%flagstruct%hydrostatic, Atm(this_grid)%thermostruct%use_cond, Atm(this_grid)%thermostruct%moist_kappa
+300     format(' hydrostatic = ',L1,' use_cond = ',L1,' moist_kappa = ',L1)
 
-        if (nord==1) then
-           write(*,*) 'Internal mode del-4 background diff=', Atm(this_grid)%flagstruct%d4_bg
+        rdt =  dt_atmos/real(Atm(this_grid)%flagstruct%k_split*abs(p_split))
+        sdt =  rdt/real(Atm(this_grid)%flagstruct%n_split)
+        write(*,*) ' '
+        write(*,*) 'Acoustic (small) dt = ', sdt
+        write(*,*) 'Remapping dt        = ', rdt
+
+        if (Atm(this_grid)%flagstruct%fv_debug) then
+           write(*,*) ' '
+           write(*,*) 'Divergence damping Coefficients'
+           write(*,*) 'External mode del-2 (m**2/s)=',  Atm(this_grid)%flagstruct%d_ext*Atm(this_grid)%gridstruct%da_min_c/sdt
+           write(*,*) 'Internal mode del-2 SMAG dimensionless coeff=',  Atm(this_grid)%flagstruct%dddmp
+           write(*,*) 'Internal mode del-2 background diff=', Atm(this_grid)%flagstruct%d2_bg*Atm(this_grid)%gridstruct%da_min_c/sdt
+
+           if (nord==1) then
+              write(*,*) 'Internal mode del-4 background diff=', Atm(this_grid)%flagstruct%d4_bg
+           endif
+           if (Atm(this_grid)%flagstruct%nord==2) write(*,*) 'Internal mode del-6 background diff=', Atm(this_grid)%flagstruct%d4_bg
+           if (Atm(this_grid)%flagstruct%nord==3) write(*,*) 'Internal mode del-8 background diff=', Atm(this_grid)%flagstruct%d4_bg
+           write(*,*) 'tracer del-2 diff=', Atm(this_grid)%flagstruct%trdm2
+
            write(*,*) 'Vorticity del-4 (m**4/s)=', (Atm(this_grid)%flagstruct%vtdm4*Atm(this_grid)%gridstruct%da_min)**2/sdt*1.E-6
+           write(*,*) 'beta=', Atm(this_grid)%flagstruct%beta
+           write(*,*) ' '
         endif
-        if (Atm(this_grid)%flagstruct%nord==2) write(*,*) 'Internal mode del-6 background diff=', Atm(this_grid)%flagstruct%d4_bg
-        if (Atm(this_grid)%flagstruct%nord==3) write(*,*) 'Internal mode del-8 background diff=', Atm(this_grid)%flagstruct%d4_bg
-        write(*,*) 'tracer del-2 diff=', Atm(this_grid)%flagstruct%trdm2
-
-        write(*,*) 'Vorticity del-4 (m**4/s)=', (Atm(this_grid)%flagstruct%vtdm4*Atm(this_grid)%gridstruct%da_min)**2/sdt*1.E-6
-        write(*,*) 'beta=', Atm(this_grid)%flagstruct%beta
-        write(*,*) ' '
      endif
 
      !Initialize restart
@@ -684,9 +687,6 @@ module fv_control_mod
        remap_te                      => Atm%flagstruct%remap_te
        hord_tr                       => Atm%flagstruct%hord_tr
        kord_tr                       => Atm%flagstruct%kord_tr
-       scale_z                       => Atm%flagstruct%scale_z
-       w_max                         => Atm%flagstruct%w_max
-       z_min                         => Atm%flagstruct%z_min
        d2bg_zq                       => Atm%flagstruct%d2bg_zq
        lim_fac                       => Atm%flagstruct%lim_fac
        nord                          => Atm%flagstruct%nord
@@ -699,10 +699,6 @@ module fv_control_mod
        trdm2                         => Atm%flagstruct%trdm2
        d2_bg_k1                      => Atm%flagstruct%d2_bg_k1
        d2_bg_k2                      => Atm%flagstruct%d2_bg_k2
-       d2_divg_max_k1                => Atm%flagstruct%d2_divg_max_k1
-       d2_divg_max_k2                => Atm%flagstruct%d2_divg_max_k2
-       damp_k_k1                     => Atm%flagstruct%damp_k_k1
-       damp_k_k2                     => Atm%flagstruct%damp_k_k2
        n_zs_filter                   => Atm%flagstruct%n_zs_filter
        nord_zs_filter                => Atm%flagstruct%nord_zs_filter
        full_zs_filter                => Atm%flagstruct%full_zs_filter
@@ -762,6 +758,7 @@ module fv_control_mod
        ntiles                        => Atm%flagstruct%ntiles
        nf_omega                      => Atm%flagstruct%nf_omega
        fv_sg_adj                     => Atm%flagstruct%fv_sg_adj
+       fv_sg_adj_weak                => Atm%flagstruct%fv_sg_adj_weak
        sg_cutoff                     => Atm%flagstruct%sg_cutoff
        na_init                       => Atm%flagstruct%na_init
        nudge_dz                      => Atm%flagstruct%nudge_dz
@@ -772,6 +769,7 @@ module fv_control_mod
        tau_h2o                       => Atm%flagstruct%tau_h2o
        delt_max                      => Atm%flagstruct%delt_max
        d_con                         => Atm%flagstruct%d_con
+       prevent_diss_cooling          => Atm%flagstruct%prevent_diss_cooling
        ke_bg                         => Atm%flagstruct%ke_bg
        consv_te                      => Atm%flagstruct%consv_te
        tau                           => Atm%flagstruct%tau
@@ -795,25 +793,21 @@ module fv_control_mod
        reproduce_sum                 => Atm%flagstruct%reproduce_sum
        adjust_dry_mass               => Atm%flagstruct%adjust_dry_mass
        fv_debug                      => Atm%flagstruct%fv_debug
-       w_limiter                     => Atm%flagstruct%w_limiter
        srf_init                      => Atm%flagstruct%srf_init
        mountain                      => Atm%flagstruct%mountain
        remap_t                       => Atm%flagstruct%remap_t
        z_tracer                      => Atm%flagstruct%z_tracer
-       old_divg_damp                 => Atm%flagstruct%old_divg_damp
        fv_land                       => Atm%flagstruct%fv_land
-       do_am4_remap                  => Atm%flagstruct%do_am4_remap
        nudge                         => Atm%flagstruct%nudge
        nudge_ic                      => Atm%flagstruct%nudge_ic
        ncep_ic                       => Atm%flagstruct%ncep_ic
        nggps_ic                      => Atm%flagstruct%nggps_ic
        hrrrv3_ic                     => Atm%flagstruct%hrrrv3_ic
        ecmwf_ic                      => Atm%flagstruct%ecmwf_ic
+       do_diss_est                   => Atm%flagstruct%do_diss_est
        use_gfsO3                     => Atm%flagstruct%use_gfsO3
        gfs_phil                      => Atm%flagstruct%gfs_phil
        agrid_vel_rst                 => Atm%flagstruct%agrid_vel_rst
-       use_new_ncep                  => Atm%flagstruct%use_new_ncep
-       use_ncep_phy                  => Atm%flagstruct%use_ncep_phy
        fv_diag_ic                    => Atm%flagstruct%fv_diag_ic
        external_ic                   => Atm%flagstruct%external_ic
        external_eta                  => Atm%flagstruct%external_eta
@@ -830,8 +824,6 @@ module fv_control_mod
        make_hybrid_z                 => Atm%flagstruct%make_hybrid_z
        nudge_qv                      => Atm%flagstruct%nudge_qv
        add_noise                     => Atm%flagstruct%add_noise
-       a2b_ord                       => Atm%flagstruct%a2b_ord
-       c2l_ord                       => Atm%flagstruct%c2l_ord
        ndims                         => Atm%flagstruct%ndims
 
        dx_const                      => Atm%flagstruct%dx_const
@@ -940,26 +932,27 @@ module fv_control_mod
             do_schmidt, do_cube_transform, &
             hord_mt, hord_vt, hord_tm, hord_dp, hord_tr, shift_fac, stretch_fac, target_lat, target_lon, &
             kord_mt, kord_wz, kord_tm, kord_tr, remap_te, fv_debug, fv_land, &
-            do_am4_remap, nudge, do_f3d, external_ic, is_ideal_case, read_increment, &
-            ncep_ic, nggps_ic, hrrrv3_ic, ecmwf_ic, use_gfsO3, use_new_ncep, use_ncep_phy, fv_diag_ic, &
-            external_eta, res_latlon_dynamics, res_latlon_tracers, scale_z, w_max, z_min, d2bg_zq, lim_fac, &
+            nudge, do_f3d, external_ic, is_ideal_case, read_increment, &
+            ncep_ic, nggps_ic, hrrrv3_ic, ecmwf_ic, do_diss_est, use_gfsO3, fv_diag_ic, &
+            external_eta, res_latlon_dynamics, res_latlon_tracers, d2bg_zq, lim_fac, &
             dddmp, smag2d, d2_bg, d4_bg, vtdm4, trdm2, d_ext, delt_max, beta, non_ortho, n_sponge, &
-            warm_start, adjust_dry_mass, mountain, d_con, ke_bg, nord, nord_tr, convert_ke, use_old_omega, &
+            warm_start, adjust_dry_mass, mountain, d_con, prevent_diss_cooling, ke_bg, nord, nord_tr, convert_ke, use_old_omega, &
             dry_mass, grid_type, do_Held_Suarez, &
             consv_te, fill, filter_phys, fill_dp, fill_wz, fill_gfs, consv_am, RF_fast, &
             range_warn, dwind_2d, inline_q, z_tracer, reproduce_sum, adiabatic, do_vort_damp, no_dycore,   &
-            tau, fast_tau_w_sec, tau_h2o, rf_cutoff, nf_omega, hydrostatic, fv_sg_adj, sg_cutoff, breed_vortex_inline,  &
+            tau, fast_tau_w_sec, tau_h2o, rf_cutoff, nf_omega, hydrostatic, fv_sg_adj, fv_sg_adj_weak, &
+            sg_cutoff, breed_vortex_inline,  &
             na_init, nudge_dz, hybrid_z, Make_NH, n_zs_filter, nord_zs_filter, full_zs_filter, reset_eta,         &
-            pnats, dnats, dnrts, a2b_ord, remap_t, p_ref, d2_bg_k1, d2_bg_k2,  &
-            c2l_ord, dx_const, dy_const, umax, deglat, domain_deg,     &
+            pnats, dnats, dnrts, remap_t, p_ref, d2_bg_k1, d2_bg_k2,  &
+            dx_const, dy_const, umax, deglat, domain_deg,     &
             deglon_start, deglon_stop, deglat_start, deglat_stop, &
-            phys_hydrostatic, use_hydro_pressure, make_hybrid_z, old_divg_damp, add_noise, &
+            phys_hydrostatic, use_hydro_pressure, make_hybrid_z, add_noise, &
             nested, twowaynest, nudge_qv, &
             nestbctype, nestupdate, nsponge, s_weight, &
             check_negative, nudge_ic, halo_update_type, gfs_phil, agrid_vel_rst, &
             do_uni_zfull, adj_mass_vmr, update_blend, regional,&
             bc_update_interval,  nrows_blend, write_restart_with_bcs, regional_bcs_from_gsi, &
-            w_limiter, write_coarse_restart_files, write_coarse_diagnostics,&
+            write_coarse_restart_files, write_coarse_diagnostics,&
             write_only_coarse_intermediate_restarts, &
             write_coarse_agrid_vel_rst, write_coarse_dgrid_vel_rst, &
             restart_from_agrid_winds, write_optional_dgrid_vel_rst, &
@@ -1035,15 +1028,7 @@ module fv_control_mod
           write(*,199) 'Using p_split = ', p_split
        endif
 
-       if (old_divg_damp) then
-          if (is_master()) write(*,*) " fv_control: using AM2/AM3 damping methods "
-          d2_bg_k1 = 6.         ! factor for d2_bg (k=1)  - default(4.)
-          d2_bg_k2 = 4.         ! factor for d2_bg (k=2)  - default(2.)
-          d2_divg_max_k1 = 0.02 ! d2_divg max value (k=1) - default(0.05)
-          d2_divg_max_k2 = 0.01 ! d2_divg max value (k=2) - default(0.02)
-          damp_k_k1 = 0.        ! damp_k value (k=1)      - default(0.05)
-          damp_k_k2 = 0.        ! damp_k value (k=2)      - default(0.025)
-       elseif (n_sponge == 0 ) then
+       if (n_sponge == 0 ) then
           if ( d2_bg_k1 > 1. ) d2_bg_k1 = 0.20
           if ( d2_bg_k2 > 1. ) d2_bg_k2 = 0.015
        endif
@@ -1099,12 +1084,58 @@ module fv_control_mod
           call mpp_error(NOTE, " The old PPM remapping operators will be removed in a future release.")
        endif
 
-       if (do_am4_remap) then
-          call mpp_error(NOTE, "** DEPRECATED DO_AM4_REMAP **")
-          call mpp_error(NOTE, " This switch is no longer necessary because the AM4 kord=10 has been")
-          call mpp_error(NOTE, "     restored to normal operation.")
+       if (convert_ke) then
+          call mpp_error(NOTE, " The convert_ke option will be removed in a future release.")
+          call mpp_error(NOTE, " Use d_con > 0. instead.")
        endif
 
+       !Check over tracer options for unwise values
+       if (ANY(tp_unlim_schemes == hord_tr)) then
+          call mpp_error(NOTE, "** NON-MONOTONE/NON-POSITIVE TRACER ADVECTION **")
+          call mpp_error(NOTE, " The value of hord_tr will not prevent negatives.  " )
+          call mpp_error(NOTE, " Consider a monotonic or positive-definite scheme. ")
+          call mpp_error(NOTE, " Recommended: Mono = 8; PD = -5.")
+       endif
+       if (.not. ANY(tp_valid_schemes == hord_tr)) then
+          call mpp_error(FATAL, "** Invalid hord_tr ** Use hord_tr > 0 or hord_tr == -5")
+       endif
+       if (.not. ANY(tp_valid_schemes == hord_dp)) then
+          call mpp_error(FATAL, "** Invalid hord_dp ** Use hord_dp > 0 or hord_tr == -5")
+       endif
+       if (.not. ANY(tp_valid_schemes == hord_tm)) then
+          call mpp_error(FATAL, "** Invalid hord_tm ** Use hord_tm > 0")
+       endif
+       if (.not. ANY(tp_valid_schemes == hord_mt)) then
+          call mpp_error(FATAL, "** Invalid hord_mt ** Use hord_mt > 0")
+       endif
+       if (.not. ANY(tp_valid_schemes == hord_vt)) then
+          call mpp_error(FATAL, "** Invalid hord_vt ** Use hord_vt > 0")
+       endif
+       if (ANY(tp_PD_schemes == hord_tm) .and. .not. hydrostatic) then
+          call mpp_error(NOTE, "** POSITIVE-DEFINITE hord_tm SELECTED **")
+          call mpp_error(NOTE, " This may give unphysical results  " )
+          call mpp_error(NOTE, " Consider a monotonic or unlimited scheme. ")
+          call mpp_error(NOTE, " Recommended: Mono = 8; unlim = 5, 6, or 10.")
+       endif
+       if (ANY(tp_PD_schemes == hord_mt)) then
+          call mpp_error(NOTE, "** POSITIVE-DEFINITE hord_mt SELECTED **")
+          call mpp_error(NOTE, " This may give unphysical results  " )
+          call mpp_error(NOTE, " Consider a monotonic or unlimited scheme. ")
+          call mpp_error(NOTE, " Recommended: Mono = 8; unlim = 5, 6, or 10.")
+       endif
+       if (ANY(tp_PD_schemes == hord_vt)) then
+          call mpp_error(NOTE, "** POSITIVE-DEFINITE hord_vt SELECTED **")
+          call mpp_error(NOTE, " This may give unphysical results  " )
+          call mpp_error(NOTE, " Consider a monotonic or unlimited scheme. ")
+          call mpp_error(NOTE, " Recommended: Mono = 8; unlim = 5, 6, or 10.")
+       endif
+
+       if (.not. moist_phys) then
+          call mpp_error(NOTE, "** Deprecated moist_phys = .false. **")
+          call mpp_error(NOTE, "   The moist_phys = .false. capability is being")
+          call mpp_error(NOTE, "   removed and will be replaced with a separate")
+          call mpp_error(NOTE, "   option to turn off the virtual effect soon.")
+       endif
 
      end subroutine read_namelist_fv_core_nml
 

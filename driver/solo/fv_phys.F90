@@ -23,15 +23,18 @@ module fv_phys_mod
 
 use constants_mod,         only: grav, rdgas, rvgas, pi, cp_air, cp_vapor, hlv, kappa
 use fv_arrays_mod,         only: radius, omega ! scaled for small earth
+use fv_arrays_mod,         only: fv_grid_type, fv_flags_type, fv_nest_type
+use fv_arrays_mod,         only: fv_grid_bounds_type, fv_thermo_type
+use fv_arrays_mod,         only: phys_diag_type, nudge_diag_type, sg_diag_type
 
 use time_manager_mod,      only: time_type, get_time
 use gfdl_mp_mod,           only: mqs3d, wet_bulb, c_liq
 use hswf_mod,              only: Held_Suarez_Tend
-use fv_sg_mod,             only: fv_subgrid_z
+use fv_sg_mod,             only: fv_sg_SHiELD, fv_sg_AM5
 use fv_update_phys_mod,    only: fv_update_phys
 use fv_timing_mod,         only: timing_on, timing_off
 use mon_obkv_mod,          only: mon_obkv
-use tracer_manager_mod,    only: get_tracer_index, adjust_mass
+use tracer_manager_mod,    only: get_tracer_index, adjust_mass, get_tracer_names
 use field_manager_mod,     only: MODEL_ATMOS
 use fms_mod,               only: error_mesg, FATAL,  &
                                  check_nml_error, mpp_pe, mpp_root_pe, &
@@ -39,7 +42,6 @@ use fms_mod,               only: error_mesg, FATAL,  &
 use fv_mp_mod,             only: is_master, mp_reduce_max
 use fv_diagnostics_mod,    only: prt_maxmin, gn
 
-use fv_arrays_mod,          only: fv_grid_type, fv_flags_type, fv_nest_type, fv_grid_bounds_type, phys_diag_type, nudge_diag_type
 use mpp_domains_mod,       only: domain2d
 use mpp_mod,               only: input_nml_file
 use diag_manager_mod,      only: register_diag_field, register_static_field, send_data
@@ -185,14 +187,13 @@ contains
                     u, v, w, pt, q, pe, delp, peln, pkz, pdt,    &
                     ua, va, phis, grid, ptop, ak, bk, ks, ps, pk,&
                     u_srf, v_srf, ts, delz, hydrostatic,         &
-                    oro, rayf, p_ref, fv_sg_adj,                 &
+                    oro, rayf, p_ref,                            &
                     do_Held_Suarez, gridstruct, flagstruct,      &
-                    neststruct, nwat, bd, domain,                & !S-J: Need to update fv_phys call
-                    Time, phys_diag, nudge_diag, time_total)
+                    neststruct, thermostruct, nwat, bd, domain,  & !S-J: Need to update fv_phys call
+                    Time, phys_diag, nudge_diag, sg_diag, time_total)
 
     integer, INTENT(IN   ) :: npx, npy, npz
     integer, INTENT(IN   ) :: is, ie, js, je, ng, nq, nwat
-    integer, INTENT(IN   ) :: fv_sg_adj
     real, INTENT(IN) :: p_ref, ptop
     real, INTENT(IN) :: oro(is:ie,js:je)
 
@@ -222,10 +223,12 @@ contains
     real, INTENT(inout)::    ts(is:ie,js:je)
     type(phys_diag_type), intent(inout) :: phys_diag
     type(nudge_diag_type), intent(inout) :: nudge_diag
+    type(sg_diag_type) :: sg_diag
 
     type(fv_grid_type) :: gridstruct
     type(fv_flags_type) :: flagstruct
     type(fv_nest_type) :: neststruct
+    type(fv_thermo_type) :: thermostruct
     type(fv_grid_bounds_type), intent(IN) :: bd
     type(domain2d), intent(INOUT) :: domain
 
@@ -241,13 +244,15 @@ contains
     real, dimension(is:ie,npz):: dp2, pm, rdelp, u2, v2, t2, q2, du2, dv2, dt2, dq2
     real:: lcp(is:ie), den(is:ie)
     real:: rain(is:ie,js:je), rain2(is:ie), zint(is:ie,1:npz+1)
-    real:: dq, dqsdt, delm, adj, rkv, sigl, tmp, prec, rgrav
+    real:: dq, dqsdt, delm, adj, rkv, sigl, tmp, prec, rgrav, rdt
     real :: qdiag(1,1,1)
     logical moist_phys
     integer  isd, ied, jsd, jed
-    integer  i, j, k, m, n, int
+    integer  i, j, k, m, n, int, iq
     integer  theta_d, Cl, Cl2
     logical used
+    character(len=32) :: tracer_name
+    real::lat_thresh, tracer_clock
 
    call get_time (time, seconds, days)
 
@@ -307,12 +312,81 @@ contains
         enddo
      enddo
 
-     if ( fv_sg_adj > 0 ) then
-        if (is_master() .and. first_call) print*, " Calling fv_subgrid_z ", fv_sg_adj, flagstruct%n_sponge
-         call fv_subgrid_z(isd, ied, jsd, jed, is, ie, js, je, npz, min(6,nq), pdt,  &
-                           fv_sg_adj, nwat, delp, pe, peln, pkz, pt, q, ua, va,  &
-                           hydrostatic, w, delz, u_dt, v_dt, t_dt, q_dt, flagstruct%n_sponge )
-         no_tendency = .false.
+     if ( flagstruct%fv_sg_adj > 0 ) then
+        if (is_master() .and. first_call) print*, " Calling fv_subgrid_z ", flagstruct%fv_sg_adj, flagstruct%n_sponge
+
+!$OMP parallel do default(none) shared(isd,ied,jsd,jed,npz,is,ie,js,je,sphum,sg_diag,ua,va,pt,q)
+        do k=1, npz
+           if (allocated(sg_diag%u_dt)) then
+              do j=js, je
+              do i=is, ie
+                 sg_diag%u_dt(i,j,k) = 0.
+              enddo
+              enddo
+           endif
+           if (allocated(sg_diag%v_dt)) then
+              do j=js, je
+              do i=is, ie
+                 sg_diag%v_dt(i,j,k) = 0.
+              enddo
+              enddo
+           endif
+           if (allocated(sg_diag%t_dt)) then
+              do j=js, je
+              do i=is, ie
+                 sg_diag%t_dt(i,j,k) = pt(i,j,k)
+              enddo
+              enddo
+          endif
+          if (allocated(sg_diag%qv_dt)) then
+             do j=js, je
+             do i=is, ie
+                sg_diag%qv_dt(i,j,k) = q(i,j,k,sphum)
+             enddo
+             enddo
+          endif
+       enddo
+
+        !fv_sg already returns the state, not the tendency.
+        call fv_sg_SHiELD(isd, ied, jsd, jed, is, ie, js, je, npz, min(6,nq), pdt,  &
+                          flagstruct%fv_sg_adj, flagstruct%fv_sg_adj_weak, &
+                          nwat, delp, pe, peln, pkz, pt, q, ua, va,  &
+                          hydrostatic, w, delz, u_dt, v_dt, flagstruct%n_sponge )
+
+        rdt = 1./pdt
+!$OMP parallel do default(none) shared(isd,ied,jsd,jed,npz,is,ie,js,je,sphum,rdt,sg_diag,ua,va,pt,q,u_dt,v_dt)
+        do k=1, npz
+           if (allocated(sg_diag%u_dt)) then
+              do j=js, je
+              do i=is, ie
+                 sg_diag%u_dt(i,j,k) = u_dt(i,j,k)
+              enddo
+              enddo
+           endif
+           if (allocated(sg_diag%v_dt)) then
+              do j=js, je
+              do i=is, ie
+                 sg_diag%v_dt(i,j,k) = v_dt(i,j,k)
+              enddo
+              enddo
+           endif
+           if (allocated(sg_diag%t_dt)) then
+              do j=js, je
+              do i=is, ie
+                 sg_diag%t_dt(i,j,k) = (pt(i,j,k) - sg_diag%t_dt(i,j,k))*rdt
+              enddo
+              enddo
+          endif
+          if (allocated(sg_diag%qv_dt)) then
+             do j=js, je
+             do i=is, ie
+                sg_diag%qv_dt(i,j,k) = (q(i,j,k,sphum) - sg_diag%qv_dt(i,j,k))*rdt
+             enddo
+             enddo
+          endif
+       enddo
+       no_tendency = .false.
+
     endif
 
     if ( do_LS_cond ) then
@@ -419,7 +493,8 @@ contains
        endif
        call K_warm_rain(pdt, is, ie, js, je, ng, npz, nq, zvir, ua, va,   &
                         w, u_dt, v_dt, q, pt, delp, delz, &
-                        pe, peln, pk, ps, rain, Time, flagstruct%hydrostatic)
+                        pe, peln, pk, ps, rain, Time, &
+                        flagstruct%hydrostatic, thermostruct%moist_kappa)
 
        if( K_sedi_transport )  no_tendency = .false.
        if (do_terminator) then
@@ -614,6 +689,32 @@ contains
     deallocate ( v_dt )
     deallocate ( t_dt )
     deallocate ( q_dt )
+
+!LMH 7jan2020: Update PBL and other clock tracers, if present
+    tracer_clock = time_total*1.e-6
+    lat_thresh = 15.*pi/180.
+    do iq = 1, nq
+       call get_tracer_names (MODEL_ATMOS, iq, tracer_name)
+       if (trim(tracer_name) == 'sfc_clock') then
+          do j=js,je
+             do i=is,ie
+                q(i,j,npz-4:npz,iq) = tracer_clock
+             enddo
+          enddo
+       else if (trim(tracer_name) == 'itcz_clock' ) then
+          do k=1,npz
+             do j=js,je
+                do i=is,ie
+                   if (abs(gridstruct%agrid(i,j,2)) < lat_thresh .and. w(i,j,k) > 1.5) then
+                      q(i,j,npz,iq) = tracer_clock
+                   endif
+                enddo
+             enddo
+          enddo
+       endif
+    enddo
+
+
 
     first_call = .false.
 
@@ -1492,6 +1593,9 @@ endif
 ! Gray-Radiation algorithms based on Frierson, Held, and Zurita-Gotor, 2006 JAS
 ! Note: delz is negative
 ! Coded by S.-J. Lin, June 20, 2012
+! From FHZ06: A gray-radiation scheme is one "in which the optical depths are
+!  fixed and radiative fluxes are a function of temperature alone. There are
+!  therefore no cloud- or water vapor–radiative feedbacks."
       integer, intent(in):: sec
       integer, intent(in):: is, ie, km
       real, dimension(is:ie):: ts
@@ -1789,6 +1893,7 @@ endif
          'Physics U tendency', 'm/s/s', missing_value=missing_value)
     id_dvdt = register_diag_field( mod_name, 'dvdt', axes(1:3), time, &
          'Physics V tendency', 'm/s/s', missing_value=missing_value)
+    !dtdt does NOT include heating from kessler
     id_dtdt = register_diag_field( mod_name, 'dtdt', axes(1:3), time, &
          'Physics T tendency', 'K/s', missing_value=missing_value)
     id_dqdt = register_diag_field( mod_name, 'dqdt', axes(1:3), time, &
@@ -1885,12 +1990,12 @@ endif
  end function g0_sum
 
  subroutine K_warm_rain(dt, is, ie, js, je, ng, km, nq, zvir, u, v, w, u_dt, v_dt, &
-                        q, pt, dp, delz, pe, peln, pk, ps, rain, Time, hydrostatic)
+                        q, pt, dp, delz, pe, peln, pk, ps, rain, Time, hydrostatic, moist_kappa)
  type (time_type), intent(in) :: Time
  real, intent(in):: dt ! time step
  real, intent(in):: zvir
  integer, intent(in):: is, ie, js, je, km, ng, nq
- logical, intent(in) :: hydrostatic
+ logical, intent(in) :: hydrostatic, moist_kappa
  real, intent(inout), dimension(is-ng:ie+ng,js-ng:je+ng,km):: dp, pt, w, u, v, u_dt, v_dt
  real, intent(inout), dimension(is   :ie   ,js   :je   ,km):: delz
  real, intent(inout), dimension(is-ng:ie+ng,js-ng:je+ng,km,nq):: q
@@ -1996,7 +2101,7 @@ endif
        endif
          endif
       enddo
-      call kessler_imp( t1, q1, q2, q3, vr, drym, sdt, dz, km )
+      call kessler_imp( t1, q1, q2, q3, vr, drym, sdt, dz, km, moist_kappa )
 
 ! Retrive rain_flux from non-local changes in total water
        m1(1) = drym(1)*(q0(1)-(q1(1)+q2(1)+q3(1))) ! Pa * kg/kg (dry) = kg * (g/dA)
@@ -2094,7 +2199,7 @@ endif
  ! numerical techniques, implemented consistently with
  ! the FV3 dynamics. You can think of this as a "lite"
  ! version of the GFDL MP.
- subroutine kessler_imp( T, qv, qc, qr, vr, drym, dt, dz, NZ )
+ subroutine kessler_imp( T, qv, qc, qr, vr, drym, dt, dz, NZ, moist_kappa )
 ! T  - TEMPERATURE (K)
 ! QV - WATER VAPOR MIXING RATIO (GM/GM)
 ! qc - CLOUD WATER MIXING RATIO (GM/GM)
@@ -2112,6 +2217,7 @@ endif
    REAL, intent(in)   :: drym(nz), dz(nz)
    REAL, intent(inout):: T(NZ), qv(NZ), qc(NZ), qr(NZ)
    real, intent(out):: vr(nz)   ! terminal fall speed of rain * dt
+   logical, intent(in) :: moist_kappa
 ! Local:
    real, parameter:: qr_min = 1.e-8
    real, parameter:: vr_min = 1.e-3
@@ -2134,32 +2240,53 @@ endif
       qr(k) = (dz(k)*qr(k)+qr(k-1)*r(k-1)*dt*vr(k-1)/r(k)) / (dz(k)+dt*vr(k))
    enddo
 
-   do k=1,nz
-! Autoconversion and accretion rates following K&W78 Eq. 2.13a,b
-      QRPROD = qc(k) - (qc(k)-dt*max(.001*(qc(k)-.001),0.))/(1.+dt*2.2*qr(k)**.875)
-       qc(K) = qc(k) - QRPROD
-       qr(K) = qr(k) + QRPROD
-      rqr(k) = r(k)*max(qr(k), qr_min)
-      QVS =  qs_wat(T(k), rho(k), dqsdt)
-#ifdef MOIST_CAPPA
-      hlvm = (Lv0+dc_vap*T(k)) / (cv_air+qv(k)*cv_vap+(qc(k)+qr(k))*c_liq)
-#else
-      hlvm = hlv / cv_air
-#endif
-      PROD = (qv(k)-QVS) / (1.+dqsdt*hlvm)
-! Evaporation rate following K&W78 Eq3. 3.8-3.10
-      ERN = min(dt*(((1.6+124.9*rqr(k)**.2046)   &
-          *rqr(k)**.525)/(2.55E6*pc(K)           &
-          /(3.8 *QVS)+5.4E5))*(DIM(QVS,qv(K))    &
-          /(r(k)*QVS)),max(-PROD-qc(k),0.), qr(k))
-! Saturation adjustment following K&W78 Eq.2.14a,b
-        dq = max(PROD, -qc(k))
-        T(k) = T(k) + hlvm*(dq-ERN)
-! The following conserves total water
-       qv(K) = qv(K) - dq + ERN
-       qc(K) = qc(K) + dq
-       qr(K) = qr(K) - ERN
-   enddo
+   if (moist_kappa) then
+      do k=1,nz
+   ! Autoconversion and accretion rates following K&W78 Eq. 2.13a,b
+         QRPROD = qc(k) - (qc(k)-dt*max(.001*(qc(k)-.001),0.))/(1.+dt*2.2*qr(k)**.875)
+          qc(K) = qc(k) - QRPROD
+          qr(K) = qr(k) + QRPROD
+         rqr(k) = r(k)*max(qr(k), qr_min)
+         QVS =  qs_wat(T(k), rho(k), dqsdt)
+         hlvm = (Lv0+dc_vap*T(k)) / (cv_air+qv(k)*cv_vap+(qc(k)+qr(k))*c_liq) !moist_kappa calc
+         PROD = (qv(k)-QVS) / (1.+dqsdt*hlvm)
+   ! Evaporation rate following K&W78 Eq3. 3.8-3.10
+         ERN = min(dt*(((1.6+124.9*rqr(k)**.2046)   &
+             *rqr(k)**.525)/(2.55E6*pc(K)           &
+             /(3.8 *QVS)+5.4E5))*(DIM(QVS,qv(K))    &
+             /(r(k)*QVS)),max(-PROD-qc(k),0.), qr(k))
+   ! Saturation adjustment following K&W78 Eq.2.14a,b
+           dq = max(PROD, -qc(k))
+           T(k) = T(k) + hlvm*(dq-ERN)
+   ! The following conserves total water
+          qv(K) = qv(K) - dq + ERN
+          qc(K) = qc(K) + dq
+          qr(K) = qr(K) - ERN
+      enddo
+   else
+      do k=1,nz
+   ! Autoconversion and accretion rates following K&W78 Eq. 2.13a,b
+         QRPROD = qc(k) - (qc(k)-dt*max(.001*(qc(k)-.001),0.))/(1.+dt*2.2*qr(k)**.875)
+          qc(K) = qc(k) - QRPROD
+          qr(K) = qr(k) + QRPROD
+         rqr(k) = r(k)*max(qr(k), qr_min)
+         QVS =  qs_wat(T(k), rho(k), dqsdt)
+         hlvm = hlv / cv_air
+         PROD = (qv(k)-QVS) / (1.+dqsdt*hlvm)
+   ! Evaporation rate following K&W78 Eq3. 3.8-3.10
+         ERN = min(dt*(((1.6+124.9*rqr(k)**.2046)   &
+             *rqr(k)**.525)/(2.55E6*pc(K)           &
+             /(3.8 *QVS)+5.4E5))*(DIM(QVS,qv(K))    &
+             /(r(k)*QVS)),max(-PROD-qc(k),0.), qr(k))
+   ! Saturation adjustment following K&W78 Eq.2.14a,b
+           dq = max(PROD, -qc(k))
+           T(k) = T(k) + hlvm*(dq-ERN)
+   ! The following conserves total water
+          qv(K) = qv(K) - dq + ERN
+          qc(K) = qc(K) + dq
+          qr(K) = qr(K) - ERN
+      enddo
+   endif !moist cappa
 
  end subroutine kessler_imp
 

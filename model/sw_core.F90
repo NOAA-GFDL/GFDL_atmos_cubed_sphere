@@ -497,7 +497,7 @@ module sw_core_mod
                    diss_est, zvir, sphum, nq, q, k, km, inline_q,  &
                    dt, hord_tr, hord_mt, hord_vt, hord_tm, hord_dp, nord,   &
                    nord_v, nord_w, nord_t, dddmp, d2_bg, d4_bg, damp_v, damp_w, &
-                   damp_t, d_con, hydrostatic, gridstruct, flagstruct, bd)
+                   damp_t, d_con, hydrostatic, gridstruct, flagstruct, use_cond, bd)
 
       integer, intent(IN):: hord_tr, hord_mt, hord_vt, hord_tm, hord_dp
       integer, intent(IN):: nord   ! nord=1 divergence damping; (del-4) or 3 (del-8)
@@ -507,9 +507,10 @@ module sw_core_mod
       integer, intent(IN):: sphum, nq, k, km
       real   , intent(IN):: dt, dddmp, d2_bg, d4_bg, d_con
       real   , intent(IN):: zvir
-      real,    intent(in):: damp_v, damp_w, damp_t, kgb
+      real   , intent(IN):: damp_v, damp_w, damp_t, kgb
+      logical, intent(IN):: use_cond
       type(fv_grid_bounds_type), intent(IN) :: bd
-      real, intent(inout):: divg_d(bd%isd:bd%ied+1,bd%jsd:bd%jed+1) ! divergence
+      real, intent(INOUT):: divg_d(bd%isd:bd%ied+1,bd%jsd:bd%jed+1) ! divergence
       real, intent(IN), dimension(bd%isd:bd%ied,  bd%jsd:bd%jed):: z_rat
       real, intent(INOUT), dimension(bd%isd:bd%ied,  bd%jsd:bd%jed):: delp, pt, ua, va
       real, intent(INOUT), dimension(bd%isd:      ,  bd%jsd:      ):: w, q_con
@@ -557,8 +558,9 @@ module sw_core_mod
 
       real :: dt2, dt4, dt5, dt6
       real :: damp, damp2, damp4, dd8, u2, v2, du2, dv2
-      real :: u_lon
+      real :: u_lon, tmp
       integer :: i,j, is2, ie1, js2, je1, n, nt, n2, iq
+      logical :: prevent_diss_cooling
 
       real, pointer, dimension(:,:) :: area, area_c, rarea
 
@@ -618,6 +620,8 @@ module sw_core_mod
       se_corner = gridstruct%se_corner
       nw_corner = gridstruct%nw_corner
       ne_corner = gridstruct%ne_corner
+
+      prevent_diss_cooling = flagstruct%prevent_diss_cooling
 
 #ifdef SW_DYNAMICS
       if ( test_case == 1 ) then
@@ -945,20 +949,36 @@ module sw_core_mod
 
         if ( .not. hydrostatic ) then
             if ( damp_w>1.E-5 ) then
-                 dd8 = kgb*abs(dt)
-                 damp4 = (damp_w*gridstruct%da_min_c)**(nord_w+1)
-                 call del6_vt_flux(nord_w, npx, npy, damp4, w, wk, fx2, fy2, gridstruct, bd)
-                do j=js,je
-                   do i=is,ie
-                      dw(i,j) = (fx2(i,j)-fx2(i+1,j)+fy2(i,j)-fy2(i,j+1))*rarea(i,j)
-! 0.5 * [ (w+dw)**2 - w**2 ] = w*dw + 0.5*dw*dw
-!                   heat_source(i,j) = -d_con*dw(i,j)*(w(i,j)+0.5*dw(i,j))
-                    heat_source(i,j) = dd8 - dw(i,j)*(w(i,j)+0.5*dw(i,j))
+               dd8 = kgb*abs(dt)
+               damp4 = (damp_w*gridstruct%da_min_c)**(nord_w+1)
+               call del6_vt_flux(nord_w, npx, npy, damp4, w, wk, fx2, fy2, gridstruct, bd)
+               if (prevent_diss_cooling) then
+                  do j=js,je
+                  do i=is,ie
+                    dw(i,j) = (fx2(i,j)-fx2(i+1,j)+fy2(i,j)-fy2(i,j+1))*rarea(i,j)
+                    ! 0.5 * [ (w+dw)**2 - w**2 ] = w*dw + 0.5*dw*dw
+                    !limiter to prevent "dissipative cooling"
+                    !physically `tmp` is negative.
+                    tmp = dw(i,j)*(w(i,j)+0.5*dw(i,j))
+                    heat_source(i,j) = dd8 - min(0.,tmp)
                     if ( flagstruct%do_diss_est ) then
-                       diss_est(i,j) = heat_source(i,j)
+                       diss_est(i,j) = dd8 - tmp
                     endif
-                   enddo
+                 enddo
+                 enddo
+              else
+                 do j=js,je
+                 do i=is,ie
+                   dw(i,j) = (fx2(i,j)-fx2(i+1,j)+fy2(i,j)-fy2(i,j+1))*rarea(i,j)
+                   ! 0.5 * [ (w+dw)**2 - w**2 ] = w*dw + 0.5*dw*dw
+                   heat_source(i,j) = dd8 - dw(i,j)*(w(i,j)+0.5*dw(i,j))
+                   tmp = dw(i,j)*(w(i,j)+0.5*dw(i,j))
+                   if ( flagstruct%do_diss_est ) then
+                      diss_est(i,j) = heat_source(i,j)
+                   endif
                 enddo
+                enddo
+              endif
            endif
            call fv_tp_2d(w, crx_adv,cry_adv, npx, npy, hord_vt, gx, gy, xfx_adv, yfx_adv, &
                           gridstruct, bd, ra_x, ra_y, flagstruct%lim_fac, mfx=fx, mfy=fy)
@@ -969,15 +989,15 @@ module sw_core_mod
            enddo
         endif
 
-#ifdef USE_COND
+        if (use_cond) then
            call fv_tp_2d(q_con, crx_adv,cry_adv, npx, npy, hord_dp, gx, gy,  &
                 xfx_adv,yfx_adv, gridstruct, bd, ra_x, ra_y, flagstruct%lim_fac, mfx=fx, mfy=fy, mass=delp, nord=nord_t, damp_c=damp_t)
-            do j=js,je
-               do i=is,ie
-                  q_con(i,j) = delp(i,j)*q_con(i,j) + (gx(i,j)-gx(i+1,j)+gy(i,j)-gy(i,j+1))*rarea(i,j)
-               enddo
-            enddo
-#endif
+           do j=js,je
+              do i=is,ie
+                 q_con(i,j) = delp(i,j)*q_con(i,j) + (gx(i,j)-gx(i+1,j)+gy(i,j)-gy(i,j+1))*rarea(i,j)
+              enddo
+           enddo
+        endif
 
 !    if ( inline_q .and. zvir>0.01 ) then
 !       do j=jsd,jed
@@ -1254,13 +1274,13 @@ module sw_core_mod
         endif
 
      endif
-#ifdef USE_COND
-     do j=js,je
+     if (use_cond) then
+        do j=js,je
         do i=is,ie
            q_con(i,j) = q_con(i,j)/delp(i,j)
         enddo
-     enddo
-#endif
+        enddo
+     endif
 
 !-----------------------------
 ! Compute divergence damping
@@ -1498,6 +1518,8 @@ module sw_core_mod
         vt=0.
    endif
 
+   !estimate dissipation for dissipative heating
+   ! or dissipation estimate diagnostic
    if ( d_con > 1.e-5 .or. flagstruct%do_diss_est ) then
       do j=js,je+1
          do i=is,ie
@@ -1517,7 +1539,30 @@ module sw_core_mod
 ! Heating due to damping:
 !----------------------------------
       damp = 0.25*d_con
-      do j=js,je
+      if (prevent_diss_cooling) then
+         do j=js,je
+         do i=is,ie
+            u2 = fy(i,j) + fy(i,j+1)
+           du2 = ub(i,j) + ub(i,j+1)
+            v2 = fx(i,j) + fx(i+1,j)
+           dv2 = vb(i,j) + vb(i+1,j)
+! Total energy conserving:
+! Convert lost KE due to divergence damping to "heat"
+           tmp = rsin2(i,j)*((ub(i,j)**2 + ub(i,j+1)**2 + vb(i,j)**2 + vb(i+1,j)**2)  &
+                              + 2.*(gy(i,j)+gy(i,j+1)+gx(i,j)+gx(i+1,j))   &
+                              - cosa_s(i,j)*(u2*dv2 + v2*du2 + du2*dv2))
+           if (d_con > 1.e-5) then
+              !limiter to prevent dissipative cooling
+              ! again this quantity should physically be negative
+              heat_source(i,j) = delp(i,j)*(heat_source(i,j) - damp*min(0.,tmp) )
+           endif
+           if (flagstruct%do_diss_est) then
+             diss_est(i,j) = diss_est(i,j)-tmp
+           endif
+         enddo
+         enddo
+      else
+         do j=js,je
          do i=is,ie
             u2 = fy(i,j) + fy(i,j+1)
            du2 = ub(i,j) + ub(i,j+1)
@@ -1532,12 +1577,13 @@ module sw_core_mod
            if (flagstruct%do_diss_est) then
              diss_est(i,j) = diss_est(i,j)-rsin2(i,j)*( &
                   (ub(i,j)**2 + ub(i,j+1)**2 + vb(i,j)**2 + vb(i+1,j)**2)  &
-                              + 2.*(gy(i,j)+gy(i,j+1)+gx(i,j)+gx(i+1,j))   &
-                              - cosa_s(i,j)*(u2*dv2 + v2*du2 + du2*dv2))
-           endif
+                                + 2.*(gy(i,j)+gy(i,j+1)+gx(i,j)+gx(i+1,j))   &
+                               - cosa_s(i,j)*(u2*dv2 + v2*du2 + du2*dv2))
+          endif
          enddo
-      enddo
-   endif
+         enddo
+      endif !prevent_diss_cooling
+   endif !  d_con > 1.e-5 .or. flagstruct%do_diss_est 
 
 ! Add diffusive fluxes to the momentum equation:
    if ( damp_v>1.E-5 ) then
@@ -2299,7 +2345,18 @@ end subroutine divergence_corner_nest
               smt5(i) = 3.*abs(b0(i)) < abs(bl(i)-br(i))
            enddo
         endif
-
+!WMP
+! fix edge issues
+        if ( (.not. bounded_domain) .and. grid_type < 3) then
+           if( is==1 ) then
+              smt5(0) = bl(0)*br(0) < 0.
+              smt5(1) = bl(1)*br(1) < 0.
+           endif
+           if( (ie+1)==npx ) then
+              smt5(npx-1) = bl(npx-1)*br(npx-1) < 0.
+              smt5(npx ) = bl(npx )*br(npx ) < 0.
+           endif
+        endif
 !DEC$ VECTOR ALWAYS
         do i=is,ie+1
            if( c(i,j)>0. ) then
@@ -2707,6 +2764,25 @@ end subroutine divergence_corner_nest
               smt6(i,j) = 3.*abs(b0(i,j)) < abs(bl(i,j)-br(i,j))
            enddo
         enddo
+
+!WMP
+! fix edge issues
+        if ( (.not.bounded_domain) .and. grid_type < 3) then
+           if( js==1 ) then
+              do i=is,ie+1
+                 smt6(i,0) = bl(i,0)*br(i,0) < 0.
+                 smt6(i,1) = bl(i,1)*br(i,1) < 0.
+              enddo
+           endif
+           if( (je+1)==npy ) then
+              do i=is,ie+1
+                 smt6(i,npy-1) = bl(i,npy-1)*br(i,npy-1) < 0.
+                 smt6(i,npy ) = bl(i,npy )*br(i,npy ) < 0.
+              enddo
+           endif
+        endif
+
+
         do j=js,je+1
 !DEC$ VECTOR ALWAYS
         do i=is,ie+1

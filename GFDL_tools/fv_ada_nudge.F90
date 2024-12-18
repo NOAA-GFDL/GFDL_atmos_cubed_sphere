@@ -52,7 +52,7 @@ module fv_ada_nudge_mod
  use fv_grid_utils_mod, only: latlon2xyz, vect_cross, normalize_vect
  use fv_diagnostics_mod,only: prt_maxmin, fv_time
  use tp_core_mod,       only: copy_corners
- use fv_mapz_mod,       only: mappm
+ use fv_operators_mod,  only: mappm
  use fv_mp_mod,         only: mp_reduce_sum, mp_reduce_min, mp_reduce_max, is_master
  use fv_timing_mod,     only: timing_on, timing_off
 
