@@ -71,6 +71,11 @@ module tp_core_mod
 !   q(i+0.5) = p1*(q(i-1)+q(i)) + p2*(q(i-2)+q(i+1))
 ! integer:: is, ie, js, je, isd, ied, jsd, jed
 
+  !List of schemes for tracer setup
+  integer, public, parameter :: tp_mono_schemes(1) = (/8/)
+  integer, public, parameter :: tp_PD_schemes(5) = (/-5, 7, 9, 12, 13/)
+  integer, public, parameter :: tp_unlim_schemes(8) = (/1, 2, 3, 4, 5, 6, 10, 11/)
+  integer, public, parameter :: tp_valid_schemes(14) = (/-5, 1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12, 13/)
 !
 !EOP
 !-----------------------------------------------------------------------
@@ -525,6 +530,19 @@ contains
         enddo
       endif
 
+!WMP
+! fix edge issues
+      if ( (.not. bounded_domain) .and. grid_type < 3) then
+         if( is==1 ) then
+            smt5(0) = bl(0)*br(0) < 0.
+            smt5(1) = bl(1)*br(1) < 0.
+         endif
+         if( (ie+1)==npx ) then
+            smt5(npx-1) = bl(npx-1)*br(npx-1) < 0.
+            smt5(npx ) = bl(npx )*br(npx ) < 0.
+         endif
+      endif
+
 !DEC$ VECTOR ALWAYS
       do i=is,ie+1
          if ( c(i,j) > 0. ) then
@@ -916,6 +934,23 @@ if ( jord < 7 ) then
                 smt5(i,j) = 3.*abs(b0(i,j)) < abs(bl(i,j)-br(i,j))
              enddo
           enddo
+       endif
+
+!WMP
+! fix edge issues
+       if ( (.not. bounded_domain) .and. grid_type < 3) then
+          if( js==1 ) then
+             do i=ifirst,ilast
+                smt5(i,0) = bl(i,0)*br(i,0) < 0.
+                smt5(i,1) = bl(i,1)*br(i,1) < 0.
+             enddo
+          endif
+          if( (je+1)==npy ) then
+             do i=ifirst,ilast
+                smt5(i,npy-1) = bl(i,npy-1)*br(i,npy-1) < 0.
+                smt5(i,npy ) = bl(i,npy )*br(i,npy ) < 0.
+             enddo
+          endif
        endif
 
        do j=js,je+1

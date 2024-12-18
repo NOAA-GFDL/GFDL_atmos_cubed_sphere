@@ -82,7 +82,7 @@ use fv_cmip_diag_mod,   only: fv_cmip_diag_init, fv_cmip_diag, fv_cmip_diag_end
 use fv_restart_mod,     only: fv_restart, fv_write_restart
 use fv_timing_mod,      only: timing_on, timing_off, timing_init, timing_prt
 use fv_mp_mod,          only: is_master
-use fv_sg_mod,          only: fv_subgrid_z
+use fv_sg_mod,          only: fv_sg_AM5
 use fv_update_phys_mod, only: fv_update_phys
 use fv_io_mod,          only: fv_io_register_nudge_restart
 use fv_regional_mod,    only: start_regional_restart, read_new_bc_data
@@ -200,7 +200,7 @@ character(len=20)   :: mod_name = 'GFDL/atmosphere_mod'
   type(fv_atmos_type), allocatable, target :: Atm(:)
 
   real, parameter:: w0_big = 60.  ! to prevent negative w-tracer diffusion
-!---dynamics tendencies for use in fv_subgrid_z and during fv_update_phys
+!---dynamics tendencies for use in fv_sg and during fv_update_phys
   real, allocatable, dimension(:,:,:)   :: u_dt, v_dt, t_dt, qv_dt
   real, allocatable, dimension(:,:,:,:) :: q_dt
   real, allocatable :: pref(:,:), dum1d(:)
@@ -678,11 +678,11 @@ contains
                       Atm(n)%omga, Atm(n)%ua, Atm(n)%va, Atm(n)%uc,        &
                       Atm(n)%vc, Atm(n)%ak, Atm(n)%bk, Atm(n)%mfx,         &
                       Atm(n)%mfy, Atm(n)%cx, Atm(n)%cy, Atm(n)%ze0,        &
-                      Atm(n)%flagstruct%hybrid_z,                          &
-                      Atm(n)%gridstruct, Atm(n)%flagstruct,                &
-                      Atm(n)%neststruct, Atm(n)%idiag, Atm(n)%bd,          &
+                      Atm(n)%flagstruct%hybrid_z, Atm(n)%gridstruct,       &
+                      Atm(n)%flagstruct, Atm(n)%neststruct,                &
+                      Atm(n)%thermostruct, Atm(n)%idiag, Atm(n)%bd,        &
                       Atm(n)%parent_grid, Atm(n)%domain, Atm(n)%inline_mp, &
-                      Atm(n)%diss_est)
+                      Atm(n)%heat_source, Atm(n)%diss_est)
     call timing_off('FV_DYNAMICS')
 
     if (ngrids > 1 .and. (psc < p_split .or. p_split < 0)) then
@@ -753,10 +753,10 @@ contains
 
     call timing_on('FV_SUBGRID_Z')
 
-    u_dt(:,:,:)   = 0. ! These are updated by fv_subgrid_z
+    u_dt(:,:,:)   = 0. ! These are updated by fv_sg_AM5
     v_dt(:,:,:)   = 0.
 ! t_dt is used for two different purposes:
-!    1 - to calculate the diagnostic temperature tendency from fv_subgrid_z
+!    1 - to calculate the diagnostic temperature tendency from fv_sg_AM5
 !    2 - as an accumulator for the IAU increment and physics tendency
 ! because of this, it will need to be zeroed out after the diagnostic is calculated
     t_dt(:,:,:)   = Atm(n)%pt(isc:iec,jsc:jec,:)
@@ -771,7 +771,7 @@ contains
       if ( w_diff /= NO_TRACER ) then
         nt_dyn = nq - 1
       endif
-      call fv_subgrid_z(isd, ied, jsd, jed, isc, iec, jsc, jec, Atm(n)%npz, &
+      call fv_sg_AM5(isd, ied, jsd, jed, isc, iec, jsc, jec, Atm(n)%npz, &
                         nt_dyn, dt_atmos, Atm(n)%flagstruct%fv_sg_adj,      &
                         Atm(n)%flagstruct%nwat, Atm(n)%delp, Atm(n)%pe,     &
                         Atm(n)%peln, Atm(n)%pkz, Atm(n)%pt, Atm(n)%q,       &
@@ -1184,9 +1184,9 @@ contains
                      Atm(mygrid)%q_con, Atm(mygrid)%omga, Atm(mygrid)%ua, Atm(mygrid)%va, Atm(mygrid)%uc, Atm(mygrid)%vc, &
                      Atm(mygrid)%ak, Atm(mygrid)%bk, Atm(mygrid)%mfx, Atm(mygrid)%mfy,                    &
                      Atm(mygrid)%cx, Atm(mygrid)%cy, Atm(mygrid)%ze0, Atm(mygrid)%flagstruct%hybrid_z,    &
-                     Atm(mygrid)%gridstruct, Atm(mygrid)%flagstruct,                            &
-                     Atm(mygrid)%neststruct, Atm(mygrid)%idiag, Atm(mygrid)%bd, Atm(mygrid)%parent_grid,  &
-                     Atm(mygrid)%domain, Atm(mygrid)%inline_mp, Atm(n)%diss_est)
+                     Atm(mygrid)%gridstruct, Atm(mygrid)%flagstruct, Atm(mygrid)%neststruct,              &
+                     Atm(mygrid)%thermostruct, Atm(mygrid)%idiag, Atm(mygrid)%bd, Atm(mygrid)%parent_grid,  &
+                     Atm(mygrid)%domain, Atm(mygrid)%inline_mp, Atm(mygrid)%heat_source, Atm(mygrid)%diss_est)
 ! Backward
     call fv_dynamics(Atm(mygrid)%npx, Atm(mygrid)%npy, npz,  nq, Atm(mygrid)%ng, -dt_atmos, 0.,      &
                      Atm(mygrid)%flagstruct%fill, Atm(mygrid)%flagstruct%reproduce_sum, kappa, cp_air, zvir,  &
@@ -1198,9 +1198,9 @@ contains
                      Atm(mygrid)%q_con, Atm(mygrid)%omga, Atm(mygrid)%ua, Atm(mygrid)%va, Atm(mygrid)%uc, Atm(mygrid)%vc, &
                      Atm(mygrid)%ak, Atm(mygrid)%bk, Atm(mygrid)%mfx, Atm(mygrid)%mfy,                    &
                      Atm(mygrid)%cx, Atm(mygrid)%cy, Atm(mygrid)%ze0, Atm(mygrid)%flagstruct%hybrid_z,    &
-                     Atm(mygrid)%gridstruct, Atm(mygrid)%flagstruct,                            &
-                     Atm(mygrid)%neststruct, Atm(mygrid)%idiag, Atm(mygrid)%bd, Atm(mygrid)%parent_grid,  &
-                     Atm(mygrid)%domain, Atm(mygrid)%inline_mp, Atm(n)%diss_est)
+                     Atm(mygrid)%gridstruct, Atm(mygrid)%flagstruct, Atm(mygrid)%neststruct,              &
+                     Atm(mygrid)%thermostruct, Atm(mygrid)%idiag, Atm(mygrid)%bd, Atm(mygrid)%parent_grid,  &
+                     Atm(mygrid)%domain, Atm(mygrid)%inline_mp, Atm(mygrid)%heat_source, Atm(mygrid)%diss_est)
 ! Nudging back to IC
 !$omp parallel do default (none) &
 !$omp              shared (pref, npz, jsc, jec, isc, iec, n, sphum, Atm, u0, v0, t0, dp0, xt, zvir, mygrid, nudge_dz, dz0) &
@@ -1270,9 +1270,9 @@ contains
                      Atm(mygrid)%q_con, Atm(mygrid)%omga, Atm(mygrid)%ua, Atm(mygrid)%va, Atm(mygrid)%uc, Atm(mygrid)%vc, &
                      Atm(mygrid)%ak, Atm(mygrid)%bk, Atm(mygrid)%mfx, Atm(mygrid)%mfy,                    &
                      Atm(mygrid)%cx, Atm(mygrid)%cy, Atm(mygrid)%ze0, Atm(mygrid)%flagstruct%hybrid_z,    &
-                     Atm(mygrid)%gridstruct, Atm(mygrid)%flagstruct,                            &
-                     Atm(mygrid)%neststruct, Atm(mygrid)%idiag, Atm(mygrid)%bd, Atm(mygrid)%parent_grid,  &
-                     Atm(mygrid)%domain, Atm(mygrid)%inline_mp, Atm(n)%diss_est)
+                     Atm(mygrid)%gridstruct, Atm(mygrid)%flagstruct, Atm(mygrid)%neststruct,              &
+                     Atm(mygrid)%thermostruct, Atm(mygrid)%idiag, Atm(mygrid)%bd, Atm(mygrid)%parent_grid,  &
+                     Atm(mygrid)%domain, Atm(mygrid)%inline_mp, Atm(mygrid)%heat_source, Atm(mygrid)%diss_est)
 ! Forward call
     call fv_dynamics(Atm(mygrid)%npx, Atm(mygrid)%npy, npz,  nq, Atm(mygrid)%ng, dt_atmos, 0.,      &
                      Atm(mygrid)%flagstruct%fill, Atm(mygrid)%flagstruct%reproduce_sum, kappa, cp_air, zvir,  &
@@ -1284,9 +1284,9 @@ contains
                      Atm(mygrid)%q_con, Atm(mygrid)%omga, Atm(mygrid)%ua, Atm(mygrid)%va, Atm(mygrid)%uc, Atm(mygrid)%vc, &
                      Atm(mygrid)%ak, Atm(mygrid)%bk, Atm(mygrid)%mfx, Atm(mygrid)%mfy,                    &
                      Atm(mygrid)%cx, Atm(mygrid)%cy, Atm(mygrid)%ze0, Atm(mygrid)%flagstruct%hybrid_z,    &
-                     Atm(mygrid)%gridstruct, Atm(mygrid)%flagstruct,                            &
-                     Atm(mygrid)%neststruct, Atm(mygrid)%idiag, Atm(mygrid)%bd, Atm(mygrid)%parent_grid,  &
-                     Atm(mygrid)%domain, Atm(mygrid)%inline_mp, Atm(n)%diss_est)
+                     Atm(mygrid)%gridstruct, Atm(mygrid)%flagstruct, Atm(mygrid)%neststruct,              &
+                     Atm(mygrid)%thermostruct, Atm(mygrid)%idiag, Atm(mygrid)%bd, Atm(mygrid)%parent_grid, &
+                     Atm(mygrid)%domain, Atm(mygrid)%inline_mp, Atm(mygrid)%heat_source, Atm(mygrid)%diss_est)
 ! Nudging back to IC
 !$omp parallel do default (none) &
 !$omp              shared (nudge_dz,npz, jsc, jec, isc, iec, n, sphum, Atm, u0, v0, t0, dz0, dp0, xt, zvir, mygrid) &
@@ -1370,12 +1370,9 @@ contains
                           Physics%block(nb)%t, Physics%block(nb)%q(:,:,:,Physics%control%sphum), &
                           Physics%block(nb)%p_full, Physics%block(nb)%p_half, &
                           Physics%block(nb)%z_full, Physics%block(nb)%z_half, &
-#ifdef USE_COND
-                          _DBL_(_RL_(Atm(mygrid)%q_con(ibs:ibe,jbs:jbe,:))), &
-#else
-                          _DBL_(_RL_(Atm(mygrid)%q_con)), &
-#endif
-                          Physics%control%phys_hydrostatic, Physics%control%do_uni_zfull) !miz
+                          _DBL_(_RL_(Atm(mygrid)%q_con)), & !This should work; indices are same on block as on full PE
+                          Physics%control%phys_hydrostatic, Physics%control%do_uni_zfull, & !miz
+                          Atm(mygrid)%thermostruct%use_cond)
 
      if (PRESENT(Physics_tendency)) then
 !--- copy the dynamics tendencies into the physics tendencies
@@ -1425,12 +1422,9 @@ contains
                           Radiation%block(nb)%t, Radiation%block(nb)%q(:,:,:,Radiation%control%sphum), &
                           Radiation%block(nb)%p_full, Radiation%block(nb)%p_half, &
                           Radiation%block(nb)%z_full, Radiation%block(nb)%z_half, &
-#ifdef USE_COND
-                          _DBL_(_RL_(Atm(mygrid)%q_con(ibs:ibe,jbs:jbe,:))), &
-#else
-                          _DBL_(_RL_(Atm(mygrid)%q_con)), &
-#endif
-                          Radiation%control%phys_hydrostatic, Radiation%control%do_uni_zfull) !miz
+                          _DBL_(_RL_(Atm(mygrid)%q_con)), & !This should work; indices are same on block as on full PE
+                          Radiation%control%phys_hydrostatic, Radiation%control%do_uni_zfull, & !miz
+                          Atm(mygrid)%thermostruct%use_cond)
    enddo
 
 !----------------------------------------------------------------------
@@ -1449,26 +1443,30 @@ contains
 
 
  subroutine fv_compute_p_z (npz, phis, pe, peln, delp, delz, pt, q_sph, &
-                            p_full, p_half, z_full, z_half, q_con, hydrostatic, do_uni_zfull) !miz
+                            p_full, p_half, z_full, z_half, q_con, hydrostatic, &
+                            use_cond, do_uni_zfull) !miz
     integer, intent(in)  :: npz
     real(kind=r8_kind), dimension(:,:),   intent(in)  :: phis
     real(kind=r8_kind), dimension(:,:,:), intent(in)  :: pe, peln, delp, delz, q_con, pt, q_sph
     real(kind=r8_kind), dimension(:,:,:), intent(out) :: p_full, p_half, z_full, z_half
-    logical, intent(in)  :: hydrostatic, do_uni_zfull !miz
+    logical, intent(in)  :: hydrostatic, do_uni_zfull, use_cond !miz
 !--- local variables
     integer i,j,k,isiz,jsiz
     real    tvm
     real(kind=r8_kind)    :: zvir, rrg, ginv
-#ifdef USE_COND
-    real(kind=r8_kind), dimension(size(pe,1),size(pe,3),size(pe,2)):: peg, pelng
+    real(kind=r8_kind), allocatable, dimension(:,:,:) :: peg, pelng
     real(kind=r8_kind):: dlg
-#endif
 
     isiz=size(phis,1)
     jsiz=size(phis,2)
     zvir = rvgas/rdgas - 1.
     ginv = 1./ grav
     rrg  = rdgas / grav
+
+    if (use_cond) then
+       allocate(peg(size(pe,1),size(pe,3),size(pe,2)))
+       allocate(pelng(size(pe,1),size(pe,3),size(pe,2)))
+    endif
 
 !----------------------------------------------------
 ! Compute pressure and height at full and half levels
@@ -1485,36 +1483,43 @@ contains
 
 !--------- Hydrostatic option ----------------------------------------------
     if (hydrostatic ) then
-#ifdef USE_COND
-    do j=1,jsiz
-       do i=1,isiz
-          peg(i,j,1) = pe(i,1,j)
-       enddo
-    end do
-    do k=2,npz+1
-       do j=1,jsiz
+       if (use_cond) then
+          do j=1,jsiz
+          do i=1,isiz
+             peg(i,j,1) = pe(i,1,j)
+          enddo
+          end do
+          do k=2,npz+1
+          do j=1,jsiz
           do i=1,isiz
              peg(i,j,k) = peg(i,j,k-1) + delp(i,j,k-1)*(1.-q_con(i,j,k-1))
           enddo
-       enddo
-    enddo
-#endif
-      do k=npz,1,-1
-        do j=1,jsiz
+          enddo
+          enddo
+
+          do k=npz,1,-1
+          do j=1,jsiz
           do i=1,isiz
             tvm = rrg*pt(i,j,k)*(1.+zvir*q_sph(i,j,k))
             p_full(i,j,k) = delp(i,j,k)/(peln(i,k+1,j)-peln(i,k,j))
-#ifdef USE_COND
             dlg = log(peg(i,j,k+1)/peg(i,j,k))
             z_full(i,j,k) = z_half(i,j,k+1) + tvm*(1.-peg(i,j,k)*dlg/(peg(i,j,k+1)-peg(i,j,k)))
             z_half(i,j,k) = z_half(i,j,k+1) + tvm*dlg
-#else
+          enddo
+          enddo
+          enddo
+       else
+          do k=npz,1,-1
+          do j=1,jsiz
+          do i=1,isiz
+            tvm = rrg*pt(i,j,k)*(1.+zvir*q_sph(i,j,k))
+            p_full(i,j,k) = delp(i,j,k)/(peln(i,k+1,j)-peln(i,k,j))
             z_full(i,j,k) = z_half(i,j,k+1) + tvm*(1.-p_half(i,j,k)/p_full(i,j,k))
             z_half(i,j,k) = z_half(i,j,k+1) + tvm*(peln(i,k+1,j)-peln(i,k,j))
-#endif
           enddo
-        enddo
-      enddo
+          enddo
+          enddo
+       endif
     else
 !--------- Non-Hydrostatic option ------------------------------------------
       do k=npz,1,-1
@@ -1532,6 +1537,9 @@ contains
          z_full(:,:,k)=0.5*(z_half(:,:,k)+z_half(:,:,k+1))
        enddo
     endif
+
+    if (use_cond) deallocate(peg,pelng)
+
   end subroutine fv_compute_p_z
 
 

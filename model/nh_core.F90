@@ -48,8 +48,9 @@ CONTAINS
                           isd, ied, jsd, jed, akap, cappa, cp,     &
                           ptop, zs, q_con, w,  delz, pt,  &
                           delp, zh, pe, ppe, pk3, pk, peln, &
-                          ws, scale_m,  p_fac, a_imp, &
-                          use_logp, last_call, fp_out, d2bg_zq, debug, fast_tau_w_sec)
+                          ws, p_fac, a_imp, &
+                          use_logp, use_cond, moist_kappa, last_call, &
+                          fp_out, d2bg_zq, debug, fast_tau_w_sec)
 !--------------------------------------------
 ! !OUTPUT PARAMETERS
 ! Ouput: gz: grav*height at edges
@@ -59,9 +60,9 @@ CONTAINS
    integer, intent(in):: ms, is, ie, js, je, km, ng
    integer, intent(in):: isd, ied, jsd, jed
    real, intent(in):: dt         ! the BIG horizontal Lagrangian time step
-   real, intent(in):: akap, cp, ptop, p_fac, a_imp, scale_m, d2bg_zq, fast_tau_w_sec
+   real, intent(in):: akap, cp, ptop, p_fac, a_imp, d2bg_zq, fast_tau_w_sec
    real, intent(in):: zs(isd:ied,jsd:jed)
-   logical, intent(in):: last_call, use_logp, fp_out, debug
+   logical, intent(in):: last_call, use_logp, fp_out, use_cond, moist_kappa, debug
    real, intent(in):: ws(is:ie,js:je)
    real, intent(in), dimension(isd:,jsd:,1:):: q_con, cappa
    real, intent(in), dimension(isd:ied,jsd:jed,km):: delp, pt
@@ -78,6 +79,7 @@ CONTAINS
   real, dimension(is:ie,km+1)::pem, pe2, peln2, peg, pelng
   real gama, rgrav, ptk, peln1
   integer i, j, k
+  real, parameter :: scale_m = 0.0 ! diff_z = scale_m**2 * 0.25
 
     gama = 1./(1.-akap)
    rgrav = 1./grav
@@ -85,60 +87,84 @@ CONTAINS
      ptk = exp(akap*peln1)
 
 !$OMP parallel do default(none) shared(is,ie,js,je,km,delp,ptop,peln1,pk3,ptk,akap,rgrav,zh,pt, &
-!$OMP                                  w,a_imp,dt,gama,ws,p_fac,scale_m,ms,delz,last_call,  &
-!$OMP                                  peln,pk,fp_out,ppe,use_logp,zs,pe,cappa,q_con,d2bg_zq,debug,fast_tau_w_sec )     &
+!$OMP                                  w,a_imp,dt,gama,ws,p_fac,ms,delz,last_call,  &
+!$OMP                                  peln,pk,fp_out,ppe,use_logp,zs,pe,cappa,q_con,&
+!$OMP                                  use_cond,moist_kappa,d2bg_zq,debug,fast_tau_w_sec )     &
 !$OMP                          private(cp2, gm2, dm, dz2, pm2, pem, peg, pelng, pe2, peln2, w2)
    do 2000 j=js, je
 
-      do k=1,km
+      if (moist_kappa) then
+         do k=1,km
          do i=is, ie
             dm(i,k) = delp(i,j,k)
-#ifdef MOIST_CAPPA
             cp2(i,k) = cappa(i,j,k)
-#endif
          enddo
-      enddo
-
-      do i=is,ie
-         pem(i,1) = ptop
-         peln2(i,1) = peln1
-         pk3(i,j,1) = ptk
-#ifdef USE_COND
-         peg(i,1) = ptop
-         pelng(i,1) = peln1
-#endif
-      enddo
-      do k=2,km+1
-         do i=is,ie
-            pem(i,k) = pem(i,k-1) + dm(i,k-1)
-            peln2(i,k) = log(pem(i,k))
-#ifdef USE_COND
-! Excluding contribution from condensates:
-! peln used during remap; pk3 used only for p_grad
-            peg(i,k) = peg(i,k-1) + dm(i,k-1)*(1.-q_con(i,j,k-1))
-            pelng(i,k) = log(peg(i,k))
-#endif
-            pk3(i,j,k) = exp(akap*peln2(i,k))
          enddo
-      enddo
-
-      do k=1,km
+      else
+         do k=1,km
          do i=is, ie
-#ifdef USE_COND
+            dm(i,k) = delp(i,j,k)
+            cp2(i,k) = akap
+         enddo
+         enddo
+      endif
+
+      if (use_cond) then
+         do i=is,ie
+            pem(i,1) = ptop
+            peln2(i,1) = peln1
+            pk3(i,j,1) = ptk
+            peg(i,1) = ptop
+            pelng(i,1) = peln1
+         enddo
+         do k=2,km+1
+            do i=is,ie
+               pem(i,k) = pem(i,k-1) + dm(i,k-1)
+               peln2(i,k) = log(pem(i,k))
+               ! Excluding contribution from condensates:
+               ! peln used during remap; pk3 used only for p_grad
+               peg(i,k) = peg(i,k-1) + dm(i,k-1)*(1.-q_con(i,j,k-1))
+               pelng(i,k) = log(peg(i,k))
+               pk3(i,j,k) = exp(akap*peln2(i,k))
+            enddo
+         enddo
+      else
+         do i=is,ie
+            pem(i,1) = ptop
+            peln2(i,1) = peln1
+            pk3(i,j,1) = ptk
+         enddo
+         do k=2,km+1
+            do i=is,ie
+               pem(i,k) = pem(i,k-1) + dm(i,k-1)
+               peln2(i,k) = log(pem(i,k))
+               pk3(i,j,k) = exp(akap*peln2(i,k))
+            enddo
+         enddo
+      endif
+
+      if (use_cond) then
+         do k=1,km
+         do i=is, ie
             pm2(i,k) = (peg(i,k+1)-peg(i,k))/(pelng(i,k+1)-pelng(i,k))
-
-#ifdef MOIST_CAPPA
             gm2(i,k) = 1. / (1.-cp2(i,k))
-#endif
-
-#else
-            pm2(i,k) = dm(i,k)/(peln2(i,k+1)-peln2(i,k))
-#endif
              dm(i,k) = dm(i,k) * rgrav
             dz2(i,k) = zh(i,j,k+1) - zh(i,j,k)
              w2(i,k) = w(i,j,k)
          enddo
-      enddo
+         enddo
+      else
+         do k=1,km
+         do i=is, ie
+            pm2(i,k) = dm(i,k)/(peln2(i,k+1)-peln2(i,k))
+            gm2(i,k) = 1. / (1.-cp2(i,k))
+             dm(i,k) = dm(i,k) * rgrav
+            dz2(i,k) = zh(i,j,k+1) - zh(i,j,k)
+             w2(i,k) = w(i,j,k)
+         enddo
+         enddo
+      endif
+
 
       if ( a_imp < -0.999 ) then
            call SIM3p0_solver(dt, is, ie, km, rdgas, gama, akap, pe2, dm,  &

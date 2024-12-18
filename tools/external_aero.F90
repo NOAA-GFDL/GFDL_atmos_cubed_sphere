@@ -31,7 +31,7 @@ module external_aero_mod
         use fms2_io_mod, only: file_exists
 	use mpp_mod, only: mpp_pe, mpp_root_pe, mpp_npes, mpp_get_current_pelist
 	use time_manager_mod, only: time_type
-	use fv_mapz_mod, only: map1_q2
+	use fv_operators_mod, only: map1_q2
 	use fv_fill_mod, only: fillz
 
 	public :: load_aero, read_aero, clean_aero

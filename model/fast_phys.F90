@@ -32,7 +32,7 @@ module fast_phys_mod
     use constants_mod, only: rdgas, grav
 #endif
     use fv_grid_utils_mod, only: cubed_to_latlon, update_dwinds_phys
-    use fv_arrays_mod, only: fv_grid_type, fv_grid_bounds_type
+    use fv_arrays_mod, only: fv_grid_type, fv_grid_bounds_type, fv_thermo_type
     use mpp_domains_mod, only: domain2d, mpp_update_domains
     use tracer_manager_mod, only: get_tracer_index, get_tracer_names
     use field_manager_mod, only: model_atmos
@@ -55,9 +55,9 @@ module fast_phys_mod
 contains
 
 subroutine fast_phys (is, ie, js, je, isd, ied, jsd, jed, km, npx, npy, nq, &
-               c2l_ord, mdt, consv, akap, ptop, hs, te0_2d, u, v, w, pt, &
+               mdt, consv, akap, ptop, hs, te0_2d, u, v, w, pt, &
                delp, delz, q_con, cappa, q, pkz, r_vir, te_err, tw_err, &
-               gridstruct, domain, bd, hydrostatic, do_adiabatic_init, &
+               gridstruct, thermostruct, domain, bd, hydrostatic, do_adiabatic_init, &
                consv_checker, adj_mass_vmr)
     
     implicit none
@@ -66,7 +66,7 @@ subroutine fast_phys (is, ie, js, je, isd, ied, jsd, jed, km, npx, npy, nq, &
     ! input / output arguments
     ! -----------------------------------------------------------------------
 
-    integer, intent (in) :: is, ie, js, je, isd, ied, jsd, jed, km, npx, npy, nq, c2l_ord, adj_mass_vmr
+    integer, intent (in) :: is, ie, js, je, isd, ied, jsd, jed, km, npx, npy, nq, adj_mass_vmr
 
     logical, intent (in) :: hydrostatic, do_adiabatic_init, consv_checker
 
@@ -91,6 +91,8 @@ subroutine fast_phys (is, ie, js, je, isd, ied, jsd, jed, km, npx, npy, nq, &
     real, intent (out), dimension (is:ie, js:je, km) :: pkz
 
     type (fv_grid_type), intent (in), target :: gridstruct
+
+    type (fv_thermo_type), intent (in), target :: thermostruct
 
     type (fv_grid_bounds_type), intent (in) :: bd
 
@@ -161,40 +163,53 @@ subroutine fast_phys (is, ie, js, je, isd, ied, jsd, jed, km, npx, npy, nq, &
     ! pt conversion
     !-----------------------------------------------------------------------
 
-    do k = 1, km
-        do j = js, je
-            do i = is, ie
-#ifdef MOIST_CAPPA
-                pt (i, j, k) = pt (i, j, k) * exp (cappa (i, j, k) / (1. - cappa (i, j, k)) * &
-                    log (rrg * delp (i, j, k) / delz (i, j, k) * pt (i, j, k)))
-#else
-                pt (i, j, k) = pt (i, j, k) * exp (akap / (1 - akap) * &
-                    log (rrg * delp (i, j, k) / delz (i, j, k) * pt (i, j, k)))
-#endif
-            enddo
-        enddo
-    enddo
+    if (thermostruct%moist_kappa) then
+       do k = 1, km
+           do j = js, je
+               do i = is, ie
+                   pt (i, j, k) = pt (i, j, k) * exp (cappa (i, j, k) / (1. - cappa (i, j, k)) * &
+                       log (rrg * delp (i, j, k) / delz (i, j, k) * pt (i, j, k)))
+               enddo
+           enddo
+       enddo
+    else
+       do k = 1, km
+           do j = js, je
+               do i = is, ie
+                   pt (i, j, k) = pt (i, j, k) * exp (akap / (1 - akap) * &
+                       log (rrg * delp (i, j, k) / delz (i, j, k) * pt (i, j, k)))
+               enddo
+           enddo
+       enddo
+    endif
 
     !-----------------------------------------------------------------------
     ! pt conversion
     !-----------------------------------------------------------------------
 
-    do k = 1, km
-        do j = js, je
-            do i = is, ie
-#ifdef MOIST_CAPPA
-                pkz (i, j, k) = exp (cappa (i, j, k) * &
-                    log (rrg * delp (i, j, k) / &
-                    delz (i, j, k) * pt (i, j, k)))
-#else
-                pkz (i, j, k) = exp (akap * &
-                    log (rrg * delp (i, j, k) / &
-                    delz (i, j, k) * pt (i, j, k)))
-#endif
-                pt (i, j, k) = pt (i, j, k) / pkz (i, j, k)
-            enddo
-        enddo
-    enddo
+    if (thermostruct%moist_kappa) then
+       do k = 1, km
+           do j = js, je
+               do i = is, ie
+                   pkz (i, j, k) = exp (cappa (i, j, k) * &
+                       log (rrg * delp (i, j, k) / &
+                       delz (i, j, k) * pt (i, j, k)))
+                   pt (i, j, k) = pt (i, j, k) / pkz (i, j, k)
+               enddo
+           enddo
+       enddo
+    else
+       do k = 1, km
+           do j = js, je
+               do i = is, ie
+                   pkz (i, j, k) = exp (akap * &
+                       log (rrg * delp (i, j, k) / &
+                       delz (i, j, k) * pt (i, j, k)))
+                   pt (i, j, k) = pt (i, j, k) / pkz (i, j, k)
+               enddo
+           enddo
+       enddo
+    endif
 
 end subroutine fast_phys
 

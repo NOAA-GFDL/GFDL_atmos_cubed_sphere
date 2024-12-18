@@ -38,7 +38,7 @@ module fv_sg_mod
 implicit none
 private
 
-public  fv_subgrid_z, neg_adj3
+public  fv_sg_SHiELD, fv_sg_AM5, neg_adj3
 
   real, parameter:: esl = 0.621971831
   real, parameter:: tice = 273.16
@@ -60,7 +60,11 @@ public  fv_subgrid_z, neg_adj3
   real, parameter:: t2_min = 165.
   real, parameter:: t2_max = 315.
   real, parameter:: t3_max = 325.
+#ifdef ENG_CNV_OLD
   real, parameter:: Lv0 =  hlv0 - dc_vap*t_ice   ! = 3.147782e6
+#else
+  real, parameter:: Lv0 =  hlv0 - dc_vap*t_ice - rvgas*t_ice   ! = 3.147782e6
+#endif
   real, parameter:: Li0 =  hlf0 - dc_ice*t_ice   ! = -2.431928e5
 
   real, parameter:: zvir =  rvgas/rdgas - 1.     ! = 0.607789855
@@ -69,15 +73,15 @@ public  fv_subgrid_z, neg_adj3
 contains
 
 
-#ifdef GFS_PHYS
- subroutine fv_subgrid_z( isd, ied, jsd, jed, is, ie, js, je, km, nq, dt,    &
-                         tau, nwat, delp, pe, peln, pkz, ta, qa, ua, va,  &
-                         hydrostatic, w, delz, u_dt, v_dt, t_dt, k_bot )
+ subroutine fv_sg_SHiELD( isd, ied, jsd, jed, is, ie, js, je, km, nq, dt,    &
+                          fv_sg_adj, fv_sg_adj_weak, nwat, delp, pe, peln, pkz, ta, qa, ua, va,  &
+                          hydrostatic, w, delz, u_dt, v_dt, k_bot_full )
 ! Dry convective adjustment-mixing
 !-------------------------------------------
       integer, intent(in):: is, ie, js, je, km, nq, nwat
       integer, intent(in):: isd, ied, jsd, jed
-      integer, intent(in):: tau         ! Relaxation time scale
+      integer, intent(in):: fv_sg_adj         ! Relaxation time scale
+      integer, intent(in):: fv_sg_adj_weak    ! Relaxation time scale
       real, intent(in):: dt             ! model time step
       real, intent(in)::   pe(is-1:ie+1,km+1,js-1:je+1)
       real, intent(in):: peln(is  :ie,  km+1,js  :je)
@@ -85,7 +89,7 @@ contains
       real, intent(in):: delz(is:,js:,1:)      ! Delta z at each model level
       real, intent(in)::  pkz(is:ie,js:je,km)
       logical, intent(in)::  hydrostatic
-      integer, intent(in), optional:: k_bot
+      integer, intent(in), optional:: k_bot_full
 !
       real, intent(inout):: ua(isd:ied,jsd:jed,km)
       real, intent(inout):: va(isd:ied,jsd:jed,km)
@@ -94,13 +98,13 @@ contains
       real, intent(inout):: qa(isd:ied,jsd:jed,km,nq)   ! Specific humidity & tracers
       real, intent(inout):: u_dt(isd:ied,jsd:jed,km)
       real, intent(inout):: v_dt(isd:ied,jsd:jed,km)
-      real, intent(inout):: t_dt(is:ie,js:je,km)
 !---------------------------Local variables-----------------------------
       real, dimension(is:ie,km):: u0, v0, w0, t0, hd, te, gz, tvm, pm, den
       real q0(is:ie,km,nq), qcon(is:ie,km)
+      real fra(km)
       real, dimension(is:ie):: gzh, lcp2, icp2, cvm, cpm, qs
       real ri_ref, ri, pt1, pt2, ratio, tv, cv, tmp, q_liq, q_sol
-      real tv1, tv2, g2, h0, mc, fra, rk, rz, rdt, tvd, tv_surf
+      real tv1, tv2, g2, h0, mc, rk, rz, rdt, tvd, tv_surf
       real dh, dq, qsw, dqsdt, tcp3, t_max, t_min
       integer i, j, k, kk, n, m, iq, km1, im, kbot
       real, parameter:: ustar2 = 1.E-4
@@ -116,9 +120,9 @@ contains
       rdt = 1./ dt
       im = ie-is+1
 
-      if ( present(k_bot) ) then
-           if ( k_bot < 3 ) return
-           kbot = k_bot
+      if ( present(k_bot_full) .and. fv_sg_adj_weak <= 0.) then
+           !if ( k_bot_full < 3 ) return
+           kbot = k_bot_full
       else
            kbot = km
       endif
@@ -128,7 +132,7 @@ contains
            t_min = t2_min
       endif
 
-      if ( k_bot < min(km,24)  ) then
+      if ( k_bot_full < min(km,24)  ) then
          t_max = t2_max
       else
          t_max = t3_max
@@ -154,16 +158,24 @@ contains
 ! volume and mass is locally conserved).
 !------------------------------------------------------------------------
    m = 3
-   fra = dt/real(tau)
+   do k=1,km
+      if ( k <= k_bot_full) then
+         fra(k) = dt/real(fv_sg_adj)
+      else if (fv_sg_adj_weak > 0.) then
+         fra(k) = dt/real(fv_sg_adj_weak)
+      else
+         fra(k) = 0.
+      endif
+   enddo
 
 !$OMP parallel do default(none) shared(im,is,ie,js,je,nq,kbot,qa,ta,sphum,ua,va,delp,peln,   &
 !$OMP                                  hydrostatic,pe,delz,g2,w,liq_wat,rainwat,ice_wat,     &
-!$OMP                                  snowwat,cv_air,m,graupel,pkz,rk,rz,fra, t_max, t_min, &
-!$OMP                                  u_dt,rdt,v_dt,xvir,nwat)                              &
+!$OMP                                  snowwat,cv_air,m,graupel,pkz,rk,rz,fra,               &
+!$OMP                                  t_max,t_min,u_dt,rdt,v_dt,xvir,nwat)                  &
 !$OMP                          private(kk,lcp2,icp2,tcp3,dh,dq,den,qs,qsw,dqsdt,qcon,q0,     &
 !$OMP                                  t0,u0,v0,w0,h0,pm,gzh,tvm,tmp,cpm,cvm,q_liq,q_sol,    &
 !$OMP                                  tv,gz,hd,te,ratio,pt1,pt2,tv1,tv2,ri_ref, ri,mc,km1)
-  do 1000 j=js,je
+  do j=js,je
 
     do iq=1, nq
        do k=1,kbot
@@ -441,31 +453,29 @@ contains
    enddo       ! n-loop
 
 !--------------------
-   if ( fra < 1. ) then
-      do k=1, kbot
-         do i=is,ie
-            t0(i,k) = ta(i,j,k) + (t0(i,k) - ta(i,j,k))*fra
-            u0(i,k) = ua(i,j,k) + (u0(i,k) - ua(i,j,k))*fra
-            v0(i,k) = va(i,j,k) + (v0(i,k) - va(i,j,k))*fra
-         enddo
+   do k=1, kbot
+      do i=is,ie
+         t0(i,k) = ta(i,j,k) + (t0(i,k) - ta(i,j,k))*fra(k)
+         u0(i,k) = ua(i,j,k) + (u0(i,k) - ua(i,j,k))*fra(k)
+         v0(i,k) = va(i,j,k) + (v0(i,k) - va(i,j,k))*fra(k)
       enddo
+   enddo
 
-      if ( .not. hydrostatic ) then
-         do k=1,kbot
-            do i=is,ie
-               w0(i,k) = w(i,j,k) + (w0(i,k) - w(i,j,k))*fra
-            enddo
-         enddo
-      endif
-
-      do iq=1,nq
-         do k=1,kbot
-            do i=is,ie
-               q0(i,k,iq) = qa(i,j,k,iq) + (q0(i,k,iq) - qa(i,j,k,iq))*fra
-            enddo
+   if ( .not. hydrostatic ) then
+      do k=1,kbot
+         do i=is,ie
+            w0(i,k) = w(i,j,k) + (w0(i,k) - w(i,j,k))*fra(k)
          enddo
       enddo
    endif
+
+   do iq=1,nq
+      do k=1,kbot
+         do i=is,ie
+            q0(i,k,iq) = qa(i,j,k,iq) + (q0(i,k,iq) - qa(i,j,k,iq))*fra(k)
+         enddo
+      enddo
+   enddo
 
    do k=1,kbot
       do i=is,ie
@@ -490,14 +500,13 @@ contains
       enddo
    endif
 
-1000 continue
+enddo
 
- end subroutine fv_subgrid_z
+ end subroutine fv_sg_SHiELD
 
-#else
- subroutine fv_subgrid_z( isd, ied, jsd, jed, is, ie, js, je, km, nq, dt,    &
-                         tau, nwat, delp, pe, peln, pkz, ta, qa, ua, va,  &
-                         hydrostatic, w, delz, u_dt, v_dt, t_dt, q_dt, k_bot )
+ subroutine fv_sg_AM5( isd, ied, jsd, jed, is, ie, js, je, km, nq, dt,    &
+                       tau, nwat, delp, pe, peln, pkz, ta, qa, ua, va,  &
+                       hydrostatic, w, delz, u_dt, v_dt, t_dt, q_dt, k_bot )
 ! Dry convective adjustment-mixing
 !-------------------------------------------
       integer, intent(in):: is, ie, js, je, km, nq, nwat
@@ -519,8 +528,8 @@ contains
       real, intent(inout):: qa(isd:ied,jsd:jed,km,nq)   ! Specific humidity & tracers
       real, intent(inout):: u_dt(isd:ied,jsd:jed,km)
       real, intent(inout):: v_dt(isd:ied,jsd:jed,km)
-      real, intent(inout):: t_dt(is:ie,js:je,km)
-      real, intent(inout):: q_dt(is:ie,js:je,km,nq)
+      real, intent(inout):: t_dt(is:ie,js:je,km) !not used
+      real, intent(inout):: q_dt(is:ie,js:je,km,nq)  !not used!
 !---------------------------Local variables-----------------------------
       real, dimension(is:ie,km):: u0, v0, w0, t0, hd, te, gz, tvm, pm, den
       real q0(is:ie,km,nq), qcon(is:ie,km)
@@ -579,7 +588,7 @@ contains
 !$OMP                          private(kk,lcp2,icp2,tcp3,dh,dq,den,qs,qsw,dqsdt,qcon,q0, &
 !$OMP                                  t0,u0,v0,w0,h0,pm,gzh,tvm,tmp,cpm,cvm, q_liq,q_sol,&
 !$OMP                                  tv,gz,hd,te,ratio,pt1,pt2,tv1,tv2,ri_ref, ri,mc,km1)
-  do 1000 j=js,je
+  do j=js,je
 
     do iq=1, nq
        do k=1,kbot
@@ -951,11 +960,10 @@ contains
       enddo
    endif
 
-1000 continue
+enddo
 
 
- end subroutine fv_subgrid_z
-#endif
+ end subroutine fv_sg_AM5
 
  subroutine neg_adj3(is, ie, js, je, ng, kbot, hydrostatic,   &
                      peln, delz, pt, dp, qv, ql, qr, qi, qs, qg, qa, check_negative)
@@ -995,10 +1003,15 @@ real, dimension(is:ie,js:je):: pt2, qv2, ql2, qi2, qs2, qr2, qg2, dp2, p2, icpk,
 
      if ( hydrostatic ) then
        d0_vap = cp_vapor - c_liq
+       lv00 = hlv0 - d0_vap*t_ice
      else
        d0_vap = cv_vap - c_liq
+#ifdef ENG_CNV_OLD
+       lv00 = hlv0 - d0_vap*t_ice
+#else
+       lv00 = hlv0 - d0_vap*t_ice - rvgas*t_ice
+#endif
      endif
-     lv00 = hlv0 - d0_vap*t_ice
 
 !$OMP parallel do default(none) shared(is,ie,js,je,kbot,qv,ql,qi,qs,qr,qg,dp,pt,       &
 !$OMP                                  lv00, d0_vap,hydrostatic,peln,delz,cv_air,sat_adj) &

@@ -60,7 +60,7 @@ module fv_arrays_mod
      real, allocatable :: zxg(:,:)
 
      integer :: id_u_dt_sg, id_v_dt_sg, id_t_dt_sg, id_qv_dt_sg, id_diss
-     integer :: id_ws, id_te, id_amdt, id_divg, id_aam
+     integer :: id_ws, id_te, id_amdt, id_divg_mean, id_divg, id_aam
      logical :: initialized = .false.
 
      real :: efx(max_step), efx_sum, efx_nest(max_step), efx_sum_nest, mtq(max_step), mtq_sum
@@ -283,9 +283,6 @@ module fv_arrays_mod
    integer :: kord_tr = 8    !< The vertical remapping scheme for tracers. The default is 8.
                              !< 9 or 11 recommended. It is often recommended to use the same
                              !< value for 'kord_tr' as for 'kord_tm'.
-   real    :: scale_z = 0.   !< diff_z = scale_z**2 * 0.25 (only used for Riemann solver)
-   real    :: w_max = 75.    !< Not used.
-   real    :: z_min = 0.05   !< Not used.
    real    :: d2bg_zq = 0.0  !< Implicit vertical diffusion for scalars (currently vertical velocity only)
    real    :: lim_fac = 1.0  !< linear scheme limiting factor when using hord = 1. 1: hord = 5, 3: hord = 6
 
@@ -328,10 +325,6 @@ module fv_arrays_mod
    real    :: d2_bg_k2 = 2.         !< Strength of second-order diffusion in the second sponge
                                     !< layer from the model top. This value must be specified, and
                                     !< should be less than 'd2_bg_k1'.
-   real    :: d2_divg_max_k1 = 0.15 !< d2_divg max value (k=1)
-   real    :: d2_divg_max_k2 = 0.08 !< d2_divg max value (k=2)
-   real    :: damp_k_k1 = 0.2       !< damp_k value (k=1)
-   real    :: damp_k_k2 = 0.12      !< damp_k value (k=2)
 
 !> Additional (after the fact) terrain filter (to further smooth the terrain after cold start)
    integer ::    n_zs_filter=0      !< Number of times to apply a diffusive filter to the topography
@@ -640,6 +633,7 @@ module fv_arrays_mod
                                !< Values of 0 or smaller disable this feature. If n_sponge < 0
                                !< then the mixing is applied only to the top n_sponge layers of the
                                !< domain. Set to -1 (inactive) by default. The proper range is 0 to 3600.
+   integer :: fv_sg_adj_weak = -1   !< Option for weaker (longer timescale) 2dz filter below sg_cutoff. Disabled if < 0.
    real    :: sg_cutoff = -1   !< cutoff level for fv_sg_adj (2dz filter; overrides n_sponge)
    integer :: na_init = 0   !< Number of forward-backward dynamics steps used to initialize
                             !< adiabatic solver. This is useful for spinning up the nonhydrostatic
@@ -680,6 +674,8 @@ module fv_arrays_mod
                           !< converted to heat. Acts as a dissipative heating mechanism in
                           !< the dynamical core. The default is 0. Proper range is 0 to 1.
                           !< Note that this is a local, physically correct, energy fixer.
+   logical :: prevent_diss_cooling = .false. !< Flag to enable limiter to prevent dissipative cooling if
+                                             !< d_con > 0. Turned off by default to retain previous behavior.
    real    :: ke_bg = 0.  !<  background KE production (m^2/s^3) over a small step
                           !< Use this to conserve total energy if consv_te=0
    real    :: consv_te = 0.   !< Fraction of total energy lost during the adiabatic integration
@@ -735,12 +731,13 @@ module fv_arrays_mod
    logical :: fill_gfs = .true. ! default behavior
    logical :: check_negative = .false.   !< Whether to print the most negativ global value of microphysical tracers.
    logical :: non_ortho = .true.
-   logical :: moist_phys = .true.     !< Run with moist physics
+   logical :: moist_phys = .true.     !< Run with moist physics. This is *only* false in idealized (solo_core)
+                                      !< simulations with adiabatic = .true. or in a held_suarez simulation. When false,
+                                      !< the virtual temperature effect is disabled, the moist effect in total energy
+                                      !< is neglected, and water species are treated as passive tracers.
    logical :: do_Held_Suarez = .false.   !< Whether to use Held-Suarez forcing. Requires adiabatic
                                          !< to be false. The default is .false.; this option has no
                                          !< effect if not running solo_core.
-   logical :: do_reed_physics = .false.
-   logical :: reed_cond_only = .false.
    logical :: reproduce_sum = .true.  !< uses an exactly-reproducible global sum operation performed
                                       !< when computing the global energy for consv_te. This is used
                                       !< because the FMS routine mpp_sum() is not bit-wise reproducible
@@ -776,17 +773,6 @@ module fv_arrays_mod
                                    !< This may improve efficiency for very large numbers of tracers.
                                    !< The default value is .false.; currently not implemented.
 
-   logical :: old_divg_damp = .false. !< parameter to revert damping parameters back to values
-                                      !< defined in a previous revision
-                                      !< old_values:
-                                      !<    d2_bg_k1 = 6.           d2_bg_k2 = 4.
-                                      !<    d2_divg_max_k1 = 0.02   d2_divg_max_k2 = 0.01
-                                      !<    damp_k_k1 = 0.          damp_k_k2 = 0.
-                                      !< current_values:
-                                      !<    d2_bg_k1 = 4.           d2_bg_k2 = 2.
-                                      !<    d2_divg_max_k1 = 0.15   d2_divg_max_k2 = 0.08
-                                      !<    damp_k_k1 = 0.2         damp_k_k2 = 0.12
-
    logical :: fv_land = .false.   !< Whether to create terrain deviation and land fraction for
                                   !< output to mg_drag restart files, for use in mg_drag and in the land
                                   !< model. The default is .false; .true. is recommended when, and only
@@ -795,7 +781,6 @@ module fv_arrays_mod
                                   !< wave drag parameterization and for the land surface roughness than
                                   !< either computes internally. This has no effect on the representation of
                                   !< the terrain in the dynamics.
-   logical :: do_am4_remap = .false.   !< Use AM4 vertical remapping operators
 !--------------------------------------------------------------------------------------
 ! The following options are useful for NWP experiments using datasets on the lat-lon grid
 !--------------------------------------------------------------------------------------
@@ -825,8 +810,6 @@ module fv_arrays_mod
                                         !< (ua and va) to the restart files. This is useful for data
                                         !< assimilation cycling systems which do not handle staggered winds.
                                         !< The default is .false.
-   logical :: use_new_ncep = .false.  !< use the NCEP ICs created after 2014/10/22, if want to read CWAT (not used??)
-   logical :: use_ncep_phy = .false.  !< if .T., separate CWAT by weights of liq_wat and liq_ice in FV_IC (not used??)
    logical :: fv_diag_ic = .false.    !< reconstruct IC from fv_diagnostics on lat-lon grid
    logical :: external_ic = .false.   !< Whether to initialize the models state using the data
                                       !< in an externally specified file, given in res_latlon_dynamics.
@@ -890,16 +873,6 @@ module fv_arrays_mod
                                !< Useful for perturbing initial conditions. -1 by default;
                                !< disabled if 0 or negative.
 
-   integer :: a2b_ord = 4   !< Order of interpolation used by the pressure gradient force
-                            !< to interpolate cell-centered (A-grid) values to the grid corners.
-                            !< The default value is 4 (recommended), which uses fourth-order
-                            !< interpolation; otherwise second-order interpolation is used.
-   integer :: c2l_ord = 4   !< Order of interpolation from the solvers native D-grid winds
-                            !< to latitude-longitude A-grid winds, which are used as input to
-                            !< the physics routines and for writing to history files.
-                            !< The default value is 4 (recommended); fourth-order interpolation
-                            !< is used unless c2l_ord = 2.
-
   real(kind=R_GRID) :: dx_const = 1000.   !< Specifies the (uniform) grid-cell-width in the x-direction
                                           !< on a doubly-periodic grid (grid_type = 4) in meters.
                                           !< The default value is 1000.
@@ -920,7 +893,6 @@ module fv_arrays_mod
 
   !f1p
   integer  :: adj_mass_vmr = 0 !0: no correction; 1: AM4/CM4 correction; 2: correction based on convertion of VMR to dry mixing ratio
-  logical :: w_limiter = .true. ! Fix excessive w - momentum conserving --- sjl
 
   ! options related to regional mode
   logical :: regional = .false.       !< Default setting for the regional domain.
@@ -1033,12 +1005,8 @@ module fv_arrays_mod
      type(fv_nest_BC_type_3D), allocatable, dimension(:) :: q_BC
 #ifndef SW_DYNAMICS
      type(fv_nest_BC_type_3D) :: pt_BC, w_BC, delz_BC
-#ifdef USE_COND
      type(fv_nest_BC_type_3D) :: q_con_BC
-#ifdef MOIST_CAPPA
      type(fv_nest_BC_type_3D) :: cappa_BC
-#endif
-#endif
 #endif
 
      !points to same parent grid as does Atm%parent_grid
@@ -1077,6 +1045,47 @@ module fv_arrays_mod
     real, _ALLOCATABLE :: u_dt(:,:,:)
     real, _ALLOCATABLE :: v_dt(:,:,:)
 
+    real, _ALLOCATABLE :: qcw(:,:,:)
+    real, _ALLOCATABLE :: qci(:,:,:)
+    real, _ALLOCATABLE :: qcr(:,:,:)
+    real, _ALLOCATABLE :: qcs(:,:,:)
+    real, _ALLOCATABLE :: qcg(:,:,:)
+    real, _ALLOCATABLE :: rew(:,:,:)
+    real, _ALLOCATABLE :: rei(:,:,:)
+    real, _ALLOCATABLE :: rer(:,:,:)
+    real, _ALLOCATABLE :: res(:,:,:)
+    real, _ALLOCATABLE :: reg(:,:,:)
+    real, _ALLOCATABLE :: cld(:,:,:)
+
+    real, _ALLOCATABLE :: mppcw(:,:)     _NULL
+    real, _ALLOCATABLE :: mppew(:,:)     _NULL
+    real, _ALLOCATABLE :: mppe1(:,:)     _NULL
+    real, _ALLOCATABLE :: mpper(:,:)     _NULL
+    real, _ALLOCATABLE :: mppdi(:,:)     _NULL
+    real, _ALLOCATABLE :: mppd1(:,:)     _NULL
+    real, _ALLOCATABLE :: mppds(:,:)     _NULL
+    real, _ALLOCATABLE :: mppdg(:,:)     _NULL
+    real, _ALLOCATABLE :: mppsi(:,:)     _NULL
+    real, _ALLOCATABLE :: mpps1(:,:)     _NULL
+    real, _ALLOCATABLE :: mppss(:,:)     _NULL
+    real, _ALLOCATABLE :: mppsg(:,:)     _NULL
+    real, _ALLOCATABLE :: mppfw(:,:)     _NULL
+    real, _ALLOCATABLE :: mppfr(:,:)     _NULL
+    real, _ALLOCATABLE :: mppmi(:,:)     _NULL
+    real, _ALLOCATABLE :: mppms(:,:)     _NULL
+    real, _ALLOCATABLE :: mppmg(:,:)     _NULL
+    real, _ALLOCATABLE :: mppm1(:,:)     _NULL
+    real, _ALLOCATABLE :: mppm2(:,:)     _NULL
+    real, _ALLOCATABLE :: mppm3(:,:)     _NULL
+    real, _ALLOCATABLE :: mppar(:,:)     _NULL
+    real, _ALLOCATABLE :: mppas(:,:)     _NULL
+    real, _ALLOCATABLE :: mppag(:,:)     _NULL
+    real, _ALLOCATABLE :: mpprs(:,:)     _NULL
+    real, _ALLOCATABLE :: mpprg(:,:)     _NULL
+    real, _ALLOCATABLE :: mppxr(:,:)     _NULL
+    real, _ALLOCATABLE :: mppxs(:,:)     _NULL
+    real, _ALLOCATABLE :: mppxg(:,:)     _NULL
+
   end type inline_mp_type
 
   type phys_diag_type
@@ -1102,6 +1111,7 @@ module fv_arrays_mod
      real, _ALLOCATABLE :: nudge_delp_dt(:,:,:)
      real, _ALLOCATABLE :: nudge_u_dt(:,:,:)
      real, _ALLOCATABLE :: nudge_v_dt(:,:,:)
+     real, _ALLOCATABLE :: nudge_qv_dt(:,:,:)
 
   end type nudge_diag_type
 
@@ -1207,6 +1217,28 @@ module fv_arrays_mod
                ,is_west_uvw  ,ie_west_uvw  ,js_west_uvw  ,je_west_uvw
 
   end type fv_regional_bc_bounds_type
+
+  type fv_thermo_type
+
+     !Option flags. If hydrostatic is set, for backwards-compatibility
+     ! the defaults are changed in fv_thermo_init() to both be false.
+     ! In either case, fv_thermo_nml will override the defaults.
+     logical :: use_cond = .true.
+     logical :: moist_kappa = .true.
+
+     !Simulation flags
+     logical :: pt_is_potential = .false.
+     logical :: pt_is_virtual   = .false.
+     logical :: pt_is_density   = .false.
+
+     real :: zvir = 0.0 !choose a better default
+
+     !integer, dimension(:), allocatable :: nwat_for_delp
+
+     logical :: is_initialized = .false.
+
+  end type fv_thermo_type
+
   type fv_atmos_type
 
      logical :: allocated = .false.
@@ -1276,6 +1308,7 @@ module fv_arrays_mod
     real, _ALLOCATABLE :: ci(:,:)       _NULL  ! sea-ice fraction from external file
 
 ! For stochastic kinetic energy backscatter (SKEB)
+    real, _ALLOCATABLE :: heat_source(:,:,:) _NULL !< dissipative heating
     real, _ALLOCATABLE :: diss_est(:,:,:) _NULL !< dissipation estimate taken from 'heat_source'
 
 !-----------------------------------------------------------------------
@@ -1376,6 +1409,7 @@ module fv_arrays_mod
      type(sg_diag_type) :: sg_diag
      type(coarse_restart_type) :: coarse_restart
      type(fv_coarse_graining_type) :: coarse_graining
+     type(fv_thermo_type) :: thermostruct
   end type fv_atmos_type
 
 contains
@@ -1510,7 +1544,8 @@ contains
     endif
 
     ! Allocate others
-    allocate ( Atm%diss_est(isd:ied  ,jsd:jed  ,npz) )
+    allocate ( Atm%heat_source(isd:ied,jsd:jed,npz) )
+    allocate ( Atm%diss_est(isd:ied,jsd:jed,npz) )
     allocate ( Atm%ts(is:ie,js:je) )
     allocate ( Atm%phis(isd:ied  ,jsd:jed  ) )
     allocate ( Atm%omga(isd:ied  ,jsd:jed  ,npz) ); Atm%omga=0.
@@ -1542,6 +1577,34 @@ contains
        allocate ( Atm%inline_mp%prefluxs(is:ie,js:je,npz) )
        allocate ( Atm%inline_mp%prefluxg(is:ie,js:je,npz) )
     endif
+    allocate ( Atm%inline_mp%mppcw(is:ie,js:je) )
+    allocate ( Atm%inline_mp%mppew(is:ie,js:je) )
+    allocate ( Atm%inline_mp%mppe1(is:ie,js:je) )
+    allocate ( Atm%inline_mp%mpper(is:ie,js:je) )
+    allocate ( Atm%inline_mp%mppdi(is:ie,js:je) )
+    allocate ( Atm%inline_mp%mppd1(is:ie,js:je) )
+    allocate ( Atm%inline_mp%mppds(is:ie,js:je) )
+    allocate ( Atm%inline_mp%mppdg(is:ie,js:je) )
+    allocate ( Atm%inline_mp%mppsi(is:ie,js:je) )
+    allocate ( Atm%inline_mp%mpps1(is:ie,js:je) )
+    allocate ( Atm%inline_mp%mppss(is:ie,js:je) )
+    allocate ( Atm%inline_mp%mppsg(is:ie,js:je) )
+    allocate ( Atm%inline_mp%mppfw(is:ie,js:je) )
+    allocate ( Atm%inline_mp%mppfr(is:ie,js:je) )
+    allocate ( Atm%inline_mp%mppmi(is:ie,js:je) )
+    allocate ( Atm%inline_mp%mppms(is:ie,js:je) )
+    allocate ( Atm%inline_mp%mppmg(is:ie,js:je) )
+    allocate ( Atm%inline_mp%mppm1(is:ie,js:je) )
+    allocate ( Atm%inline_mp%mppm2(is:ie,js:je) )
+    allocate ( Atm%inline_mp%mppm3(is:ie,js:je) )
+    allocate ( Atm%inline_mp%mppar(is:ie,js:je) )
+    allocate ( Atm%inline_mp%mppas(is:ie,js:je) )
+    allocate ( Atm%inline_mp%mppag(is:ie,js:je) )
+    allocate ( Atm%inline_mp%mpprs(is:ie,js:je) )
+    allocate ( Atm%inline_mp%mpprg(is:ie,js:je) )
+    allocate ( Atm%inline_mp%mppxr(is:ie,js:je) )
+    allocate ( Atm%inline_mp%mppxs(is:ie,js:je) )
+    allocate ( Atm%inline_mp%mppxg(is:ie,js:je) )
 
     !--------------------------
     ! Non-hydrostatic dynamics:
@@ -1562,11 +1625,11 @@ contains
        !         allocate ( mono(isd:ied, jsd:jed, npz))
     endif
 
-#ifdef USE_COND
+    if ( Atm%thermostruct%use_cond ) then
       allocate ( Atm%q_con(isd:ied,jsd:jed,1:npz) )
-#else
+   else
       allocate ( Atm%q_con(isd:isd,jsd:jsd,1) )
-#endif
+   endif
 
 ! Notes by SJL
 ! Place the memory in the optimal shared mem space
@@ -1642,6 +1705,38 @@ contains
            enddo
         enddo
      endif
+     do j=js, je
+        do i=is, ie
+           Atm%inline_mp%mppcw(i,j) = real_big
+           Atm%inline_mp%mppew(i,j) = real_big
+           Atm%inline_mp%mppe1(i,j) = real_big
+           Atm%inline_mp%mpper(i,j) = real_big
+           Atm%inline_mp%mppdi(i,j) = real_big
+           Atm%inline_mp%mppd1(i,j) = real_big
+           Atm%inline_mp%mppds(i,j) = real_big
+           Atm%inline_mp%mppdg(i,j) = real_big
+           Atm%inline_mp%mppsi(i,j) = real_big
+           Atm%inline_mp%mpps1(i,j) = real_big
+           Atm%inline_mp%mppss(i,j) = real_big
+           Atm%inline_mp%mppsg(i,j) = real_big
+           Atm%inline_mp%mppfw(i,j) = real_big
+           Atm%inline_mp%mppfr(i,j) = real_big
+           Atm%inline_mp%mppmi(i,j) = real_big
+           Atm%inline_mp%mppms(i,j) = real_big
+           Atm%inline_mp%mppmg(i,j) = real_big
+           Atm%inline_mp%mppm1(i,j) = real_big
+           Atm%inline_mp%mppm2(i,j) = real_big
+           Atm%inline_mp%mppm3(i,j) = real_big
+           Atm%inline_mp%mppar(i,j) = real_big
+           Atm%inline_mp%mppas(i,j) = real_big
+           Atm%inline_mp%mppag(i,j) = real_big
+           Atm%inline_mp%mpprs(i,j) = real_big
+           Atm%inline_mp%mpprg(i,j) = real_big
+           Atm%inline_mp%mppxr(i,j) = real_big
+           Atm%inline_mp%mppxs(i,j) = real_big
+           Atm%inline_mp%mppxg(i,j) = real_big
+        enddo
+     enddo
 
      do j=js, je
         do i=is, ie
@@ -1817,12 +1912,13 @@ contains
 #ifndef SW_DYNAMICS
 
        call allocate_fv_nest_BC_type(Atm%neststruct%pt_BC,Atm,ns,0,0,dummy)
-#ifdef USE_COND
-       call allocate_fv_nest_BC_type(Atm%neststruct%q_con_BC,Atm,ns,0,0,dummy)
-#ifdef MOIST_CAPPA
-       call allocate_fv_nest_BC_type(Atm%neststruct%cappa_BC,Atm,ns,0,0,dummy)
-#endif
-#endif
+!About USE_COND and MOIST_CAPPA: We want to initialize these to length 1 in each dimension if the flags are not defined.
+       if ( Atm%thermostruct%use_cond) then
+          call allocate_fv_nest_BC_type(Atm%neststruct%q_con_BC,Atm,ns,0,0,dummy) !only initialize if using USE_COND
+       endif
+       if ( Atm%thermostruct%moist_kappa) then
+          call allocate_fv_nest_BC_type(Atm%neststruct%cappa_BC,Atm,ns,0,0,dummy) !only initialize if using MOIST_CAPPA
+       endif
        if (.not.Atm%flagstruct%hydrostatic) then
           call allocate_fv_nest_BC_type(Atm%neststruct%w_BC,Atm,ns,0,0,dummy)
           call allocate_fv_nest_BC_type(Atm%neststruct%delz_BC,Atm,ns,0,0,dummy)
@@ -1894,6 +1990,7 @@ contains
     deallocate (  Atm%cy )
     deallocate (  Atm%ak )
     deallocate (  Atm%bk )
+    deallocate ( Atm%heat_source )
     deallocate ( Atm%diss_est )
 
     if (Atm%flagstruct%do_inline_mp) then
@@ -1908,6 +2005,34 @@ contains
        deallocate ( Atm%inline_mp%prefluxs )
        deallocate ( Atm%inline_mp%prefluxg )
     endif
+    deallocate ( Atm%inline_mp%mppcw )
+    deallocate ( Atm%inline_mp%mppew )
+    deallocate ( Atm%inline_mp%mppe1 )
+    deallocate ( Atm%inline_mp%mpper )
+    deallocate ( Atm%inline_mp%mppdi )
+    deallocate ( Atm%inline_mp%mppd1 )
+    deallocate ( Atm%inline_mp%mppds )
+    deallocate ( Atm%inline_mp%mppdg )
+    deallocate ( Atm%inline_mp%mppsi )
+    deallocate ( Atm%inline_mp%mpps1 )
+    deallocate ( Atm%inline_mp%mppss )
+    deallocate ( Atm%inline_mp%mppsg )
+    deallocate ( Atm%inline_mp%mppfw )
+    deallocate ( Atm%inline_mp%mppfr )
+    deallocate ( Atm%inline_mp%mppmi )
+    deallocate ( Atm%inline_mp%mppms )
+    deallocate ( Atm%inline_mp%mppmg )
+    deallocate ( Atm%inline_mp%mppm1 )
+    deallocate ( Atm%inline_mp%mppm2 )
+    deallocate ( Atm%inline_mp%mppm3 )
+    deallocate ( Atm%inline_mp%mppar )
+    deallocate ( Atm%inline_mp%mppas )
+    deallocate ( Atm%inline_mp%mppag )
+    deallocate ( Atm%inline_mp%mpprs )
+    deallocate ( Atm%inline_mp%mpprg )
+    deallocate ( Atm%inline_mp%mppxr )
+    deallocate ( Atm%inline_mp%mppxs )
+    deallocate ( Atm%inline_mp%mppxg )
 
     deallocate ( Atm%u_srf )
     deallocate ( Atm%v_srf )
@@ -2064,12 +2189,12 @@ contains
 
 #ifndef SW_DYNAMICS
        call deallocate_fv_nest_BC_type(Atm%neststruct%pt_BC)
-#ifdef USE_COND
-       call deallocate_fv_nest_BC_type(Atm%neststruct%q_con_BC)
-#ifdef MOIST_CAPPA
-       call deallocate_fv_nest_BC_type(Atm%neststruct%cappa_BC)
-#endif
-#endif
+       if ( Atm%thermostruct%use_cond ) then
+          call deallocate_fv_nest_BC_type(Atm%neststruct%q_con_BC)
+       endif
+       if ( Atm%thermostruct%moist_kappa ) then
+          call deallocate_fv_nest_BC_type(Atm%neststruct%cappa_BC)
+       endif
        if (.not.Atm%flagstruct%hydrostatic) then
           call deallocate_fv_nest_BC_type(Atm%neststruct%w_BC)
           call deallocate_fv_nest_BC_type(Atm%neststruct%delz_BC)

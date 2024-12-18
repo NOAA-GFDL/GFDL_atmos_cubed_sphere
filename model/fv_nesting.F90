@@ -43,7 +43,7 @@ module fv_nesting_mod
    use constants_mod,       only: grav, pi=>pi_8, hlv, rdgas, cp_air, rvgas, cp_vapor, kappa
 #endif
    use fv_arrays_mod,       only: radius ! scaled for small earth
-   use fv_mapz_mod,         only: mappm
+   use fv_operators_mod,    only: mappm
    use fv_timing_mod,       only: timing_on, timing_off
    use fv_mp_mod,           only: is_master
    use fv_mp_mod,           only: mp_reduce_sum, global_nest_domain
@@ -51,6 +51,7 @@ module fv_nesting_mod
    use sw_core_mod,         only: divergence_corner, divergence_corner_nest
    use time_manager_mod,    only: time_type
    use gfdl_mp_mod,         only: c_liq, c_ice
+   use fv_thermodynamics_mod, only: fv_thermo_type
 
 implicit none
    logical :: RF_initialized = .false.
@@ -74,14 +75,10 @@ contains
 
  subroutine setup_nested_grid_BCs(npx, npy, npz, zvir, ncnst,     &
                         u, v, w, pt, delp, delz,q, uc, vc, &
-#ifdef USE_COND
-                        q_con, &
-#ifdef MOIST_CAPPA
-                        cappa, &
-#endif
-#endif
+                        q_con, cappa, &
                         nested, inline_q, make_nh, ng, &
                         gridstruct, flagstruct, neststruct, &
+                        thermostruct, &
                         nest_timestep, tracer_nest_timestep, &
                         domain, parent_grid, bd, nwat, ak, bk)
 
@@ -103,18 +100,15 @@ contains
     real, intent(inout) :: q(   bd%isd:bd%ied  ,bd%jsd:bd%jed  ,npz, ncnst) ! specific humidity and constituents
     real, intent(inout) :: uc(bd%isd:bd%ied+1,bd%jsd:bd%jed  ,npz) ! (uc,vc) mostly used as the C grid winds
     real, intent(inout) :: vc(bd%isd:bd%ied  ,bd%jsd:bd%jed+1,npz)
-#ifdef USE_COND
-    real, intent(inout) :: q_con(  bd%isd:bd%ied  ,bd%jsd:bd%jed  ,npz)
-#ifdef MOIST_CAPPA
-    real, intent(inout) :: cappa(  bd%isd:bd%ied  ,bd%jsd:bd%jed  ,npz)
-#endif
-#endif
+    real, intent(inout) :: q_con(  bd%isd:  ,bd%jsd:  ,1:)
+    real, intent(inout) :: cappa(  bd%isd:  ,bd%jsd:  ,1:)
     integer, intent(INOUT) :: nest_timestep, tracer_nest_timestep
     type(fv_atmos_type), pointer, intent(IN) :: parent_grid
 
     type(fv_grid_type), intent(INOUT) :: gridstruct
     type(fv_flags_type), intent(INOUT) :: flagstruct
     type(fv_nest_type), intent(INOUT), target :: neststruct
+    type(fv_thermo_type), intent(INOUT) :: thermostruct
     type(domain2d), intent(INOUT) :: domain
     real :: divg(bd%isd:bd%ied+1,bd%jsd:bd%jed+1, npz)
     real :: ua(bd%isd:bd%ied,bd%jsd:bd%jed)
@@ -160,7 +154,7 @@ contains
 
     if (neststruct%nested .and. (.not. (neststruct%first_step) .or. make_nh) ) then
        do_pd = .true.
-       call set_BCs_t0(ncnst, flagstruct%hydrostatic, neststruct)
+       call set_BCs_t0(ncnst, flagstruct%hydrostatic, neststruct, thermostruct)
     else
        !On first timestep the t0 BCs are not initialized and may contain garbage
        do_pd = .false.
@@ -173,8 +167,7 @@ contains
        !!! CLEANUP: could we make this a non-blocking operation?
        !!! Is this needed? it is on the initialization step.
        call mpp_update_domains(delp, domain) !This is needed to make sure delp is updated for pe calculations
-       call mpp_update_domains(u, v, &
-            domain, gridtype=DGRID_NE, complete=.true.)
+       call mpp_update_domains(u, v, domain, gridtype=DGRID_NE, complete=.true.)
        call timing_off('COMM_TOTAL')
 !$OMP parallel do default(none) shared(isd,jsd,ied,jed,is,ie,js,je,npx,npy,npz, &
 !$OMP       gridstruct,flagstruct,bd,u,v,uc,vc,nested,divg) &
@@ -399,6 +392,10 @@ contains
 
        sphum = get_tracer_index (MODEL_ATMOS, 'sphum')
        if (flagstruct%hydrostatic) then
+          if (.not. neststruct%do_remap_BC(flagstruct%grid_number)) then
+            call allocate_fv_nest_BC_type(pe_eul_BC,is,ie,js,je,isd,ied,jsd,jed,npx,npy,npz+1,ng,0,0,0,.false.)
+            call compute_peBC(neststruct%delp_BC, pe_eul_bc, npx, npy, npz, parent_grid%ptop, bd)
+          endif
           call setup_pt_BC(neststruct%pt_BC, pe_eul_BC, neststruct%q_BC(sphum), npx, npy, npz, zvir, bd)
        else
           if (neststruct%do_remap_BC(flagstruct%grid_number)) then
@@ -423,13 +420,8 @@ contains
 
           call setup_pt_NH_BC(neststruct%pt_BC, neststruct%delp_BC, neststruct%delz_BC, &
                neststruct%q_BC(sphum), neststruct%q_BC, ncnst, &
-#ifdef USE_COND
-               neststruct%q_con_BC, &
-#ifdef MOIST_CAPPA
-               neststruct%cappa_BC, &
-#endif
-#endif
-               npx, npy, npz, zvir, bd)
+               neststruct%q_con_BC, neststruct%cappa_BC, &
+               thermostruct, npx, npy, npz, zvir, bd)
        endif
 
 #endif
@@ -518,6 +510,10 @@ contains
 
        endif
 
+       if (flagstruct%hydrostatic .and. (.not. neststruct%do_remap_BC(flagstruct%grid_number))) then
+          call deallocate_fv_nest_BC_type(pe_eul_BC)
+       endif
+
        !Correct halo values have now been set up for BCs; we can go ahead and apply them too
        call nested_grid_BC_apply_intT(delp, &
             0, 0, npx, npy, npz, bd, 1., 1., &
@@ -536,16 +532,16 @@ contains
                0, 0, npx, npy, npz, bd, 1., 1., &
                neststruct%w_BC, bctype=neststruct%nestbctype  )
        endif
-#ifdef USE_COND
-       call nested_grid_BC_apply_intT(q_con, &
-            0, 0, npx, npy, npz, bd, 1., 1., &
-            neststruct%q_con_BC, bctype=neststruct%nestbctype  )
-#ifdef MOIST_CAPPA
-       call nested_grid_BC_apply_intT(cappa, &
-            0, 0, npx, npy, npz, bd, 1., 1., &
-            neststruct%cappa_BC, bctype=neststruct%nestbctype  )
-#endif
-#endif
+       if (thermostruct%use_cond) then
+          call nested_grid_BC_apply_intT(q_con, &
+               0, 0, npx, npy, npz, bd, 1., 1., &
+               neststruct%q_con_BC, bctype=neststruct%nestbctype  )
+          if (thermostruct%moist_kappa) then
+             call nested_grid_BC_apply_intT(cappa, &
+                  0, 0, npx, npy, npz, bd, 1., 1., &
+                  neststruct%cappa_BC, bctype=neststruct%nestbctype  )
+          endif
+       endif
 #endif
        call nested_grid_BC_apply_intT(u, &
             0, 1, npx, npy, npz, bd, 1., 1., &
@@ -567,7 +563,7 @@ contains
     endif
 
     if (neststruct%first_step) then
-       if (neststruct%nested) call set_BCs_t0(ncnst, flagstruct%hydrostatic, neststruct)
+       if (neststruct%nested) call set_BCs_t0(ncnst, flagstruct%hydrostatic, neststruct, thermostruct)
        neststruct%first_step = .false.
        if (.not. flagstruct%hydrostatic) flagstruct%make_nh= .false.
     else if (flagstruct%make_nh) then
@@ -700,7 +696,7 @@ contains
    jed = bd%jed
 
    if (is == 1) then
-      call setup_pt_BC_k(pt_BC%west_t1, sphum_BC%west_t1, pe_eul_BC%west_t1, zvir, isd, ied, isd, 0, jsd, jed, npz)
+      call setup_pt_BC_k(pt_BC%west_t1, sphum_BC%west_t1, pe_eul_BC%west_t1, zvir, isd, 0, isd, 0, jsd, jed, npz)
    end if
 
    if (js == 1) then
@@ -720,7 +716,7 @@ contains
 
 
    if (ie == npx-1) then
-      call setup_pt_BC_k(pt_BC%east_t1, sphum_BC%east_t1, pe_eul_BC%east_t1, zvir, isd, ied, npx, ied, jsd, jed, npz)
+      call setup_pt_BC_k(pt_BC%east_t1, sphum_BC%east_t1, pe_eul_BC%east_t1, zvir, npx, ied, npx, ied, jsd, jed, npz)
    end if
 
    if (je == npy-1) then
@@ -746,6 +742,86 @@ contains
 !!!!   However these were NOT intended to delineate the dimensions of the data domain
 !!!!   but instead were of the BC arrays. This is confusing especially in other locations
 !!!!   where BCs and data arrays are both present.
+
+ subroutine compute_peBC(delp_BC, pe_BC, npx, npy, npz, ptop_src, bd)
+
+   type(fv_grid_bounds_type), intent(IN) :: bd
+   type(fv_nest_BC_type_3d), intent(INOUT), target :: delp_BC
+   type(fv_nest_BC_type_3d), intent(INOUT), target :: pe_BC
+   integer, intent(IN) :: npx, npy, npz
+   real, intent(IN) :: ptop_src
+
+   integer :: i,j,k, istart, iend
+
+   integer :: is,  ie,  js,  je
+   integer :: isd, ied, jsd, jed
+
+   is  = bd%is
+   ie  = bd%ie
+   js  = bd%js
+   je  = bd%je
+   isd = bd%isd
+   ied = bd%ied
+   jsd = bd%jsd
+   jed = bd%jed
+
+   if (is == 1) then
+      call compute_peBC_k(delp_BC%west_t1, pe_BC%west_t1, &
+           ptop_src, isd, 0, isd, 0, jsd, jed, npz)
+   end if
+
+   if (ie == npx-1) then
+      call compute_peBC_k(delp_BC%east_t1, pe_BC%east_t1, &
+           ptop_src, npx, ied, npx, ied, jsd, jed, npz)
+   end if
+
+   if (is == 1) then
+      istart = is
+   else
+      istart = isd
+   end if
+   if (ie == npx-1) then
+      iend = ie
+   else
+      iend = ied
+   end if
+
+   if (js == 1) then
+      call compute_peBC_k(delp_BC%south_t1, pe_BC%south_t1, &
+           ptop_src, isd, ied, istart, iend, jsd, 0, npz)
+   end if
+
+   if (je == npy-1) then
+      call compute_peBC_k(delp_BC%north_t1, pe_BC%north_t1, &
+           ptop_src, isd, ied, istart, iend, npy, jed, npz)
+   end if
+
+ end subroutine compute_peBC
+
+
+
+
+ subroutine compute_peBC_k(delp, peBC, ptop_src, isd_BC, ied_BC, istart, iend, jstart, jend, npz)
+   integer, intent(IN) :: isd_BC, ied_BC, istart, iend, jstart, jend, npz
+   real, intent(INOUT) :: delp(isd_BC:ied_BC,jstart:jend,npz), peBC(isd_BC:ied_BC,jstart:jend,npz+1)
+   real, intent(IN) :: ptop_src
+
+   integer :: i,j,k
+
+!$OMP parallel do default(none) shared(istart,iend,jstart,jend,peBC,ptop_src,delp,npz)
+             do j=jstart,jend
+             do i=istart,iend
+                peBC(i,j,1) = ptop_src
+             enddo
+             do k=1,npz
+             do i=istart,iend
+                peBC(i,j,k+1) = peBC(i,j,k) + delp(i,j,k)
+             enddo
+             enddo
+             enddo
+
+ end subroutine compute_peBC_k
+
  subroutine setup_pt_BC_k(ptBC, sphumBC, peBC, zvir, isd_BC, ied_BC, istart, iend, jstart, jend, npz)
 
    integer, intent(IN) :: isd_BC, ied_BC, istart, iend, jstart, jend, npz
@@ -1314,12 +1390,7 @@ contains
 
 
  subroutine setup_pt_NH_BC(pt_BC, delp_BC, delz_BC, sphum_BC, q_BC, nq, &
-#ifdef USE_COND
-      q_con_BC, &
-#ifdef MOIST_CAPPA
-      cappa_BC, &
-#endif
-#endif
+      q_con_BC, cappa_BC, thermostruct, &
       npx, npy, npz, zvir, bd)
 
    type(fv_grid_bounds_type), intent(IN) :: bd
@@ -1327,12 +1398,10 @@ contains
    type(fv_nest_BC_type_3d), intent(INOUT), target :: pt_BC
    integer, intent(IN) :: nq
    type(fv_nest_BC_type_3d), intent(IN), target :: q_BC(nq)
-#ifdef USE_COND
    type(fv_nest_BC_type_3d), intent(INOUT), target :: q_con_BC
-#ifdef MOIST_CAPPA
    type(fv_nest_BC_type_3d), intent(INOUT), target :: cappa_BC
-#endif
-#endif
+   type(fv_thermo_type), intent(INOUT) :: thermostruct
+
    integer, intent(IN) :: npx, npy, npz
    real, intent(IN) :: zvir
 
@@ -1484,12 +1553,7 @@ contains
 
       call setup_pt_NH_BC_k(pt_BC%west_t1, sphum_BC%west_t1, delp_BC%west_t1, delz_BC%west_t1, &
            liq_watBC_west, rainwatBC_west, ice_watBC_west, snowwatBC_west, graupelBC_west, &
-#ifdef USE_COND
-           q_con_BC%west_t1, &
-#ifdef MOIST_CAPPA
-           cappa_BC%west_t1, &
-#endif
-#endif
+           q_con_BC%west_t1, cappa_BC%west_t1, thermostruct%use_cond, thermostruct%moist_kappa, &
            zvir, isd, 0, isd, 0, jsd, jed, npz)
    end if
 
@@ -1508,12 +1572,7 @@ contains
 
       call setup_pt_NH_BC_k(pt_BC%south_t1, sphum_BC%south_t1, delp_BC%south_t1, delz_BC%south_t1, &
            liq_watBC_south, rainwatBC_south, ice_watBC_south, snowwatBC_south, graupelBC_south, &
-#ifdef USE_COND
-           q_con_BC%south_t1, &
-#ifdef MOIST_CAPPA
-           cappa_BC%south_t1, &
-#endif
-#endif
+           q_con_BC%south_t1, cappa_BC%south_t1, thermostruct%use_cond, thermostruct%moist_kappa, &
            zvir, isd, ied, istart, iend, jsd, 0, npz)
    end if
 
@@ -1522,12 +1581,7 @@ contains
 
       call setup_pt_NH_BC_k(pt_BC%east_t1, sphum_BC%east_t1, delp_BC%east_t1, delz_BC%east_t1, &
            liq_watBC_east, rainwatBC_east, ice_watBC_east, snowwatBC_east, graupelBC_east, &
-#ifdef USE_COND
-           q_con_BC%east_t1, &
-#ifdef MOIST_CAPPA
-           cappa_BC%east_t1, &
-#endif
-#endif
+           q_con_BC%east_t1, cappa_BC%east_t1, thermostruct%use_cond, thermostruct%moist_kappa, &
            zvir, npx, ied, npx, ied, jsd, jed, npz)
    end if
 
@@ -1545,12 +1599,7 @@ contains
 
       call setup_pt_NH_BC_k(pt_BC%north_t1, sphum_BC%north_t1, delp_BC%north_t1, delz_BC%north_t1, &
            liq_watBC_north, rainwatBC_north, ice_watBC_north, snowwatBC_north, graupelBC_north, &
-#ifdef USE_COND
-           q_con_BC%north_t1, &
-#ifdef MOIST_CAPPA
-           cappa_BC%north_t1, &
-#endif
-#endif
+           q_con_BC%north_t1, cappa_BC%north_t1, thermostruct%use_cond, thermostruct%moist_kappa, &
            zvir, isd, ied, istart, iend, npy, jed, npz)
    end if
 
@@ -1559,24 +1608,16 @@ contains
 
  subroutine setup_pt_NH_BC_k(ptBC,sphumBC,delpBC,delzBC, &
                              liq_watBC,rainwatBC,ice_watBC,snowwatBC,graupelBC, &
-#ifdef USE_COND
-                             q_conBC, &
-#ifdef MOIST_CAPPA
-                             cappaBC, &
-#endif
-#endif
+                             q_conBC, cappaBC, use_cond, moist_kappa, &
                              zvir, isd_BC, ied_BC, istart, iend, jstart, jend, npz)
 
    integer, intent(IN) :: isd_BC, ied_BC, istart, iend, jstart, jend, npz
+   logical, intent(IN) :: use_cond, moist_kappa
    real, intent(OUT), dimension(isd_BC:ied_BC,jstart:jend,npz) :: ptBC
    real, intent(IN),  dimension(isd_BC:ied_BC,jstart:jend,npz) :: sphumBC, delpBC, delzBC
    real, intent(IN),  dimension(isd_BC:ied_BC,jstart:jend,npz) :: liq_watBC,rainwatBC,ice_watBC,snowwatBC,graupelBC
-#ifdef USE_COND
-   real, intent(OUT), dimension(isd_BC:ied_BC,jstart:jend,npz) ::   q_conBC
-#ifdef MOIST_CAPPA
-   real, intent(OUT), dimension(isd_BC:ied_BC,jstart:jend,npz) ::   cappaBC
-#endif
-#endif
+   real, intent(OUT), dimension(isd_BC:,jstart:,1:) ::   q_conBC
+   real, intent(OUT), dimension(isd_BC:,jstart:,1:) ::   cappaBC
    real, intent(IN) :: zvir
 
    integer :: i,j,k
@@ -1589,42 +1630,61 @@ contains
    rdg = -rdgas / grav
    cv_air =  cp_air - rdgas
 
+   if (use_cond) then
+      if (moist_kappa) then
 !$OMP parallel do default(none) shared(istart,iend,jstart,jend,npz,zvir,ptBC,sphumBC,delpBC,delzBC,liq_watBC,rainwatBC,ice_watBC,snowwatBC,graupelBC, &
-#ifdef USE_COND
-!$OMP                                  q_conBC, &
-#ifdef MOIST_CAPPA
-!$OMP                                  cappaBC, &
-#endif
-#endif
-!$OMP                                  rdg, cv_air) &
+!$OMP                                  q_conBC, cappaBC, rdg, cv_air) &
 !$OMP                          private(dp1,q_liq,q_sol,q_con,cvm,pkz)
-   do k=1,npz
-   do j=jstart,jend
-   do i=istart,iend
-         dp1 = zvir*sphumBC(i,j,k)
-#ifdef USE_COND
-         q_liq = liq_watBC(i,j,k) + rainwatBC(i,j,k)
-         q_sol = ice_watBC(i,j,k) + snowwatBC(i,j,k) + graupelBC(i,j,k)
-         q_con = q_liq + q_sol
-         q_conBC(i,j,k) = q_con
-#ifdef MOIST_CAPPA
-         cvm = (1.-(sphumBC(i,j,k)+q_con))*cv_air+sphumBC(i,j,k)*cv_vap+q_liq*c_liq+q_sol*c_ice
-         cappaBC(i,j,k) = rdgas/(rdgas + cvm/(1.+dp1))
-         pkz = exp( cappaBC(i,j,k)*log(rdg*delpBC(i,j,k)*ptBC(i,j,k) * &
-              (1.+dp1)*(1.-q_con)/delzBC(i,j,k)))
-#else
-         pkz = exp( kappa*log(rdg*delpBC(i,j,k)*ptBC(i,j,k) * &
-              (1.+dp1)*(1.-q_con)/delzBC(i,j,k)))
-#endif
-         ptBC(i,j,k) = ptBC(i,j,k)*(1.+dp1)*(1.-q_con)/pkz
-#else
-         pkz = exp( kappa*log(rdg*delpBC(i,j,k)*ptBC(i,j,k) * &
-              (1.+dp1)/delzBC(i,j,k)))
-         ptBC(i,j,k) = ptBC(i,j,k)*(1.+dp1)/pkz
-#endif
-   end do
-   end do
-   end do
+         do k=1,npz
+         do j=jstart,jend
+         do i=istart,iend
+               dp1 = zvir*sphumBC(i,j,k)
+               q_liq = liq_watBC(i,j,k) + rainwatBC(i,j,k)
+               q_sol = ice_watBC(i,j,k) + snowwatBC(i,j,k) + graupelBC(i,j,k)
+               q_con = q_liq + q_sol
+               q_conBC(i,j,k) = q_con
+               cvm = (1.-(sphumBC(i,j,k)+q_con))*cv_air+sphumBC(i,j,k)*cv_vap+q_liq*c_liq+q_sol*c_ice
+               cappaBC(i,j,k) = rdgas/(rdgas + cvm/(1.+dp1))
+               pkz = exp( cappaBC(i,j,k)*log(rdg*delpBC(i,j,k)*ptBC(i,j,k) * &
+                    (1.+dp1)*(1.-q_con)/delzBC(i,j,k)))
+               ptBC(i,j,k) = ptBC(i,j,k)*(1.+dp1)*(1.-q_con)/pkz
+         end do
+         end do
+         end do
+      else
+!$OMP parallel do default(none) shared(istart,iend,jstart,jend,npz,zvir,ptBC,sphumBC,delpBC,delzBC,liq_watBC,rainwatBC,ice_watBC,snowwatBC,graupelBC, &
+!$OMP                                  q_conBC, rdg, cv_air) &
+!$OMP                          private(dp1,q_liq,q_sol,q_con,pkz)
+         do k=1,npz
+         do j=jstart,jend
+         do i=istart,iend
+               dp1 = zvir*sphumBC(i,j,k)
+               q_liq = liq_watBC(i,j,k) + rainwatBC(i,j,k)
+               q_sol = ice_watBC(i,j,k) + snowwatBC(i,j,k) + graupelBC(i,j,k)
+               q_con = q_liq + q_sol
+               q_conBC(i,j,k) = q_con
+               pkz = exp( kappa*log(rdg*delpBC(i,j,k)*ptBC(i,j,k) * &
+                    (1.+dp1)*(1.-q_con)/delzBC(i,j,k)))
+               ptBC(i,j,k) = ptBC(i,j,k)*(1.+dp1)*(1.-q_con)/pkz
+         end do
+         end do
+         end do
+      endif !moist_kappa
+   else
+!$OMP parallel do default(none) shared(istart,iend,jstart,jend,npz,zvir,ptBC,sphumBC,delpBC,delzBC,liq_watBC,rainwatBC,ice_watBC,snowwatBC,graupelBC, &
+!$OMP                                  q_conBC, cappaBC, rdg, cv_air) &
+!$OMP                          private(dp1,q_liq,q_sol,q_con,cvm,pkz)
+      do k=1,npz
+      do j=jstart,jend
+      do i=istart,iend
+            dp1 = zvir*sphumBC(i,j,k)
+            pkz = exp( kappa*log(rdg*delpBC(i,j,k)*ptBC(i,j,k) * &
+                 (1.+dp1)/delzBC(i,j,k)))
+            ptBC(i,j,k) = ptBC(i,j,k)*(1.+dp1)/pkz
+      end do
+      end do
+      end do
+   endif !use_cond
 
  end subroutine setup_pt_NH_BC_k
 
@@ -1646,11 +1706,12 @@ contains
 
  end subroutine set_NH_BCs_t0
 
- subroutine set_BCs_t0(ncnst, hydrostatic, neststruct)
+ subroutine set_BCs_t0(ncnst, hydrostatic, neststruct, thermostruct)
 
    integer, intent(IN) :: ncnst
    logical, intent(IN) :: hydrostatic
    type(fv_nest_type), intent(INOUT) :: neststruct
+   type(fv_thermo_type), intent(INOUT) :: thermostruct
 
    integer :: n
 
@@ -1674,18 +1735,18 @@ contains
    neststruct%pt_BC%north_t0   = neststruct%pt_BC%north_t1
    neststruct%pt_BC%south_t0   = neststruct%pt_BC%south_t1
 
-#ifdef USE_COND
-   neststruct%q_con_BC%east_t0    = neststruct%q_con_BC%east_t1
-   neststruct%q_con_BC%west_t0    = neststruct%q_con_BC%west_t1
-   neststruct%q_con_BC%north_t0   = neststruct%q_con_BC%north_t1
-   neststruct%q_con_BC%south_t0   = neststruct%q_con_BC%south_t1
-#ifdef MOIST_CAPPA
-   neststruct%cappa_BC%east_t0    = neststruct%cappa_BC%east_t1
-   neststruct%cappa_BC%west_t0    = neststruct%cappa_BC%west_t1
-   neststruct%cappa_BC%north_t0   = neststruct%cappa_BC%north_t1
-   neststruct%cappa_BC%south_t0   = neststruct%cappa_BC%south_t1
-#endif
-#endif
+   if (thermostruct%use_cond) then
+      neststruct%q_con_BC%east_t0    = neststruct%q_con_BC%east_t1
+      neststruct%q_con_BC%west_t0    = neststruct%q_con_BC%west_t1
+      neststruct%q_con_BC%north_t0   = neststruct%q_con_BC%north_t1
+      neststruct%q_con_BC%south_t0   = neststruct%q_con_BC%south_t1
+      if (thermostruct%moist_kappa) then
+         neststruct%cappa_BC%east_t0    = neststruct%cappa_BC%east_t1
+         neststruct%cappa_BC%west_t0    = neststruct%cappa_BC%west_t1
+         neststruct%cappa_BC%north_t0   = neststruct%cappa_BC%north_t1
+         neststruct%cappa_BC%south_t0   = neststruct%cappa_BC%south_t1
+      endif
+   endif
 
    if (.not. hydrostatic) then
       call set_NH_BCs_t0(neststruct)
@@ -2784,7 +2845,7 @@ subroutine twoway_nesting(Atm, ngrids, grids_on_this_pe, zvir, Time, this_grid)
     call cubed_to_latlon(u, v, ua, va, &
          gridstruct, npx, npy, npz, &
          1, gridstruct%grid_type, domain, &
-         gridstruct%bounded_domain, flagstruct%c2l_ord, bd)
+         gridstruct%bounded_domain, 4, bd)
 
 #ifndef SW_DYNAMICS
 

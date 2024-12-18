@@ -349,7 +349,7 @@ contains
 !rab        Atm%gridstruct, Atm%flagstruct%npx, Atm%flagstruct%npy, &
 !rab        Atm%flagstruct%npz, 1, Atm%gridstruct%grid_type, &
 !rab        fv_domain, Atm%gridstruct%nested, &
-!rab        Atm%flagstruct%c2l_ord, Atm%bd)
+!rab        Atm%bd)
 
     !------ winds clean up ------
     deallocate ( pt_c, pt_d, ud_inc, vd_inc )

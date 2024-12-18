@@ -40,7 +40,7 @@ module fv_update_phys_mod
   use fv_eta_mod,         only: get_eta_level
   use fv_timing_mod,      only: timing_on, timing_off
   use fv_diagnostics_mod, only: prt_maxmin, range_check, Mw_air!_0d
-  use fv_mapz_mod,        only: moist_cv, moist_cp
+  use fv_thermodynamics_mod, only: moist_cv, moist_cp
 #if defined (ATMOS_NUDGE)
   use atmos_nudge_mod,    only: get_atmos_nudge, do_ps
 #elif defined (CLIMATE_NUDGE)
@@ -504,16 +504,17 @@ module fv_update_phys_mod
     if ( nudge ) then
        ! Initialize nudged diagnostics
 
-#if defined (ATMOS_NUDGE)
-!--------------------------------------------
-! All fields will be updated; tendencies added
-!--------------------------------------------
-
        if (allocated(nudge_diag%nudge_t_dt)) nudge_diag%nudge_t_dt = pt(is:ie,js:je,:)
        if (allocated(nudge_diag%nudge_ps_dt)) nudge_diag%nudge_ps_dt = ps(is:ie,js:je)
        if (allocated(nudge_diag%nudge_delp_dt)) nudge_diag%nudge_delp_dt = delp(is:ie,js:je,:)
        if (allocated(nudge_diag%nudge_u_dt)) nudge_diag%nudge_u_dt = ua(is:ie,js:je,:)
        if (allocated(nudge_diag%nudge_v_dt)) nudge_diag%nudge_v_dt = va(is:ie,js:je,:)
+       if (allocated(nudge_diag%nudge_qv_dt)) nudge_diag%nudge_qv_dt = q(is:ie,js:je,:,sphum)
+
+#if defined (ATMOS_NUDGE)
+!--------------------------------------------
+! All fields will be updated; tendencies added
+!--------------------------------------------
 
         call get_atmos_nudge ( Time, dt, is, ie, js, je,    &
              npz, ng, ps(is:ie,js:je), ua(is:ie, js:je,:), &
@@ -537,22 +538,10 @@ module fv_update_phys_mod
             enddo
          endif
 
-       if (allocated(nudge_diag%nudge_t_dt)) nudge_diag%nudge_t_dt = (pt(is:ie,js:je,:) - nudge_diag%nudge_t_dt) / dt
-       if (allocated(nudge_diag%nudge_ps_dt)) nudge_diag%nudge_ps_dt = (ps(is:ie,js:je) - nudge_diag%nudge_ps_dt) / dt
-       if (allocated(nudge_diag%nudge_delp_dt)) nudge_diag%nudge_delp_dt = (delp(is:ie,js:je,:) - nudge_diag%nudge_delp_dt) / dt
-       if (allocated(nudge_diag%nudge_u_dt)) nudge_diag%nudge_u_dt = (ua(is:ie,js:je,:) - nudge_diag%nudge_u_dt) / dt
-       if (allocated(nudge_diag%nudge_v_dt)) nudge_diag%nudge_v_dt = (va(is:ie,js:je,:) - nudge_diag%nudge_v_dt) / dt
-
 #elif defined (CLIMATE_NUDGE)
 !--------------------------------------------
 ! All fields will be updated; tendencies added
 !--------------------------------------------
-
-       if (allocated(nudge_diag%nudge_t_dt)) nudge_diag%nudge_t_dt = pt(is:ie,js:je,:)
-       if (allocated(nudge_diag%nudge_ps_dt)) nudge_diag%nudge_ps_dt = ps(is:ie,js:je)
-       if (allocated(nudge_diag%nudge_delp_dt)) nudge_diag%nudge_delp_dt = delp(is:ie,js:je,:)
-       if (allocated(nudge_diag%nudge_u_dt)) nudge_diag%nudge_u_dt = ua(is:ie,js:je,:)
-       if (allocated(nudge_diag%nudge_v_dt)) nudge_diag%nudge_v_dt = va(is:ie,js:je,:)
 
        call fv_climate_nudge ( Time, dt, is, ie, js, je, npz, pfull,    &
              lona(is:ie,js:je), lata(is:ie,js:je), phis(is:ie,js:je), &
@@ -577,20 +566,9 @@ module fv_update_phys_mod
                enddo
             enddo
         endif
-       if (allocated(nudge_diag%nudge_t_dt)) nudge_diag%nudge_t_dt = (pt(is:ie,js:je,:) - nudge_diag%nudge_t_dt) / dt
-       if (allocated(nudge_diag%nudge_ps_dt)) nudge_diag%nudge_ps_dt = (ps(is:ie,js:je) - nudge_diag%nudge_ps_dt) / dt
-       if (allocated(nudge_diag%nudge_delp_dt)) nudge_diag%nudge_delp_dt = (delp(is:ie,js:je,:) - nudge_diag%nudge_delp_dt) / dt
-       if (allocated(nudge_diag%nudge_u_dt)) nudge_diag%nudge_u_dt = (ua(is:ie,js:je,:) - nudge_diag%nudge_u_dt) / dt
-       if (allocated(nudge_diag%nudge_v_dt)) nudge_diag%nudge_v_dt = (va(is:ie,js:je,:) - nudge_diag%nudge_v_dt) / dt
 
 #elif defined (ADA_NUDGE)
 ! All fields will be updated except winds; wind tendencies added
-
-       if (allocated(nudge_diag%nudge_t_dt)) nudge_diag%nudge_t_dt = pt(is:ie,js:je,:)
-       if (allocated(nudge_diag%nudge_ps_dt)) nudge_diag%nudge_ps_dt = ps(is:ie,js:je)
-       if (allocated(nudge_diag%nudge_delp_dt)) nudge_diag%nudge_delp_dt = delp(is:ie,js:je,:)
-       if (allocated(nudge_diag%nudge_u_dt)) nudge_diag%nudge_u_dt = u_dt(is:ie,js:je,:)
-       if (allocated(nudge_diag%nudge_v_dt)) nudge_diag%nudge_v_dt = v_dt(is:ie,js:je,:)
 
 !$omp parallel do default(shared)
         do j=js,je
@@ -606,21 +584,9 @@ module fv_update_phys_mod
         call fv_ada_nudge ( Time, dt, npx, npy, npz,  ps_dt, u_dt, v_dt, t_dt, q_dt_nudge,   &
                             zvir, ak, bk, ts, ps, delp, ua, va, pt,    &
                             nwat, q,  phis, gridstruct, bd, domain )
-
-       if (allocated(nudge_diag%nudge_t_dt)) nudge_diag%nudge_t_dt = (pt(is:ie,js:je,:) - nudge_diag%nudge_t_dt) / dt
-       if (allocated(nudge_diag%nudge_ps_dt)) nudge_diag%nudge_ps_dt = (ps(is:ie,js:je) - nudge_diag%nudge_ps_dt) / dt
-       if (allocated(nudge_diag%nudge_delp_dt)) nudge_diag%nudge_delp_dt = (delp(is:ie,js:je,:) - nudge_diag%nudge_delp_dt) / dt
-       if (allocated(nudge_diag%nudge_u_dt)) nudge_diag%nudge_u_dt = (u_dt(is:ie,js:je,:) - nudge_diag%nudge_u_dt)
-       if (allocated(nudge_diag%nudge_v_dt)) nudge_diag%nudge_v_dt = (v_dt(is:ie,js:je,:) - nudge_diag%nudge_v_dt)
 #else
 
 ! All fields will be updated except winds; wind tendencies added
-
-       if (allocated(nudge_diag%nudge_t_dt)) nudge_diag%nudge_t_dt = pt(is:ie,js:je,:)
-       if (allocated(nudge_diag%nudge_ps_dt)) nudge_diag%nudge_ps_dt = ps(is:ie,js:je)
-       if (allocated(nudge_diag%nudge_delp_dt)) nudge_diag%nudge_delp_dt = delp(is:ie,js:je,:)
-       if (allocated(nudge_diag%nudge_u_dt)) nudge_diag%nudge_u_dt = u_dt(is:ie,js:je,:)
-       if (allocated(nudge_diag%nudge_v_dt)) nudge_diag%nudge_v_dt = v_dt(is:ie,js:je,:)
 
 !$OMP parallel do default(none) shared(is,ie,js,je,npz,pe,delp,ps)
         do j=js,je
@@ -637,13 +603,14 @@ module fv_update_phys_mod
                             zvir, ak, bk, ts, ps, delp, ua, va, pt,    &
                             nwat, q,  phis, gridstruct, bd, domain )
 
+
+#endif
        if (allocated(nudge_diag%nudge_t_dt)) nudge_diag%nudge_t_dt = (pt(is:ie,js:je,:) - nudge_diag%nudge_t_dt) / dt
        if (allocated(nudge_diag%nudge_ps_dt)) nudge_diag%nudge_ps_dt = (ps(is:ie,js:je) - nudge_diag%nudge_ps_dt) / dt
        if (allocated(nudge_diag%nudge_delp_dt)) nudge_diag%nudge_delp_dt = (delp(is:ie,js:je,:) - nudge_diag%nudge_delp_dt) / dt
-       if (allocated(nudge_diag%nudge_u_dt)) nudge_diag%nudge_u_dt = (u_dt(is:ie,js:je,:) - nudge_diag%nudge_u_dt)
-       if (allocated(nudge_diag%nudge_v_dt)) nudge_diag%nudge_v_dt = (v_dt(is:ie,js:je,:) - nudge_diag%nudge_v_dt)
-
-#endif
+       if (allocated(nudge_diag%nudge_u_dt)) nudge_diag%nudge_u_dt = (ua(is:ie,js:je,:) - nudge_diag%nudge_u_dt) / dt
+       if (allocated(nudge_diag%nudge_v_dt)) nudge_diag%nudge_v_dt = (va(is:ie,js:je,:) - nudge_diag%nudge_v_dt) / dt
+       if (allocated(nudge_diag%nudge_qv_dt)) nudge_diag%nudge_qv_dt = (q(is:ie,js:je,:,sphum) - nudge_diag%nudge_qv_dt) / dt
 
   endif         ! end nudging
 
@@ -769,7 +736,8 @@ module fv_update_phys_mod
 
 #ifdef GFS_PHYS
     call cubed_to_latlon(u, v, ua, va, gridstruct, &
-         npx, npy, npz, 1, gridstruct%grid_type, domain, gridstruct%bounded_domain, flagstruct%c2l_ord, bd)
+         npx, npy, npz, 1, gridstruct%grid_type, &
+         domain, gridstruct%bounded_domain, 4, bd)
 #endif
 
   if ( flagstruct%fv_debug ) then

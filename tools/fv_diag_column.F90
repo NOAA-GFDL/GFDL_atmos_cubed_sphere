@@ -32,7 +32,7 @@ module fv_diag_column_mod
 #endif
   use fms_mod,            only: write_version_number, lowercase
   use mpp_mod,            only: mpp_error, FATAL, stdlog, mpp_pe, mpp_root_pe, mpp_sum, &
-                                mpp_max, NOTE, input_nml_file, get_unit
+                                mpp_max, NOTE, input_nml_file
   use gfdl_mp_mod,        only: mqs3d
 
   implicit none
@@ -156,8 +156,7 @@ contains
     character(len=256)    :: record
     character(len=10)     :: dum1, dum2
 
-    iunit = get_unit()
-    open(iunit, file='column_table', action='READ', iostat=io)
+    open(newunit=iunit, file='column_table', action='READ', iostat=io)
     if(io/=0) call mpp_error(FATAL, ' find_diagnostic_column: Error in opening column_table')
 
     num_diag_debug=0
@@ -439,13 +438,14 @@ contains
   end subroutine debug_column
 
   subroutine debug_column_dyn(pt, delp, delz, u, v, w, q, heat_source, cappa, akap, &
-       use_heat_source, npz, ncnst, sphum, nwat, zvir, ptop, hydrostatic, bd, Time, k_step, n_step)
+       npz, ncnst, sphum, nwat, zvir, ptop, hydrostatic, moist_kappa, bd, Time, k_step, n_step)
 
     type(fv_grid_bounds_type), intent(IN) :: bd
     integer, intent(IN) :: npz, ncnst, sphum, nwat, k_step, n_step
     real, intent(IN) :: akap, zvir, ptop
-    logical, intent(IN) :: hydrostatic, use_heat_source
-    real, dimension(bd%isd:bd%ied,bd%jsd:bd%jed,npz), intent(IN) :: pt, delp, w, heat_source
+    logical, intent(IN) :: hydrostatic, moist_kappa
+    real, dimension(bd%isd:bd%ied,bd%jsd:bd%jed,npz), intent(IN) :: pt, delp, w
+    real, dimension(bd%isd:bd%ied,bd%jsd:bd%jed,npz), intent(IN) :: heat_source
     real, dimension(bd%is:, bd%js:,1:), intent(IN) :: delz
     real, dimension(bd%isd:bd%ied,bd%jsd:bd%jed+1,npz), intent(IN) :: u
     real, dimension(bd%isd:bd%ied+1,bd%jsd:bd%jed,npz), intent(IN) :: v
@@ -507,11 +507,7 @@ contains
              !NOTE: Moist cappa not implemented for hydrostatic dynamics.
              pk = exp(akap*log(preshyd(k)))
              temp = pt(i,j,k)*pk/virt
-             if (use_heat_source) then
-                heats = heat_source(i,j,k) / (cp_air*delp(i,j,k))
-             else
-                heats = 0.0
-             endif
+             heats = heat_source(i,j,k) / (cp_air*delp(i,j,k))
              write(unit,'(I4, F7.2, F8.3, F8.3, F8.3, F8.3, F9.5, F9.3, 1x, G9.3)') &
                   k, temp, delp(i,j,k)*0.01, u(i,j,k), v(i,j,k), &
                   q(i,j,k,sphum)*1000., cond*1000., preshyd(k)*1.e-2, heats!, presdry*1.e-2, (presdry-preshyddry(k))*1.e-2
@@ -532,19 +528,15 @@ contains
                 cond = cond + q(i,j,k,l)
              enddo
              virt = (1.+zvir*q(i,j,k,sphum))
-#ifdef MOIST_CAPPA
-             pres = exp(1./(1.-cappa(i,j,k))*log(rdg*(delp(i,j,k)-cond)/delz(i,j,k)*pt(i,j,k)) )
-             pk = exp(cappa(i,j,k)*log(pres))
-#else
-             pres = exp(1./(1.-akap)*log(rdg*(delp(i,j,k))/delz(i,j,k)*pt(i,j,k)) )
-             pk = exp(akap*log(pres))
-#endif
-             temp = pt(i,j,k)*pk/virt
-             if (use_heat_source) then
-                heats = heat_source(i,j,k) / (cv_air*delp(i,j,k))
+             if (moist_kappa) then
+                pres = exp(1./(1.-cappa(i,j,k))*log(rdg*(delp(i,j,k)-cond)/delz(i,j,k)*pt(i,j,k)) )
+                pk = exp(cappa(i,j,k)*log(pres))
              else
-                heats = 0.0
+                pres = exp(1./(1.-akap)*log(rdg*(delp(i,j,k))/delz(i,j,k)*pt(i,j,k)) )
+                pk = exp(akap*log(pres))
              endif
+             temp = pt(i,j,k)*pk/virt
+             heats = heat_source(i,j,k) / (cv_air*delp(i,j,k))
              write(unit,'(I4, F7.2, F8.3, I6, F8.3, F8.3, F8.3, F8.3, F9.5, F9.3, F9.3, 1x, G9.3 )') &
                   k, temp, delp(i,j,k)*0.01, -int(delz(i,j,k)), u(i,j,k), v(i,j,k), w(i,j,k), &
                   q(i,j,k,sphum)*1000., cond*1000., pres*1.e-2, (pres-preshyd(k))*1.e-2, heats

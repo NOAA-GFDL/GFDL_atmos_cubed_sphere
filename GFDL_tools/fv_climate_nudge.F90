@@ -42,7 +42,7 @@ use  constantsR4_mod, only: RDGAS, RVGAS, PI, KAPPA, CP_AIR
 #else
 use    constants_mod, only: RDGAS, RVGAS, PI, KAPPA, CP_AIR
 #endif
-use fv_mapz_mod,      only: mappm
+use fv_operators_mod, only: mappm
 implicit none
 private
 
