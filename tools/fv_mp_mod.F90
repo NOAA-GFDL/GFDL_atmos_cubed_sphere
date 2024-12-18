@@ -658,12 +658,16 @@ contains
             !--- if io_layout\=(1,1) then read io_layout=io_layout (no change)
             l_layout = mpp_get_io_domain_layout(domain)
             call mpp_copy_domain(domain, domain_for_read)
+#ifdef ENABLE_RRFS_WAR
             if (ALL(l_layout == 1)) then
               call mpp_get_layout(domain, l_layout)
               call mpp_define_io_domain(domain_for_read, l_layout)
             else
               call mpp_define_io_domain(domain_for_read, l_layout)
             endif
+#else
+            call mpp_define_io_domain(domain_for_read, l_layout)
+#endif
          endif
 
        deallocate(pe_start,pe_end)
