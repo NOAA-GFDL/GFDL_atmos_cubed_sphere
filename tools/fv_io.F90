@@ -283,13 +283,13 @@ contains
        zsize = (/size(Atm%u,3)/)
        call fv_io_register_axis(Atm%Fv_restart_tile, numx=numx_2d, numy=numy_2d, xpos=xpos_2d, ypos=ypos_2d, numz=numz, zsize=zsize)
 
-       !--- optionally include D-grid winds even if restarting from A-grid winds
        if (Atm%flagstruct%is_ideal_case) then
           call register_restart_field(Atm%Fv_restart_tile, 'u0', Atm%u0, &
                dim_names_4d, is_optional=.true.)
           call register_restart_field(Atm%Fv_restart_tile, 'v0', Atm%v0, &
                dim_names_4d2, is_optional=.true.)
        endif
+       !--- optionally include D-grid winds even if restarting from A-grid winds
        if (Atm%flagstruct%write_optional_dgrid_vel_rst .and. Atm%flagstruct%restart_from_agrid_winds) then
           call register_restart_field(Atm%Fv_restart_tile, 'u', Atm%u, &
                dim_names_4d, is_optional=.true.)
@@ -737,10 +737,6 @@ contains
        stile_name = ''
     endif
 
-!!!! A NOTE about file names
-!!! file_exist() needs the full relative path, including INPUT/
-!!! But register_restart_field ONLY looks in INPUT/ and so JUST needs the file name!!
-
        fname = 'INPUT/fv_core.res'//trim(stile_name)//'.nc'
        if (open_file(Fv_tile_restart_r, fname, "read", fv_domain, is_restart=.true.)) then
           call fv_io_register_axis(Fv_tile_restart_r, numx=2, numy=2, xpos=xpos_2d, ypos=ypos_2d, numz=2, &
@@ -749,8 +745,8 @@ contains
              call register_restart_field (Fv_tile_restart_r, 'u0', u0_r, dim_names_4d_u, is_optional=.true.)
              call register_restart_field (Fv_tile_restart_r, 'v0', v0_r, dim_names_4d_v, is_optional=.true.)
           endif
-          call register_restart_field (Fv_tile_restart_r, 'u', u_r, dim_names_4d_u, is_optional=.true.)
-          call register_restart_field (Fv_tile_restart_r, 'v', v_r, dim_names_4d_v, is_optional=.true.)
+          call register_restart_field (Fv_tile_restart_r, 'u', u_r, dim_names_4d_u)
+          call register_restart_field (Fv_tile_restart_r, 'v', v_r, dim_names_4d_v)
           if (.not.Atm(1)%flagstruct%hydrostatic) then
              call register_restart_field (Fv_tile_restart_r, 'W', w_r, dim_names_4d_w, is_optional=.true.)
              call register_restart_field (Fv_tile_restart_r, 'DZ', delz_r, dim_names_4d_w, is_optional=.true.)
@@ -758,9 +754,9 @@ contains
                 call register_restart_field (Fv_tile_restart_r, 'ZE0', ze0_r, dim_names_4d_ze0, is_optional=.true.)
              endif
           endif
-          call register_restart_field (Fv_tile_restart_r, 'T', pt_r, dim_names_4d_w, is_optional=.true.)
-          call register_restart_field (Fv_tile_restart_r, 'delp', delp_r, dim_names_4d_w, is_optional=.true.)
-          call register_restart_field (Fv_tile_restart_r, 'phis', Atm(1)%phis, dim_names_3d_phis, is_optional=.true.)
+          call register_restart_field (Fv_tile_restart_r, 'T', pt_r, dim_names_4d_w)
+          call register_restart_field (Fv_tile_restart_r, 'delp', delp_r, dim_names_4d_w)
+          call register_restart_field (Fv_tile_restart_r, 'phis', Atm(1)%phis, dim_names_3d_phis)
           call read_restart(Fv_tile_restart_r, ignore_checksum=Atm(1)%flagstruct%ignore_rst_cksum)
           call close_file(FV_tile_restart_r)
        endif
