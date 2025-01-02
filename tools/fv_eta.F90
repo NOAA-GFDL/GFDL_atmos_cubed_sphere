@@ -975,7 +975,7 @@ module fv_eta_mod
           do k=ks+1,km
              tmp1 = max(tmp1, (ak(k)-ak(k+1))/max(1.E-5, (bk(k+1)-bk(k))) )
           enddo
-          write(*,*) 'Hybrid Sigma-P: minimum allowable surface pressure (hpa)=', tmp1/100.
+          write(*,*) 'Hybrid Sigma-P: minimum allowable surface pressure (hPa)=', tmp1/100.
           write(*,800) (pm(k), k=km,1,-1)
       endif
 
@@ -1149,7 +1149,7 @@ module fv_eta_mod
           do k=ks+1,km
              tmp1 = max(tmp1, (ak(k)-ak(k+1))/max(1.E-5, (bk(k+1)-bk(k))) )
           enddo
-          write(*,*) 'Hybrid Sigma-P: minimum allowable surface pressure (hpa)=', tmp1/100.
+          write(*,*) 'Hybrid Sigma-P: minimum allowable surface pressure (hPa)=', tmp1/100.
       endif
 
  end subroutine var_gfs
@@ -1325,7 +1325,7 @@ module fv_eta_mod
           do k=ks+1,km
              tmp1 = max(tmp1, (ak(k)-ak(k+1))/max(1.E-5, (bk(k+1)-bk(k))) )
           enddo
-          write(*,*) 'Hybrid Sigma-P: minimum allowable surface pressure (hpa)=', tmp1/100.
+          write(*,*) 'Hybrid Sigma-P: minimum allowable surface pressure (hPa)=', tmp1/100.
       endif
 
 
@@ -1482,7 +1482,7 @@ module fv_eta_mod
           do k=ks+1,km
              tmp1 = max(tmp1, (ak(k)-ak(k+1))/max(1.E-5, (bk(k+1)-bk(k))) )
           enddo
-          write(*,*) 'Hybrid Sigma-P: minimum allowable surface pressure (hpa)=', tmp1/100.
+          write(*,*) 'Hybrid Sigma-P: minimum allowable surface pressure (hPa)=', tmp1/100.
       endif
 
 
@@ -1643,7 +1643,7 @@ module fv_eta_mod
           do k=ks+1,km
              tmp1 = max(tmp1, (ak(k)-ak(k+1))/max(1.E-5, (bk(k+1)-bk(k))) )
           enddo
-          write(*,*) 'Hybrid Sigma-P: minimum allowable surface pressure (hpa)=', tmp1/100.
+          write(*,*) 'Hybrid Sigma-P: minimum allowable surface pressure (hPa)=', tmp1/100.
       endif
 
 
@@ -1806,7 +1806,7 @@ module fv_eta_mod
           do k=ks+1,km
              tmp1 = max(tmp1, (ak(k)-ak(k+1))/max(1.E-5, (bk(k+1)-bk(k))) )
           enddo
-          write(*,*) 'Hybrid Sigma-P: minimum allowable surface pressure (hpa)=', tmp1/100.
+          write(*,*) 'Hybrid Sigma-P: minimum allowable surface pressure (hPa)=', tmp1/100.
       endif
 
 
@@ -2378,7 +2378,7 @@ module fv_eta_mod
        enddo
 
        ptop = pe1(1)
-!      if ( is_master() ) write(*,*) 'GW_1D: computed model top (pa)=', ptop
+!      if ( is_master() ) write(*,*) 'GW_1D: computed model top (Pa)=', ptop
 
 ! Set up "sigma" coordinate
        ak(1) = pe1(1)
@@ -2531,7 +2531,7 @@ module fv_eta_mod
           do k=ks+1,km
              tmp1 = max(tmp1, (ak(k)-ak(k+1))/max(1.E-5, (bk(k+1)-bk(k))) )
           enddo
-          write(*,*) 'Hybrid Sigma-P: minimum allowable surface pressure (hpa)=', tmp1/100.
+          write(*,*) 'Hybrid Sigma-P: minimum allowable surface pressure (hPa)=', tmp1/100.
       endif
 
  end subroutine mount_waves

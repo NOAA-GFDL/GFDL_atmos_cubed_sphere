@@ -831,6 +831,7 @@ module fv_arrays_mod
                                        !< condition file (if nggps_ic or ecwmf_ic are .true.). This overrides the
                                        !< hard-coded levels in fv_eta. The default is .false.
    logical :: read_increment = .false.   !< read in analysis increment and add to restart
+   logical :: increment_file_on_native_grid = .false. !< increment is on native cubed sphere grid grid else on Gaussian grid
 ! following are namelist parameters for Stochastic Energy Baskscatter dissipation estimate
    logical :: do_skeb  = .false.         !< save dissipation estimate
    integer :: skeb_npass  = 11           !< Filter dissipation estimate "skeb_npass" times
@@ -855,13 +856,13 @@ module fv_arrays_mod
                                           !< If .false., heating from the physics is applied simply as a temperature
                                           !< tendency. The default value is .true.; ignored if hydrostatic = .true.
    logical :: use_hydro_pressure = .false.   !< Whether to compute hydrostatic pressure for input to the physics.
-                                             !< Currently only enabled for the fvGFS model.
+                                             !< Currently only enabled for the UFS model.
                                              !< Ignored in hydrostatic simulations. The default is .false.
    logical :: do_uni_zfull = .false.   !< Whether to compute z_full (the height of each modellayer,
                                        !< as opposed to z_half, the height of each model interface)
                                        !< as the midpoint of the layer, as is done for the nonhydrostatic
                                        !< solver, instead of the height of the location where p = p the mean
-                                       !< pressure in the layer. This option is not available for fvGFS or
+                                       !< pressure in the layer. This option is not available for UFS or
                                        !< the solo_core. The default is .false.
    logical :: hybrid_z    = .false.  !< Whether to use a hybrid-height coordinate, instead of
                                      !< the usual sigma-p coordinate. The default value is .false.
@@ -932,6 +933,7 @@ module fv_arrays_mod
   integer :: nrows_blend = 0          !< # of blending rows in the outer integration domain.
   logical :: write_restart_with_bcs = .false.   !< Default setting for using DA-updated BC files
   logical :: regional_bcs_from_gsi = .false.    !< Default setting for writing restart files with boundary rows
+  logical :: pass_full_omega_to_physics_in_non_hydrostatic_mode = .false.  !< Default to passing local omega to physics in non-hydrostatic 
 
 
   !>Convenience pointers
@@ -1516,6 +1518,7 @@ contains
     allocate ( Atm%ts(is:ie,js:je) )
     allocate ( Atm%phis(isd:ied  ,jsd:jed  ) )
     allocate ( Atm%omga(isd:ied  ,jsd:jed  ,npz) ); Atm%omga=0.
+
     allocate (   Atm%ua(isd:ied  ,jsd:jed  ,npz) )
     allocate (   Atm%va(isd:ied  ,jsd:jed  ,npz) )
     allocate (   Atm%uc(isd:ied+1,jsd:jed  ,npz) )
@@ -1555,8 +1558,10 @@ contains
 
 #ifdef USE_COND
       allocate ( Atm%q_con(isd:ied,jsd:jed,1:npz) )
+      ! q_con will be initialized to 0, in the following omp loop
 #else
       allocate ( Atm%q_con(isd:isd,jsd:jsd,1) )
+      Atm%q_con = 0.
 #endif
 
 ! Notes by SJL
@@ -1570,6 +1575,9 @@ contains
                 Atm%va(i,j,k) = real_big
                 Atm%pt(i,j,k) = real_big
               Atm%delp(i,j,k) = real_big
+#ifdef USE_COND
+             Atm%q_con(i,j,k) = 0.
+#endif
            enddo
         enddo
         do j=jsd, jed+1

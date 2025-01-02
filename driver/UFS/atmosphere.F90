@@ -110,7 +110,11 @@ module atmosphere_mod
 !   </tr>
 !   <tr>
 !     <td>IPD_typedefs_mod</td>
-!     <td>IPD_data_type, kind_phys => IPD_kind_phys</td>
+!     <td>IPD_control_type, kind_phys</td>
+!   </tr>
+!   <tr>
+!     <td>GFS_typedefs_mod</td>
+!     <td>GFS_statein_type, GFS_stateout_type, GFS_sfcprop_type</td>
 !   </tr>
 !   <tr>
 !     <td>mpp_mod</td>
@@ -176,7 +180,8 @@ use tracer_manager_mod,     only: get_tracer_index, get_number_tracers, &
                                   NO_TRACER, get_tracer_names
 use DYCORE_typedefs,        only: DYCORE_data_type
 #ifdef GFS_TYPES
-use GFS_typedefs,           only: IPD_data_type => GFS_data_type, IPD_control_type => GFS_control_type, kind_phys
+use GFS_typedefs,           only: IPD_control_type => GFS_control_type, kind_phys
+use GFS_typedefs,           only: GFS_statein_type, GFS_stateout_type, GFS_sfcprop_type
 #else
 use IPD_typedefs,           only: IPD_data_type, IPD_control_type, kind_phys => IPD_kind_phys
 #endif
@@ -192,6 +197,7 @@ use fv_arrays_mod,      only: fv_atmos_type, R_GRID, fv_grid_bounds_type, phys_d
 use fv_control_mod,     only: fv_control_init, fv_end, ngrids
 use fv_eta_mod,         only: get_eta_level
 use fv_fill_mod,        only: fill_gfs
+use dyn_core_mod,       only: del2_cubed
 use fv_dynamics_mod,    only: fv_dynamics
 use fv_nesting_mod,     only: twoway_nesting
 use boundary_mod,       only: fill_nested_grid
@@ -244,7 +250,7 @@ public :: atmosphere_fill_nest_cpl
 ! version number of this module
 ! Include variable "version" to be written to log file.
 #include<file_version.h>
-character(len=20)   :: mod_name = 'fvGFS/atmosphere_mod'
+character(len=20)   :: mod_name = 'UFS/atmosphere_mod'
 
 !---- private data ----
   type (time_type) :: Time_step_atmos
@@ -493,6 +499,7 @@ contains
    ! and thread number are not used; set to safe values
    cdata%blk_no = 1
    cdata%thrd_no = 1
+   cdata%thrd_cnt = 1
 
    ! Create shared data type for fast and slow physics, one for each thread
 #ifdef OPENMP
@@ -708,6 +715,22 @@ contains
     endif
 
     enddo !p_split
+    if (.not. Atm(n)%flagstruct%hydrostatic .and. .not.  Atm(n)%flagstruct%pass_full_omega_to_physics_in_non_hydrostatic_mode) then
+        Atm(n)%omga(isc:iec,jsc:jec,1:npz) = Atm(n)%delp(isc:iec,jsc:jec,1:npz) / Atm(n)%delz(isc:iec,jsc:jec,1:npz) * Atm(n)%w(isc:iec,jsc:jec,1:npz)
+        if(Atm(n)%flagstruct%nf_omega>0)   then
+           call del2_cubed(&
+                Atm(n)%omga, &
+                0.18*Atm(n)%gridstruct%da_min, &
+                Atm(n)%gridstruct, &
+                Atm(n)%domain, &
+                Atm(n)%npx, &
+                Atm(n)%npy, &
+                Atm(n)%npz, &
+                Atm(n)%flagstruct%nf_omega, &
+                Atm(n)%bd)
+        endif
+    endif
+
     call mpp_clock_end (id_dynam)
 
 !-----------------------------------------------------
@@ -864,17 +887,18 @@ contains
  end subroutine atmosphere_pref
 
 
- subroutine atmosphere_control_data (i1, i2, j1, j2, kt, p_hydro, hydro, tile_num)
+ subroutine atmosphere_control_data (i1, i2, j1, j2, kt, p_hydro, hydro, tile_of_mosaic, global_tile_num)
    integer, intent(out)           :: i1, i2, j1, j2, kt
    logical, intent(out), optional :: p_hydro, hydro
-   integer, intent(out), optional :: tile_num
+   integer, intent(out), optional :: tile_of_mosaic, global_tile_num
    i1 = Atm(mygrid)%bd%isc
    i2 = Atm(mygrid)%bd%iec
    j1 = Atm(mygrid)%bd%jsc
    j2 = Atm(mygrid)%bd%jec
    kt = Atm(mygrid)%npz
 
-   if (present(tile_num)) tile_num = Atm(mygrid)%tile_of_mosaic
+   if (present(global_tile_num)) global_tile_num = Atm(mygrid)%global_tile
+   if (present(tile_of_mosaic)) tile_of_mosaic = Atm(mygrid)%tile_of_mosaic
    if (present(p_hydro)) p_hydro   = Atm(mygrid)%flagstruct%phys_hydrostatic
    if (present(  hydro))   hydro   = Atm(mygrid)%flagstruct%hydrostatic
 
@@ -1483,15 +1507,17 @@ contains
 
 !>@brief The subroutine 'atmosphere_state_update' is an API to apply tendencies
 !! and compute a consistent prognostic state.
- subroutine atmosphere_state_update (Time, IPD_Data, IAU_Data, Atm_block, flip_vc)
+ subroutine atmosphere_state_update (Time, IPD_Control, IPD_Statein, IPD_Stateout, IAU_Data, Atm_block, flip_vc)
    type(time_type),              intent(in) :: Time
-   type(IPD_data_type),          intent(in) :: IPD_Data(:)
+   type(IPD_control_type),       intent(in) :: IPD_Control
+   type(GFS_statein_type),       intent(in) :: IPD_Statein
+   type(GFS_stateout_type),      intent(inout) :: IPD_Stateout
    type(IAU_external_data_type), intent(in) :: IAU_Data
    type(block_control_type),     intent(in) :: Atm_block
    logical,                      intent(in) :: flip_vc
    !--- local variables ---
    type(time_type) :: Time_prev, Time_next
-   integer :: i, j, ix, k, k1, n, w_diff, nt_dyn, iq
+   integer :: i, j, ix, im, k, k1, n, w_diff, nt_dyn, iq
    integer :: nb, blen, nwat, dnats, nq_adv
    real(kind=kind_phys):: rcp, q0, qwat(nq), qt, rdt
    real psum, qsum, psumb, qsumb, betad
@@ -1556,7 +1582,8 @@ contains
             do ix = 1, blen
                i = Atm_block%index(nb)%ii(ix)
                j = Atm_block%index(nb)%jj(ix)
-               IPD_Data(nb)%Stateout%gq0(ix,k,:) = IPD_Data(nb)%Stateout%gq0(ix,k,:) + IAU_Data%tracer_inc(i,j,k1,:)*dt_atmos
+               im = IPD_control%chunk_begin(nb)+ix-1
+               IPD_Stateout%gq0(im,k,:) = IPD_Stateout%gq0(im,k,:) + IAU_Data%tracer_inc(i,j,k1,:)*dt_atmos
             enddo
          enddo
       enddo
@@ -1567,25 +1594,27 @@ contains
 !--- put u/v tendencies into haloed arrays u_dt and v_dt
 !$OMP parallel do default (none) &
 !$OMP              shared (rdt, n, nq, dnats, npz, ncnst, nwat, mygrid, u_dt, v_dt, t_dt,&
-!$OMP                      Atm, IPD_Data, Atm_block, sphum, liq_wat, rainwat, ice_wat,   &
+!$OMP                      Atm, IPD_Control, IPD_Statein, IPD_Stateout, Atm_block, sphum, liq_wat, rainwat, ice_wat, &
 #ifdef MULTI_GASES
 !$OMP                      num_gas,                                                      &
 #endif
 !$OMP                      snowwat, graupel, nq_adv, flip_vc)   &
-!$OMP             private (nb, blen, i, j, k, k1, ix, q0, qwat, qt, tracer_name)
+!$OMP             private (nb, blen, i, j, k, k1, ix, im, q0, qwat, qt, tracer_name)
    do nb = 1,Atm_block%nblks
 
 !SJL: perform vertical filling to fix the negative humidity if the SAS convection scheme is used
 !     This call may be commented out if RAS or other positivity-preserving CPS is used.
      blen = Atm_block%blksz(nb)
-     if (Atm(n)%flagstruct%fill_gfs) call fill_gfs(blen, npz, IPD_Data(nb)%Statein%prsi, IPD_Data(nb)%Stateout%gq0, 1.e-9_kind_phys)
+     if (Atm(n)%flagstruct%fill_gfs) call fill_gfs(blen, npz, IPD_Statein%prsi(IPD_control%chunk_begin(nb):IPD_control%chunk_end(nb),:), &
+                                                   IPD_Stateout%gq0(IPD_control%chunk_begin(nb):IPD_control%chunk_end(nb),:,:), 1.e-9_kind_phys)
 
 !LMH 28sep18: If the name of a tracer ends in 'nopbl' then do NOT update it;
      !override this by setting Stateout%gq0(:,:,iq) to the input value
      do iq = 1, nq
         call get_tracer_names (MODEL_ATMOS, iq, tracer_name)
         if (index(tracer_name, 'nopbl') > 0) then
-           IPD_Data(nb)%Stateout%gq0(:,:,iq) = IPD_Data(nb)%Statein%qgrs(:,:,iq)
+           IPD_Stateout%gq0(IPD_control%chunk_begin(nb):IPD_control%chunk_end(nb),:,iq) = &
+               IPD_Statein%qgrs(IPD_control%chunk_begin(nb):IPD_control%chunk_end(nb),:,iq)
         endif
      enddo
 
@@ -1599,22 +1628,25 @@ contains
        do ix = 1, blen
          i = Atm_block%index(nb)%ii(ix)
          j = Atm_block%index(nb)%jj(ix)
-         u_dt(i,j,k1) = u_dt(i,j,k1) + (IPD_Data(nb)%Stateout%gu0(ix,k) - IPD_Data(nb)%Statein%ugrs(ix,k)) * rdt
-         v_dt(i,j,k1) = v_dt(i,j,k1) + (IPD_Data(nb)%Stateout%gv0(ix,k) - IPD_Data(nb)%Statein%vgrs(ix,k)) * rdt
-!         t_dt(i,j,k1) = (IPD_Data(nb)%Stateout%gt0(ix,k) - IPD_Data(nb)%Statein%tgrs(ix,k)) * rdt
-         t_dt(i,j,k1) = t_dt(i,j,k1) + (IPD_Data(nb)%Stateout%gt0(ix,k) - IPD_Data(nb)%Statein%tgrs(ix,k)) * rdt
+         im = IPD_control%chunk_begin(nb)+ix-1
+         u_dt(i,j,k1) = u_dt(i,j,k1) + (IPD_Stateout%gu0(im,k) - IPD_Statein%ugrs(im,k)) * rdt
+         v_dt(i,j,k1) = v_dt(i,j,k1) + (IPD_Stateout%gv0(im,k) - IPD_Statein%vgrs(im,k)) * rdt
+!         t_dt(i,j,k1) = (IPD_Stateout%gt0(im,k) - IPD_Statein%tgrs(im,k)) * rdt
+         t_dt(i,j,k1) = t_dt(i,j,k1) + (IPD_Stateout%gt0(im,k) - IPD_Statein%tgrs(im,k)) * rdt
 ! SJL notes:
 ! ---- DO not touch the code below; dry mass conservation may change due to 64bit <-> 32bit conversion
+! DH notes:
+! ---- Oops I did it again ...
 ! GFS total air mass = dry_mass + water_vapor (condensate excluded)
 ! GFS mixing ratios  = tracer_mass / (dry_mass + vapor_mass)
 ! FV3 total air mass = dry_mass + [water_vapor + condensate ]
 ! FV3 mixing ratios  = tracer_mass / (dry_mass+vapor_mass+cond_mass)
          if(flip_vc) then
-           q0 = IPD_Data(nb)%Statein%prsi(ix,k) - IPD_Data(nb)%Statein%prsi(ix,k+1)
+           q0 = IPD_Statein%prsi(im,k) - IPD_Statein%prsi(im,k+1)
          else
-           q0 = IPD_Data(nb)%Statein%prsi(ix,k+1) - IPD_Data(nb)%Statein%prsi(ix,k)
+           q0 = IPD_Statein%prsi(im,k+1) - IPD_Statein%prsi(im,k)
          endif
-         qwat(1:nq_adv) = q0*IPD_Data(nb)%Stateout%gq0(ix,k,1:nq_adv)
+         qwat(1:nq_adv) = q0*IPD_Stateout%gq0(im,k,1:nq_adv)
 ! **********************************************************************************************************
 ! Dry mass: the following way of updating delp is key to mass conservation with hybrid 32-64 bit computation
 ! **********************************************************************************************************
@@ -1628,7 +1660,7 @@ contains
 #endif
          Atm(n)%delp(i,j,k1) = q0
          Atm(n)%q(i,j,k1,1:nq_adv) = qwat(1:nq_adv) / q0
-!        if (dnats .gt. 0) Atm(n)%q(i,j,k1,nq_adv+1:nq) = IPD_Data(nb)%Stateout%gq0(ix,k,nq_adv+1:nq)
+!        if (dnats .gt. 0) Atm(n)%q(i,j,k1,nq_adv+1:nq) = IPD_Stateout%gq0(im,k,nq_adv+1:nq)
        enddo
      enddo
 
@@ -1645,7 +1677,8 @@ contains
          do ix = 1, blen
            i = Atm_block%index(nb)%ii(ix)
            j = Atm_block%index(nb)%jj(ix)
-           Atm(mygrid)%qdiag(i,j,k1,iq) = IPD_Data(nb)%Stateout%gq0(ix,k,iq)
+           im = IPD_control%chunk_begin(nb)+ix-1
+           Atm(mygrid)%qdiag(i,j,k1,iq) = IPD_Stateout%gq0(im,k,iq)
          enddo
        enddo
      enddo
@@ -2040,8 +2073,9 @@ contains
 #define _DBL_(X) X
 #define _RL_(X) X
 #endif
- subroutine atmos_phys_driver_statein (IPD_Data, Atm_block,flip_vc)
-   type (IPD_data_type),      intent(inout) :: IPD_Data(:)
+ subroutine atmos_phys_driver_statein (IPD_Control, IPD_Statein, Atm_block,flip_vc)
+   type (IPD_control_type),   intent(in)    :: IPD_Control
+   type (GFS_statein_type),   intent(inout) :: IPD_Statein
    type (block_control_type), intent(in)    :: Atm_block
    logical,                   intent(in)    :: flip_vc
 !--------------------------------------
@@ -2051,7 +2085,8 @@ contains
    real(kind=kind_phys), parameter :: qmin = 1.0e-10
    real(kind=kind_phys) :: pk0inv, ptop, pktop
    real(kind=kind_phys) :: rTv, dm, qgrs_rad
-   integer :: nb, blen, npz, i, j, k, ix, k1, kz, dnats, nq_adv
+   integer :: nb, blen, npz, i, j, k, ix, im, k1, kz, dnats, nq_adv
+
 #ifdef MULTI_GASES
    real :: q_grs(nq), q_min
 #endif
@@ -2069,19 +2104,27 @@ contains
    dnats = Atm(mygrid)%flagstruct%dnats
    nq_adv = nq - dnats
 
+   !-- level interface geopotential height (relative to the surface)
+   if(flip_vc) then
+     IPD_Statein%phii(:,1) = 0.0_kind_phys
+   else
+     IPD_Statein%phii(:,npz+1) = 0.0_kind_phys
+   endif
+   IPD_Statein%prsik(:,:) = 1.e25_kind_phys
+
 !---------------------------------------------------------------------
 ! use most up to date atmospheric properties when running serially
 !---------------------------------------------------------------------
 !$OMP parallel do default (none) &
-!$OMP             shared  (Atm_block, Atm, IPD_Data, npz, nq, ncnst, sphum, liq_wat, &
+!$OMP             shared  (Atm_block, Atm, IPD_Control, IPD_Statein, npz, nq, ncnst, sphum, liq_wat, &
 !$OMP                      ice_wat, rainwat, snowwat, graupel, pk0inv, ptop,   &
 !$OMP                      pktop, zvir, mygrid, dnats, nq_adv, flip_vc) &
 #ifdef MULTI_GASES
 
-!$OMP             private (dm, nb, blen, i, j, ix, k1, kz, rTv, qgrs_rad, q_min, q_grs)
+!$OMP             private (dm, nb, blen, i, j, ix, im, k1, kz, rTv, qgrs_rad, q_min, q_grs)
 
 #else
-!$OMP             private (dm, nb, blen, i, j, ix, k1, kz, rTv, qgrs_rad)
+!$OMP             private (dm, nb, blen, i, j, ix, im, k1, kz, rTv, qgrs_rad)
 #endif
 
    do nb = 1,Atm_block%nblks
@@ -2089,14 +2132,6 @@ contains
 ! log(pe) <-- prsik
 
      blen = Atm_block%blksz(nb)
-
-     !-- level interface geopotential height (relative to the surface)
-     if(flip_vc) then
-       IPD_Data(nb)%Statein%phii(:,1) = 0.0_kind_phys
-     else
-       IPD_Data(nb)%Statein%phii(:,npz+1) = 0.0_kind_phys
-     endif
-     IPD_Data(nb)%Statein%prsik(:,:) = 1.e25_kind_phys
 
      do k = 1, npz
        !Indices for FV's vertical coordinate, for which 1 = top
@@ -2111,45 +2146,46 @@ contains
        do ix = 1, blen
          i = Atm_block%index(nb)%ii(ix)
          j = Atm_block%index(nb)%jj(ix)
+         im = IPD_control%chunk_begin(nb)+ix-1
 
-         IPD_Data(nb)%Statein%tgrs(ix,k) = _DBL_(_RL_(Atm(mygrid)%pt(i,j,k1)))
-         IPD_Data(nb)%Statein%ugrs(ix,k) = _DBL_(_RL_(Atm(mygrid)%ua(i,j,k1)))
-         IPD_Data(nb)%Statein%vgrs(ix,k) = _DBL_(_RL_(Atm(mygrid)%va(i,j,k1)))
-         if(associated(IPD_Data(nb)%Statein%wgrs) .and. .not. Atm(mygrid)%flagstruct%hydrostatic) then
-           IPD_Data(nb)%Statein%wgrs(ix,k) = _DBL_(_RL_(Atm(mygrid)%w(i,j,k1)))
+         IPD_Statein%tgrs(im,k) = _DBL_(_RL_(Atm(mygrid)%pt(i,j,k1)))
+         IPD_Statein%ugrs(im,k) = _DBL_(_RL_(Atm(mygrid)%ua(i,j,k1)))
+         IPD_Statein%vgrs(im,k) = _DBL_(_RL_(Atm(mygrid)%va(i,j,k1)))
+         if(associated(IPD_Statein%wgrs) .and. .not. Atm(mygrid)%flagstruct%hydrostatic) then
+           IPD_Statein%wgrs(im,k) = _DBL_(_RL_(Atm(mygrid)%w(i,j,k1)))
          endif
-         IPD_Data(nb)%Statein%vvl(ix,k)  = _DBL_(_RL_(Atm(mygrid)%omga(i,j,k1)))
-         IPD_Data(nb)%Statein%prsl(ix,k) = _DBL_(_RL_(Atm(mygrid)%delp(i,j,k1)))   ! Total mass
-         if (Atm(mygrid)%flagstruct%do_skeb)IPD_Data(nb)%Statein%diss_est(ix,k) = _DBL_(_RL_(Atm(mygrid)%diss_est(i,j,k1)))
+         IPD_Statein%vvl(im,k) = _DBL_(_RL_(Atm(mygrid)%omga(i,j,k1)))
+         IPD_Statein%prsl(im,k) = _DBL_(_RL_(Atm(mygrid)%delp(i,j,k1)))   ! Total mass
+         if (Atm(mygrid)%flagstruct%do_skeb) IPD_Statein%diss_est(im,k) = _DBL_(_RL_(Atm(mygrid)%diss_est(i,j,k1)))
 
          if(flip_vc) then
            if (.not.Atm(mygrid)%flagstruct%hydrostatic .and. (.not.Atm(mygrid)%flagstruct%use_hydro_pressure))  &
-             IPD_Data(nb)%Statein%phii(ix,k+1) = IPD_Data(nb)%Statein%phii(ix,k) - _DBL_(_RL_(Atm(mygrid)%delz(i,j,k1)*grav))
+             IPD_Statein%phii(im,k+1) = IPD_Statein%phii(im,k) - _DBL_(_RL_(Atm(mygrid)%delz(i,j,k1)*grav))
          else
            if (.not.Atm(mygrid)%flagstruct%hydrostatic .and. (.not.Atm(mygrid)%flagstruct%use_hydro_pressure))  &
-             IPD_Data(nb)%Statein%phii(ix,kz) = IPD_Data(nb)%Statein%phii(ix,kz+1) - _DBL_(_RL_(Atm(mygrid)%delz(i,j,kz)*grav))
+             IPD_Statein%phii(im,kz) = IPD_Statein%phii(im,kz+1) - _DBL_(_RL_(Atm(mygrid)%delz(i,j,kz)*grav))
          endif
 
 ! Convert to tracer mass:
-         IPD_Data(nb)%Statein%qgrs(ix,k,1:nq_adv) =  _DBL_(_RL_(Atm(mygrid)%q(i,j,k1,1:nq_adv))) &
-                                                          * IPD_Data(nb)%Statein%prsl(ix,k)
+         IPD_Statein%qgrs(im,k,1:nq_adv) =  _DBL_(_RL_(Atm(mygrid)%q(i,j,k1,1:nq_adv))) &
+                                                          * IPD_Statein%prsl(im,k)
          if (dnats > 0) &
-             IPD_Data(nb)%Statein%qgrs(ix,k,nq_adv+1:nq) =  _DBL_(_RL_(Atm(mygrid)%q(i,j,k1,nq_adv+1:nq)))
+             IPD_Statein%qgrs(im,k,nq_adv+1:nq) =  _DBL_(_RL_(Atm(mygrid)%q(i,j,k1,nq_adv+1:nq)))
          !--- SHOULD THESE BE CONVERTED TO MASS SINCE THE DYCORE DOES NOT TOUCH THEM IN ANY WAY???
          !--- See Note in state update...
          if ( ncnst > nq) &
-             IPD_Data(nb)%Statein%qgrs(ix,k,nq+1:ncnst) = _DBL_(_RL_(Atm(mygrid)%qdiag(i,j,k1,nq+1:ncnst)))
+             IPD_Statein%qgrs(im,k,nq+1:ncnst) = _DBL_(_RL_(Atm(mygrid)%qdiag(i,j,k1,nq+1:ncnst)))
 ! Remove the contribution of condensates to delp (mass):
          if ( Atm(mygrid)%flagstruct%nwat == 6 ) then
-            IPD_Data(nb)%Statein%prsl(ix,k) = IPD_Data(nb)%Statein%prsl(ix,k)           &
-                                            - IPD_Data(nb)%Statein%qgrs(ix,k,liq_wat)   &
-                                            - IPD_Data(nb)%Statein%qgrs(ix,k,ice_wat)   &
-                                            - IPD_Data(nb)%Statein%qgrs(ix,k,rainwat)   &
-                                            - IPD_Data(nb)%Statein%qgrs(ix,k,snowwat)   &
-                                            - IPD_Data(nb)%Statein%qgrs(ix,k,graupel)
+            IPD_Statein%prsl(im,k) = IPD_Statein%prsl(im,k)           &
+                                   - IPD_Statein%qgrs(im,k,liq_wat)   &
+                                   - IPD_Statein%qgrs(im,k,ice_wat)   &
+                                   - IPD_Statein%qgrs(im,k,rainwat)   &
+                                   - IPD_Statein%qgrs(im,k,snowwat)   &
+                                   - IPD_Statein%qgrs(im,k,graupel)
          else !variable condensate numbers
-            IPD_Data(nb)%Statein%prsl(ix,k) = IPD_Data(nb)%Statein%prsl(ix,k) &
-                                            - sum(IPD_Data(nb)%Statein%qgrs(ix,k,2:Atm(mygrid)%flagstruct%nwat))
+            IPD_Statein%prsl(im,k) = IPD_Statein%prsl(im,k) &
+                                   - sum(IPD_Statein%qgrs(im,k,2:Atm(mygrid)%flagstruct%nwat))
          endif
        enddo
      enddo
@@ -2157,89 +2193,98 @@ contains
 ! Re-compute pressure (dry_mass + water_vapor) derived fields:
      if(flip_vc) then
        do i=1,blen
-         IPD_Data(nb)%Statein%prsi(i,npz+1) = ptop
+         im = IPD_control%chunk_begin(nb)+i-1
+         IPD_Statein%prsi(im,npz+1) = ptop
        enddo
        do k=npz,1,-1
          do i=1,blen
-           IPD_Data(nb)%Statein%prsi(i,k)  = IPD_Data(nb)%Statein%prsi(i,k+1) + IPD_Data(nb)%Statein%prsl(i,k)
-           IPD_Data(nb)%Statein%prsik(i,k) = log( IPD_Data(nb)%Statein%prsi(i,k) )
+           im = IPD_control%chunk_begin(nb)+i-1
+           IPD_Statein%prsi(im,k)  = IPD_Statein%prsi(im,k+1) + IPD_Statein%prsl(im,k)
+           IPD_Statein%prsik(im,k) = log( IPD_Statein%prsi(im,k) )
 ! Redefine mixing ratios for GFS == tracer_mass / (dry_air_mass + water_vapor_mass)
-           IPD_Data(nb)%Statein%qgrs(i,k,1:nq_adv) = IPD_Data(nb)%Statein%qgrs(i,k,1:nq_adv) &
-                                                   / IPD_Data(nb)%Statein%prsl(i,k)
+           IPD_Statein%qgrs(im,k,1:nq_adv) = IPD_Statein%qgrs(im,k,1:nq_adv) &
+                                                   / IPD_Statein%prsl(im,k)
          enddo
        enddo
      else
        do i=1,blen
-         IPD_Data(nb)%Statein%prsi(i,    1) = ptop
+         im = IPD_control%chunk_begin(nb)+i-1
+         IPD_Statein%prsi(im,1) = ptop
        enddo
        do k=1,npz
          do i=1,blen
-           IPD_Data(nb)%Statein%prsi(i,k+1)  = IPD_Data(nb)%Statein%prsi(i,k) + IPD_Data(nb)%Statein%prsl(i,k)
-           IPD_Data(nb)%Statein%prsik(i,k) = log( IPD_Data(nb)%Statein%prsi(i,k) )
+           im = IPD_control%chunk_begin(nb)+i-1
+           IPD_Statein%prsi(im,k+1)  = IPD_Statein%prsi(im,k) + IPD_Statein%prsl(im,k)
+           IPD_Statein%prsik(im,k) = log( IPD_Statein%prsi(im,k) )
 ! Redefine mixing ratios for GFS == tracer_mass / (dry_air_mass + water_vapor_mass)
-           IPD_Data(nb)%Statein%qgrs(i,k,1:nq_adv) = IPD_Data(nb)%Statein%qgrs(i,k,1:nq_adv) &
-                                                   / IPD_Data(nb)%Statein%prsl(i,k)
+           IPD_Statein%qgrs(im,k,1:nq_adv) = IPD_Statein%qgrs(im,k,1:nq_adv) &
+                                           / IPD_Statein%prsl(im,k)
          enddo
        enddo
      endif
 
      do i=1,blen
-        IPD_Data(nb)%Statein%pgr(i)         = IPD_Data(nb)%Statein%prsi(i,1)    ! surface pressure for GFS
-        IPD_Data(nb)%Statein%prsik(i,npz+1) = log(ptop)
+        im = IPD_control%chunk_begin(nb)+i-1
+        IPD_Statein%pgr(im)         = IPD_Statein%prsi(im,1)    ! surface pressure for GFS
+        IPD_Statein%prsik(im,npz+1) = log(ptop)
      enddo
 
      do k=1,npz
         do i=1,blen
+           im = IPD_control%chunk_begin(nb)+i-1
 ! Geo-potential at interfaces:
 #ifdef MULTI_GASES
-           q_grs(1:nq_adv) = IPD_Data(nb)%Statein%qgrs(i,k,1:nq_adv)
+           q_grs(1:nq_adv) = IPD_Statein%qgrs(im,k,1:nq_adv)
            q_min = qmin
-           rTv = rdgas*IPD_Data(nb)%Statein%tgrs(i,k)*virq_max(q_grs(:),q_min)
+           rTv = rdgas*IPD_Statein%tgrs(im,k)*virq_max(q_grs(:),q_min)
 #else
-           qgrs_rad = max(qmin,IPD_Data(nb)%Statein%qgrs(i,k,sphum))
-           rTv = rdgas*IPD_Data(nb)%Statein%tgrs(i,k)*(1.+zvir*qgrs_rad)
+           qgrs_rad = max(qmin,IPD_Statein%qgrs(im,k,sphum))
+           rTv = rdgas*IPD_Statein%tgrs(im,k)*(1.+zvir*qgrs_rad)
 #endif
            if ( Atm(mygrid)%flagstruct%hydrostatic .or. Atm(mygrid)%flagstruct%use_hydro_pressure )   &
-                IPD_Data(nb)%Statein%phii(i,k+1) = IPD_Data(nb)%Statein%phii(i,k) &
-                                                     + rTv*(IPD_Data(nb)%Statein%prsik(i,k) &
-                                                          - IPD_Data(nb)%Statein%prsik(i,k+1))
+                IPD_Statein%phii(im,k+1) = IPD_Statein%phii(im,k) &
+                                         + rTv*(IPD_Statein%prsik(im,k) &
+                                              - IPD_Statein%prsik(im,k+1))
 ! Layer mean pressure by perfect gas law:
-           dm = IPD_Data(nb)%Statein%prsl(i,k)
-           IPD_Data(nb)%Statein%prsl(i,k) = dm*rTv/(IPD_Data(nb)%Statein%phii(i,k+1) &
-                                                  - IPD_Data(nb)%Statein%phii(i,k))
+           dm = IPD_Statein%prsl(im,k)
+           IPD_Statein%prsl(im,k) = dm*rTv/(IPD_Statein%phii(im,k+1) &
+                                          - IPD_Statein%phii(im,k))
 
 !!! Ensure subgrid MONOTONICITY of Pressure: SJL 09/11/2016
            if ( .not.Atm(mygrid)%flagstruct%hydrostatic ) then
 ! If violated, replaces it with hydrostatic pressure
-              IPD_Data(nb)%Statein%prsl(i,k) = min(IPD_Data(nb)%Statein%prsl(i,k), &
-                                                   IPD_Data(nb)%Statein%prsi(i,k)   - 0.01*dm)
-              IPD_Data(nb)%Statein%prsl(i,k) = max(IPD_Data(nb)%Statein%prsl(i,k), &
-                                                   IPD_Data(nb)%Statein%prsi(i,k+1) + 0.01*dm)
+              IPD_Statein%prsl(im,k) = min(IPD_Statein%prsl(im,k), &
+                                           IPD_Statein%prsi(im,k)   - 0.01*dm)
+              IPD_Statein%prsl(im,k) = max(IPD_Statein%prsl(im,k), &
+                                           IPD_Statein%prsi(im,k+1) + 0.01*dm)
            endif
         enddo
      enddo
 
      do k = 1,npz
         do i=1,blen
+           im = IPD_control%chunk_begin(nb)+i-1
 ! Exner function layer center: large sensitivity to non-hydro runs with moist kappa
-           IPD_Data(nb)%Statein%prslk(i,k) = exp( kappa*log(IPD_Data(nb)%Statein%prsl(i,k)/p00) )
+           IPD_Statein%prslk(im,k) = exp( kappa*log(IPD_Statein%prsl(im,k)/p00) )
 !--  layer center geopotential; geometric midpoint
-           IPD_Data(nb)%Statein%phil(i,k) = 0.5_kind_phys*(IPD_Data(nb)%Statein%phii(i,k) &
-                                                         + IPD_Data(nb)%Statein%phii(i,k+1))
+           IPD_Statein%phil(im,k) = 0.5_kind_phys*(IPD_Statein%phii(im,k) &
+                                                 + IPD_Statein%phii(im,k+1))
         enddo
      enddo
 
 ! Compute Exner function at layer "interfaces"
     do i=1,blen
+       im = IPD_control%chunk_begin(nb)+i-1
 !      Top & Bottom edges computed hydrostaticlly
-       IPD_Data(nb)%Statein%prsik(i,    1) = exp( kappa*IPD_Data(nb)%Statein%prsik(i,1) )*pk0inv  ! bottom
-       IPD_Data(nb)%Statein%prsik(i,npz+1) = pktop                           ! TOA
+       IPD_Statein%prsik(im,    1) = exp( kappa*IPD_Statein%prsik(im,1) )*pk0inv  ! bottom
+       IPD_Statein%prsik(im,npz+1) = pktop                                        ! TOA
     enddo
 
     if ( Atm(mygrid)%flagstruct%hydrostatic .or. Atm(mygrid)%flagstruct%use_hydro_pressure ) then
         do k=2,npz
            do i=1,blen
-              IPD_Data(nb)%Statein%prsik(i,k) = exp( kappa*IPD_Data(nb)%Statein%prsik(i,k) )*pk0inv
+              im = IPD_control%chunk_begin(nb)+i-1
+              IPD_Statein%prsik(im,k) = exp( kappa*IPD_Statein%prsik(im,k) )*pk0inv
            enddo
         enddo
     endif
@@ -2347,17 +2392,17 @@ contains
 !>@brief The subroutine 'atmosphere_fill_grid_cpl' is to downscale/pass the
 !! coupling variables (e.g., sea surface temperature) received by the parent grid
 !! down into the nested grid(s).
-!>@details First the coupling field(s) is retreived from the IPD_data structure,
+!>@details First the coupling field(s) is retreived from the Sfcprop structure,
 !! and then loops through nested grids and call the fill_nest_grid_cpl to actually
 !! communicate and fill the nested grid(s) for coupling variables from its parent.
-!! After that the updated coupling field(s) is put back to the IPD_data structure.
+!! After that the updated coupling field(s) is put back to the Sfcprop structure.
 !! Note: Currently, only sea surface temperature is passed down into the nest(s).
-  subroutine atmosphere_fill_nest_cpl(Atm_block, IPD_control, IPD_data)
+  subroutine atmosphere_fill_nest_cpl(Atm_block, IPD_control, Sfcprop)
     type(block_control_type), intent(in) :: Atm_block     !< Physics block layout
     type(IPD_control_type), intent(in)   :: IPD_control   !< Physics metadata
-    type(IPD_data_type), intent(inout)   :: IPD_data(:)   !< Physics variable data
+    type(GFS_sfcprop_type), intent(inout)   :: Sfcprop    !< Physics variable data
 
-    integer :: nb, blen, ix, i, j, n
+    integer :: nb, blen, ix, i, j, n, im
     character*255 :: message
 
     ! Deal with tsfco (sea surface temperature)
@@ -2368,7 +2413,8 @@ contains
         do ix = 1, blen
           i = Atm_block%index(nb)%ii(ix)
           j = Atm_block%index(nb)%jj(ix)
-          Atm(mygrid)%parent2nest_2d(i,j) = IPD_Data(nb)%Sfcprop%tsfco(ix)
+          im = IPD_control%chunk_begin(nb)+ix-1
+          Atm(mygrid)%parent2nest_2d(i,j) = Sfcprop%tsfco(im)
         enddo
       enddo
       ! Loop through and fill all nested grids
@@ -2384,12 +2430,83 @@ contains
           do ix = 1, blen
             i = Atm_block%index(nb)%ii(ix)
             j = Atm_block%index(nb)%jj(ix)
-            if (IPD_data(nb)%Sfcprop%oceanfrac(ix) > 0.) then
-              IPD_data(nb)%Sfcprop%tsfco(ix) = Atm(mygrid)%parent2nest_2d(i,j)
+            im = IPD_control%chunk_begin(nb)+ix-1
+            if (Sfcprop%oceanfrac(im) > 0.) then
+              Sfcprop%tsfco(im) = Atm(mygrid)%parent2nest_2d(i,j)
             endif
           enddo
         enddo
       endif
+    endif
+
+    ! Deal with usfco and vsfco
+    if (IPD_control%cplocn2atm .and. IPD_control%icplocn2atm==1) then
+      ! Extract the coupling field
+      do nb = 1,Atm_block%nblks
+        blen = Atm_block%blksz(nb)
+        do ix = 1, blen
+          i = Atm_block%index(nb)%ii(ix)
+          j = Atm_block%index(nb)%jj(ix)
+          im = IPD_control%chunk_begin(nb)+ix-1
+          Atm(mygrid)%parent2nest_2d(i,j) = Sfcprop%usfco(im)
+        enddo
+      enddo
+      ! Loop through and fill all nested grids
+      do n=2,ngrids
+        if (n==mygrid .or. mygrid==Atm(n)%parent_grid%grid_number) then
+          call fill_nested_grid_cpl(n, n==mygrid)
+        endif
+      enddo
+      ! Update the nested grids
+      if (Atm(mygrid)%neststruct%nested) then
+        do nb = 1,Atm_block%nblks
+          blen = Atm_block%blksz(nb)
+          do ix = 1, blen
+            i = Atm_block%index(nb)%ii(ix)
+            j = Atm_block%index(nb)%jj(ix)
+            im = IPD_control%chunk_begin(nb)+ix-1
+            if (Sfcprop%oceanfrac(im) > 0.) then
+              Sfcprop%usfco(im) = Atm(mygrid)%parent2nest_2d(i,j)
+            else
+              Sfcprop%usfco(im) = 0.0_kind_phys
+            endif
+          enddo
+        enddo
+      endif
+
+      ! Extract the coupling field
+      do nb = 1,Atm_block%nblks
+        blen = Atm_block%blksz(nb)
+        do ix = 1, blen
+          i = Atm_block%index(nb)%ii(ix)
+          j = Atm_block%index(nb)%jj(ix)
+          im = IPD_control%chunk_begin(nb)+ix-1
+          Atm(mygrid)%parent2nest_2d(i,j) = Sfcprop%vsfco(im)
+        enddo
+      enddo
+      ! Loop through and fill all nested grids
+      do n=2,ngrids
+        if (n==mygrid .or. mygrid==Atm(n)%parent_grid%grid_number) then
+          call fill_nested_grid_cpl(n, n==mygrid)
+        endif
+      enddo
+      ! Update the nested grids
+      if (Atm(mygrid)%neststruct%nested) then
+        do nb = 1,Atm_block%nblks
+          blen = Atm_block%blksz(nb)
+          do ix = 1, blen
+            i = Atm_block%index(nb)%ii(ix)
+            j = Atm_block%index(nb)%jj(ix)
+            im = IPD_control%chunk_begin(nb)+ix-1
+            if (Sfcprop%oceanfrac(im) > 0.) then
+              Sfcprop%vsfco(im) = Atm(mygrid)%parent2nest_2d(i,j)
+            else
+              Sfcprop%vsfco(im) = 0.0_kind_phys
+            endif
+          enddo
+        enddo
+      endif
+
     endif
 
     ! Deal with zorlwav (sea surface roughness length)
@@ -2400,7 +2517,8 @@ contains
         do ix = 1, blen
           i = Atm_block%index(nb)%ii(ix)
           j = Atm_block%index(nb)%jj(ix)
-          Atm(mygrid)%parent2nest_2d(i,j) = IPD_Data(nb)%Sfcprop%zorlwav(ix)
+          im = IPD_control%chunk_begin(nb)+ix-1
+          Atm(mygrid)%parent2nest_2d(i,j) = Sfcprop%zorlwav(im)
         enddo
       enddo
       ! Loop through and fill all nested grids
@@ -2416,9 +2534,10 @@ contains
           do ix = 1, blen
             i = Atm_block%index(nb)%ii(ix)
             j = Atm_block%index(nb)%jj(ix)
-            if (IPD_data(nb)%Sfcprop%oceanfrac(ix) > 0.) then
-              IPD_data(nb)%Sfcprop%zorlwav(ix) = Atm(mygrid)%parent2nest_2d(i,j)
-            ! IPD_data(nb)%Sfcprop%zorlw(ix) = Atm(mygrid)%parent2nest_2d(i,j)
+            im = IPD_control%chunk_begin(nb)+ix-1
+            if (Sfcprop%oceanfrac(im) > 0.) then
+              Sfcprop%zorlwav(im) = Atm(mygrid)%parent2nest_2d(i,j)
+            ! Sfcprop%zorlw(im) = Atm(mygrid)%parent2nest_2d(i,j)
             endif
           enddo
         enddo
