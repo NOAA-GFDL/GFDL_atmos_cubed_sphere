@@ -4743,7 +4743,7 @@ end subroutine terminator_tracers
         acapS                         => gridstruct%acapS
         globalarea                    => gridstruct%globalarea
 
-        if (do_coriolis==1) then
+        if (do_coriolis>=1) then
            f0_const = 2.*omega*sin(flagstruct%deglat/180.*pi)
         else
            f0_const = 0.0
@@ -5320,7 +5320,11 @@ end subroutine terminator_tracers
       !  NSSL Idealized Supercell Experiment (NISE) test case
 
         zvir = rvgas/rdgas - 1.
-        p00 = 1000.E2
+        p00 = p00_in ! 1000.E2
+        if (t_profile == -1 .or. q_profile == -1 .or. ws_profile == -1) then
+          call get_sounding( z_snd, p_snd, t_snd, rho_snd, u_snd, v_snd, qv_snd, nl_max, nl_snd, p00)
+          IF ( is_master() ) write(*,*) 'Using p00 from sounding file: p00 = ',p00
+        endif
         ps(:,:) = p00
         phis(:,:) = 0.
         do j=js,je
@@ -5337,7 +5341,7 @@ end subroutine terminator_tracers
                  delp(i,j,k) = ak(k+1)-ak(k) + ps(i,j)*(bk(k+1)-bk(k))
                  pe(i,k+1,j) = ak(k+1) + ps(i,j)*bk(k+1)
                  peln(i,k+1,j) = log(pe(i,k+1,j))
-                   pk(i,j,k+1) = exp( kappa*peln(i,k+1,j) )
+                 pk(i,j,k+1) = exp( kappa*peln(i,k+1,j) )
               enddo
            enddo
         enddo
@@ -5349,9 +5353,9 @@ end subroutine terminator_tracers
            pe1(k) = (pe(i,k+1,j)-pe(i,k,j))/(peln(i,k+1,j)-peln(i,k,j))
         enddo
 
-        if (t_profile == -1 .or. q_profile == -1 .or. ws_profile == -1) then
-          call get_sounding( z_snd, p_snd, t_snd, rho_snd, u_snd, v_snd, qv_snd, nl_max, nl_snd )
-        endif
+        !if (t_profile == -1 .or. q_profile == -1 .or. ws_profile == -1) then
+        !  call get_sounding( z_snd, p_snd, t_snd, rho_snd, u_snd, v_snd, qv_snd, nl_max, nl_snd )
+        !endif
         if (t_profile == -1) then
           do k = 1,npz
            ts1(k) =  interp_log( t_snd, p_snd, pe1(k), nl_max, nl_snd  )
@@ -5487,6 +5491,13 @@ end subroutine terminator_tracers
         else
           call mpp_error(FATAL, " ws_profile ", ws_profile ,"  not defined" )
         endif
+
+        IF ( is_master() ) THEN
+          write(*,*) 'Final sounding: k, z, t, q, u, v, p'
+          do k = 1,npz
+            write(*,*) k,ze1(k),ts1(k),qs1(k),u(is,js,k),v(is,js,k),pe1(k)
+          enddo
+        ENDIF
 
         call p_var(npz, is, ie, js, je, ptop, ptop_min, delp, delz, pt, ps,&
                    pe, peln, pk, pkz, kappa, q, ng, ncnst, area, dry_mass,.false.,.false., &
@@ -8178,34 +8189,46 @@ end subroutine qs_table
 
  integer kp, k, im, ip, nz_out
  logical interp, increasing_z
- real    pres, w1, w2
+ real    pres
+ double precision :: w1, w2, v1, v2
  logical debug
  parameter ( debug = .false. )
 
  pres = p_out
- if (is_master()) print*,"p_in(nz_in), p_in(1) = " , p_in(nz_in), p_in(1)
-    IF (pres > p_in(nz_in)) then
-      w2 = (log(p_in(nz_in))-log(pres))/(log(p_in(nz_in))-log(p_in(nz_in-1)))
-      w1 = 1.-w2
-      interp_log = v_in(nz_in)**w1 * v_in(nz_in-1)**w2
-    ELSE IF (pres < p_in(1)) then
-      w2 = (log(p_in(2))-log(pres))/(log(p_in(2))-log(p_in(1)))
-      w1 = 1.-w2
-      interp_log = v_in(2)**w1 * v_in(1)**w2
-    ELSE
-      interp = .false.
-      kp = nz_in
-      DO WHILE ( (interp .eqv. .false.) .and. (kp .ge. 2) )
-        IF(   ((p_in(kp)   .ge. pres) .and.     &
-               (p_in(kp-1) .le. pres))             )   THEN
-          w2 = (log(pres)-log(p_in(kp)))/(log(p_in(kp-1))-log(p_in(kp)))
-          w1 = 1.-w2
-          interp_log = v_in(kp)**w1 * v_in(kp-1)**w2
-          interp = .true.
-        END IF
-        kp = kp-1
-      ENDDO
-    ENDIF
+ 
+ IF (pres > p_in(nz_in)) then
+!   if (is_master()) print*,"interp_log 1: p_in(nz_in), p_in(1) = " , p_in(nz_in), p_in(1)
+   w2 = (log(p_in(nz_in))-log(pres))/(log(p_in(nz_in))-log(p_in(nz_in-1)))
+   w1 = 1.-w2
+   interp_log = v_in(nz_in)**w1 * v_in(nz_in-1)**w2
+ ELSE IF (pres < p_in(1)) then ! extrapolate to lower pressure
+   w2 = (log(p_in(2))-log(pres))/(log(p_in(2))-log(p_in(1)))
+   w1 = 1.-w2
+   v1 = v_in(1)
+   v2 = v_in(2)
+  ! interp_log =  w1*v_in(2) + w2*v_in(1) !
+   interp_log = dble(v_in(2))**w1 * dble(v_in(1))**w2
+!  if (is_master()) print*,"interp_log 2: p_in(nz_in), p_in(1) = " , p_in(nz_in), p_in(1),pres,  &
+              log(p_in(2))-log(pres), log(p_in(2))-log(p_in(1)), w2, w1, v_in(2) , v_in(1), &
+              v_in(2)**w1, v_in(1)**w2, v2**w1 * v1**w2,  w1*v_in(2) + w2*v_in(1), interp_log
+ ELSE
+   interp = .false.
+   kp = nz_in
+   DO WHILE ( (interp .eqv. .false.) .and. (kp .ge. 2) )
+     IF(   ((p_in(kp)   .ge. pres) .and.     &
+            (p_in(kp-1) .le. pres))             )   THEN
+       w2 = (log(pres)-log(p_in(kp)))/(log(p_in(kp-1))-log(p_in(kp)))
+       w1 = 1.-w2
+       interp_log = v_in(kp)**w1 * v_in(kp-1)**w2
+       interp = .true.
+!    if (is_master()) print*,"interp_log 3: pres,p(kp),p(kp-1),w2,w1 = " , pres, p_in(kp), p_in(kp-1), &
+               w2, w1, v_in(kp) , v_in(kp-1), interp_log,  w1*v_in(kp) + w2*v_in(kp-1)
+
+     END IF
+     kp = kp-1
+   ENDDO
+ ENDIF
+
  end function interp_log
 
  real function interp_lin( v_in, z_in, z_out, nzmax,nz_in  )
