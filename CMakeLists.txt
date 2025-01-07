@@ -36,7 +36,7 @@ option(INTERNAL_FILE_NML     "Enable compiler definition -DINTERNAL_FILE_NML"   
 option(ENABLE_QUAD_PRECISION "Enable compiler definition -DENABLE_QUAD_PRECISION"  ON)
 option(HYDRO       "Enable compiler definition -DHYDRO"                    OFF)
 option(ENABLE_RRFS_WAR "Enable independent parallel I/O when io_layout=1,1 -DENABLE_RRFS_WAR"  OFF)
-option(ENABLE_PARALLELRESTART "Enable collective parallel reads -DENABLE_PARALLELRESTART"  ON)
+option(ENABLE_PARALLELRESTART "Enable collective parallel reads -DENABLE_PARALLELRESTART"  OFF)
 
 find_package(MPI REQUIRED)
 if(OPENMP)
