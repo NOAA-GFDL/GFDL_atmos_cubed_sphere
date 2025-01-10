@@ -190,6 +190,7 @@
       real    :: soliton_size = 750.e3, soliton_Umax = 50.
       integer :: t_profile = 0, q_profile = 0, ws_profile = 0, do_coriolis = 0, bubble_type = 0
       real    :: bubble_t = 2., bubble_q = 0., bubble_rad_x = 10.0E3 
+      real    :: p00_in = 1.e5
       real    :: bubble_rad_y = 10.0E3, bubble_zc = 1.4E3
       real    :: iso_t = 300., adi_th = 300., us0 = 30.
       real,dimension(max_bub)    :: icenters, jcenters
@@ -5504,6 +5505,7 @@ end subroutine terminator_tracers
                   .true., hydrostatic, nwat, domain, flagstruct%adiabatic)
 
         if (bubble_type > 0) then
+        if (is_master()) print*, "ADDING BUBBLE"
 ! *** Add Initial perturbation ***
           pturb = bubble_t
           xradbub = bubble_rad_x
@@ -5612,7 +5614,8 @@ end subroutine terminator_tracers
         namelist /test_case_nml/test_case, bubble_do, alpha, nsolitons, soliton_Umax, soliton_size, &
                                 t_profile, q_profile, ws_profile, bubble_t, bubble_q,  &
                                 bubble_zc, do_coriolis, iso_t, adi_th, us0, bubble_type,n_bub, &
-                                icenters,jcenters, bubble_rad_x, bubble_rad_y, do_rand_perts
+                                icenters,jcenters, bubble_rad_x, bubble_rad_y, do_rand_perts, &
+                                p00_in
 
 #include<file_version.h>
 
@@ -8057,10 +8060,11 @@ subroutine qs_table (n)
 
 end subroutine qs_table
 
-    subroutine get_sounding( zk, p, t, rho, u, v, qv, nl_max, nl_in )
+    subroutine get_sounding( zk, p, t, rho, u, v, qv, nl_max, nl_in, p00 )
       implicit none
 
       integer nl_max, nl_in
+      real p00
       real zk(nl_max), p(nl_max), theta(nl_max), rho(nl_max), &
            u(nl_max), v(nl_max), qv(nl_max), p_dry(nl_max), t(nl_max)
 
@@ -8130,14 +8134,24 @@ end subroutine qs_table
    !  compute diagnostics,
 !  first, convert qv(g/kg) to qv(g/g)
 
+    if (qv_surf > 0.1) THEN
       do k=1,nl
         qv_input(k) = 0.001*qv_input(k)
       enddo
+    endif
 
-      p_surf = 100.*p_surf  ! convert to pascals
-      qvf = 1. + rvovrd*qv_input(1)
-      rho_surf = 1./((r/p1000mb)*th_surf*qvf*((p_surf/p1000mb)**cvpm))
-      pi_surf = (p_surf/p1000mb)**(r/cp)
+    do k=1,nl
+       IF ( qv_input(k) < 1E-9 ) THEN
+         write(*,*) 'Warning Input sounding has qv = 0, resetting to 1E-9 kg/kg'
+         qv_input(k) = 1E-9 ! Max(0.00001,qv_input(k))
+       ENDIF
+    enddo
+
+    IF ( p_surf < 2000. ) p_surf = 100.*p_surf  ! convert to pascals
+    p00 = p_surf  
+    qvf = 1. + rvovrd*qv_input(1)
+    rho_surf = 1./((r/p1000mb)*th_surf*qvf*((p_surf/p1000mb)**cvpm))
+    pi_surf = (p_surf/p1000mb)**(r/cp)
 
 
 
@@ -8213,8 +8227,8 @@ end subroutine qs_table
   ! interp_log =  w1*v_in(2) + w2*v_in(1) !
    interp_log = dble(v_in(2))**w1 * dble(v_in(1))**w2
 !  if (is_master()) print*,"interp_log 2: p_in(nz_in), p_in(1) = " , p_in(nz_in), p_in(1),pres,  &
-              log(p_in(2))-log(pres), log(p_in(2))-log(p_in(1)), w2, w1, v_in(2) , v_in(1), &
-              v_in(2)**w1, v_in(1)**w2, v2**w1 * v1**w2,  w1*v_in(2) + w2*v_in(1), interp_log
+!              log(p_in(2))-log(pres), log(p_in(2))-log(p_in(1)), w2, w1, v_in(2) , v_in(1), &
+!              v_in(2)**w1, v_in(1)**w2, v2**w1 * v1**w2,  w1*v_in(2) + w2*v_in(1), interp_log
  ELSE
    interp = .false.
    kp = nz_in
@@ -8226,7 +8240,7 @@ end subroutine qs_table
        interp_log = v_in(kp)**w1 * v_in(kp-1)**w2
        interp = .true.
 !    if (is_master()) print*,"interp_log 3: pres,p(kp),p(kp-1),w2,w1 = " , pres, p_in(kp), p_in(kp-1), &
-               w2, w1, v_in(kp) , v_in(kp-1), interp_log,  w1*v_in(kp) + w2*v_in(kp-1)
+!               w2, w1, v_in(kp) , v_in(kp-1), interp_log,  w1*v_in(kp) + w2*v_in(kp-1)
 
      END IF
      kp = kp-1
