@@ -23,7 +23,11 @@
 ! Revise the OpenMP code to avoid crash
 module fv_thermodynamics_mod
 
+#ifdef OVERLOAD_R4
+  use constantsR4_mod,     only: grav, cp_air, cp_vapor, rvgas, rdgas
+#else
   use constants_mod,       only: grav, cp_air, cp_vapor, rvgas, rdgas
+#endif
   use gfdl_mp_mod,         only: c_liq, c_ice
   use field_manager_mod,   only: MODEL_ATMOS
   use tracer_manager_mod,  only: get_tracer_name
