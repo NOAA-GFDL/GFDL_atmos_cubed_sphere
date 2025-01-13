@@ -581,6 +581,7 @@ module fv_eta_mod
             pint = 250.E2
             stretch_fac = 1.03
             auto_routine = 1
+
          else
             ks = 19
             do k=1,km+1
