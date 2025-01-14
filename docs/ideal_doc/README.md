@@ -58,12 +58,10 @@ Other settings:
       regional = .false. ! Required .false.
       deglat = 15 ! grid latitude (default 15 degrees) Affects radiation and coriolis (f-plane)
       deglon = 0  ! grid longitude (default 0) Only affects radiation (time of day relative to UTC)
-      do_radiation = .false. !CCPP suites must include radiation to avoid errors, but this will turn off all radiation (LW & SW) even if schemes are in the suite
   /
 
 suite FV3_mp_nssl_ideal:
-Simplest case is microphysics only, with this one set up to run the NSSL MP scheme. To turn off radiation we set in the namelist:
-  do_radiation = .false.
+Simplest case is microphysics only, with this one set up to run the NSSL MP scheme. 
 
 example input.nml: input.nml.idealbubble.test.3m (NSSL 3-moment mp)
 
