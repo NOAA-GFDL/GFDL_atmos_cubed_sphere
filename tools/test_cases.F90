@@ -5327,6 +5327,8 @@ end subroutine terminator_tracers
           call get_sounding( z_snd, p_snd, t_snd, rho_snd, u_snd, v_snd, qv_snd, nl_max, nl_snd, p00)
           IF ( is_master() ) write(*,*) 'Using p00 from sounding file: p00 = ',p00
         endif
+
+   ! Set up pressure arrays
         ps(:,:) = p00
         phis(:,:) = 0.
         do j=js,je
@@ -5355,14 +5357,14 @@ end subroutine terminator_tracers
            pe1(k) = (pe(i,k+1,j)-pe(i,k,j))/(peln(i,k+1,j)-peln(i,k,j))
         enddo
 
-        !if (t_profile == -1 .or. q_profile == -1 .or. ws_profile == -1) then
-        !  call get_sounding( z_snd, p_snd, t_snd, rho_snd, u_snd, v_snd, qv_snd, nl_max, nl_snd )
-        !endif
+   !Set model thermodynamic profile based on namelist inputs
+        ! Read profile from sounding
         if (t_profile == -1) then
           do k = 1,npz
            ts1(k) =  interp_log( t_snd, p_snd, pe1(k), nl_max, nl_snd  )
           enddo
         elseif ( t_profile == 0 ) then
+        !Generate GFDL's supercell sounding
           call SuperCell_Sounding(npz, p00, pk1, ts1, qs1)
         elseif (t_profile == 1 ) then
           !adiabatic
@@ -5378,6 +5380,7 @@ end subroutine terminator_tracers
         endif
 
         if (q_profile == -1) then
+          ! Read profile from sounding
           do k = 1,npz
            qs1(k) =  interp_log( qv_snd, p_snd, pe1(k), nl_max,nl_snd  )
           enddo
@@ -5385,6 +5388,7 @@ end subroutine terminator_tracers
           if (t_profile == 0) then
             ! qs1 already computed prior, move along
           else
+            ! Generate GFDL's supercell sounding
             call SuperCell_Sounding(npz, p00, pk1, dummy, qs1)
           endif
         elseif (q_profile==1 ) then
@@ -5413,6 +5417,8 @@ end subroutine terminator_tracers
            ze1(k) = ze1(k+1) - delz(is,js,k)
         enddo
 
+    ! Set up model winds
+        !Read winds from sounding
         if (ws_profile == -1) then
           do k = 1,npz
            zm = 0.5*(ze1(k)+ze1(k+1))
@@ -5458,7 +5464,7 @@ end subroutine terminator_tracers
            enddo
           enddo
         elseif (ws_profile==1 ) then
-        ! Unidiretional WK shear
+        ! Unidirectional WK shear
           v(:,:,:) = 0.
           do k=1,npz
             zm = 0.5*(ze1(k)+ze1(k+1))
@@ -5505,6 +5511,7 @@ end subroutine terminator_tracers
                    pe, peln, pk, pkz, kappa, q, ng, ncnst, area, dry_mass,.false.,.false., &
                   .true., hydrostatic, nwat, domain, flagstruct%adiabatic)
 
+        ! Add in (or don't) bubble(s) to initialize storms
         if (bubble_type > 0) then
         if (is_master()) print*, "ADDING BUBBLE"
 ! *** Add Initial perturbation ***
@@ -5513,6 +5520,7 @@ end subroutine terminator_tracers
           yradbub = bubble_rad_y
           zc = bubble_zc     ! center of bubble from surface
           if (bubble_type == 1) then
+            ! One bubble in domain center
             icenter = (npx-1)/2 + 1
             jcenter = (npy-1)/2 + 1
             n_bub = 1
@@ -5546,6 +5554,7 @@ end subroutine terminator_tracers
               RAD=SQRT(xrad*xrad+yrad*yrad+zrad*zrad)
               IF(RAD <= 1.) THEN
                  if (do_rand_perts) then
+                    ! Add in random, small amplitude perturbations to bubble thermodynamic state
                     pt(i,j,k) = pt(i,j,k) + pturb*COS(.5*pi*RAD)**2 + 0.2 * (2.0*rand1-1.0)
                     q(i,j,k,1) = q(i,j,k,1) + bubble_q *COS(.5*pi*RAD)**2 + 1.0E-7 *(2.0*rand2-1.0)
                  else
