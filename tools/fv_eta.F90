@@ -581,19 +581,6 @@ module fv_eta_mod
             pint = 250.E2
             stretch_fac = 1.03
             auto_routine = 1
-
-         elseif (trim(npz_type) == 'meso2') then
-            ptop = 20.E2
-            pint = 100.E2
-            stretch_fac = 1.05
-            auto_routine = 1
-
-         elseif (trim(npz_type) == 'meso3') then
-            ptop = 2.E2
-            pint = 250.E2
-            stretch_fac = 1.05
-            auto_routine = 1
-
          else
             ks = 19
             do k=1,km+1

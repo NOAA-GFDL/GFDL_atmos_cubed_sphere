@@ -651,7 +651,6 @@ contains
        enddo
        call store_data(id_delp, wk, Time, kstt_delp, kend_delp)
     endif
-    if(mpp_pe() == mpp_root_pe()) print*, "inside GFS_PHYS, removing hydrometeors from delp"
     !--- Surface Pressure (PS)
     ! Re-compute pressure (dry_mass + water_vapor) surface pressure
     if(id_ps > 0) then
