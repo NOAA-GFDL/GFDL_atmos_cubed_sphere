@@ -190,6 +190,7 @@
       real    :: soliton_size = 750.e3, soliton_Umax = 50.
       integer :: t_profile = 0, q_profile = 0, ws_profile = 0, do_coriolis = 0, bubble_type = 0
       real    :: bubble_t = 2., bubble_q = 0., bubble_rad_x = 10.0E3 
+      real    :: umove = 0.0, vmove = 0.0
       real    :: p00_in = 1.e5
       real    :: bubble_rad_y = 10.0E3, bubble_zc = 1.4E3
       real    :: iso_t = 300., adi_th = 300., us0 = 30.
@@ -5615,7 +5616,7 @@ end subroutine terminator_tracers
                                 t_profile, q_profile, ws_profile, bubble_t, bubble_q,  &
                                 bubble_zc, do_coriolis, iso_t, adi_th, us0, bubble_type,n_bub, &
                                 icenters,jcenters, bubble_rad_x, bubble_rad_y, do_rand_perts, &
-                                p00_in
+                                p00_in, umove, vmove
 
 #include<file_version.h>
 
@@ -8191,8 +8192,8 @@ end subroutine qs_table
           zk(k) = h_input(k)
           p(k) = pm_input(k)
           t(k) = th_input(k) * (pm_input(k) / p1000mb)**(rdgas/cp_air)
-          u(k) = u_input(k)
-          v(k) = v_input(k)
+          u(k) = u_input(k) - umove
+          v(k) = v_input(k) - vmove
           if(is_master()) print*, zk(k)
           qv(k) = qv_input(k)
 

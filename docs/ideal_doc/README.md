@@ -44,6 +44,8 @@ Example namelist settings:
       adi_th = 300. ! adiabatic temperature (K) for t_profile=1 (default 300 K)
       iso_th = 300. ! isothermal temperature (K) for t_profile=2 (default 300 K)
       do_rand_perts = .false. ! if n_bub > 0, applies small amplitude(0.2k; 1E-7 kg/kg), random perturbations to T and qv values inside bubbles (default=.false.)
+      umove = 0.0 ! 'grid motion' u-component (m/s) subtracted from sounding U-wind to help keep storm centered in the domain
+      vmove = 0.0 ! 'grid motion' v-component (m/s) subtracted from sounding V-wind to help keep storm centered in the domain
   /
 
 Other settings:
