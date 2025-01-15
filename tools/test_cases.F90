@@ -49,7 +49,8 @@
       use gfdl_mp_mod,       only: mqs3d
       use fv_diagnostics_mod, only: prt_maxmin, ppme, eqv_pot, qcly0
       use mpp_mod,            only: mpp_pe, mpp_chksum, stdout
-      use fv_arrays_mod,         only: fv_grid_type, fv_flags_type, fv_grid_bounds_type, R_GRID
+      use fv_arrays_mod,         only: fv_grid_type, fv_flags_type, fv_grid_bounds_type, R_GRID, &
+                                       inline_pbl_type, inline_gwd_type
       use tracer_manager_mod,    only: get_tracer_index
       use field_manager_mod,     only: MODEL_ATMOS
       use w_forcing_mod,         only: init_w_forcing
@@ -4535,7 +4536,8 @@ end subroutine terminator_tracers
 !
       subroutine init_double_periodic(u,v,w,pt,delp,q,phis, ps,pe,peln,pk,pkz,  uc,vc, ua,va, ak, bk,  &
                                       gridstruct, flagstruct, npx, npy, npz, ng, ncnst, nwat, ndims, nregions, dry_mass, &
-                                      mountain, moist_phys, hydrostatic, hybrid_z, delz, ze0, ks, ptop, domain_in, tile_in, bd)
+                                      mountain, moist_phys, hydrostatic, hybrid_z, delz, ze0, ks, ptop, domain_in, tile_in, bd, &
+                                      inline_pbl, inline_gwd)
 
 
         type(fv_grid_bounds_type), intent(IN) :: bd
@@ -4577,6 +4579,10 @@ end subroutine terminator_tracers
         real,         intent(INOUT) :: ptop
 
         type(domain2d), intent(IN), target :: domain_in
+
+        type (inline_pbl_type), intent (inout) :: inline_pbl
+
+        type (inline_gwd_type), intent (inout) :: inline_gwd
 
         type(fv_grid_type), target :: gridstruct
         type(fv_flags_type), target :: flagstruct
@@ -6100,6 +6106,31 @@ end subroutine terminator_tracers
 
 
         end select
+
+        if (flagstruct%do_inline_pbl) then
+            inline_pbl%lsm = 0
+            inline_pbl%zorl = 0.1
+            inline_pbl%ztrl = 0.1
+            inline_pbl%ffmm = 10.0
+            inline_pbl%ffhh = 10.0
+            inline_pbl%tsfc = 300.
+            inline_pbl%shdmax = 0.0
+            inline_pbl%vtype = 0.0
+            inline_pbl%vfrac = 0.0
+            inline_pbl%snowd = 0.0
+            inline_pbl%uustar = 0.5
+            inline_pbl%srflag = 0.0
+            inline_pbl%hice = 0.0
+            inline_pbl%fice = 0.0
+            inline_pbl%tice = 300.
+            inline_pbl%weasd = 0.0
+            inline_pbl%tprcp = 0.0
+            inline_pbl%stc = 300.
+        endif
+
+        if (flagstruct%do_inline_gwd) then
+            inline_gwd%hprime = 0.0
+        endif
 
         if (w_forcing) then
            call init_w_forcing(bd, npx, npy, npz, flagstruct%grid_type, agrid, flagstruct)
