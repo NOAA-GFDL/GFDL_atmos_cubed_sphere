@@ -649,7 +649,7 @@ contains
                         sin(Atm(n)%gridstruct%agrid(i,j,2))*cos(alpha) )
                 enddo
              enddo
-          else
+          elseif ( grid_type /= 4) then
              f00 = 2.*omega*sin(Atm(n)%flagstruct%deglat/180.*pi)
              do j=jsd,jed+1
                 do i=isd,ied+1
