@@ -404,6 +404,7 @@ module fv_control_mod
      logical, pointer :: regional
      integer, pointer :: bc_update_interval
      integer, pointer :: nrows_blend
+     logical, pointer :: var_grav
      logical, pointer :: regional_bcs_from_gsi
      logical, pointer :: write_restart_with_bcs
      integer, pointer :: parent_tile, refinement, nestbctype, nestupdate, upoff, nsponge, ioffset, joffset
@@ -868,6 +869,7 @@ module fv_control_mod
        regional                      => Atm%flagstruct%regional
        bc_update_interval            => Atm%flagstruct%bc_update_interval
        nrows_blend                   => Atm%flagstruct%nrows_blend
+       var_grav                      => Atm%flagstruct%var_grav
        regional_bcs_from_gsi         => Atm%flagstruct%regional_bcs_from_gsi
        write_restart_with_bcs        => Atm%flagstruct%write_restart_with_bcs
        reset_eta                     => Atm%flagstruct%reset_eta
@@ -1091,7 +1093,7 @@ module fv_control_mod
             nestbctype, nestupdate, upoff, nsponge, s_weight, &
             check_negative, nudge_ic, halo_update_type, gfs_phil, agrid_vel_rst,     &
             do_uni_zfull, adj_mass_vmr, fac_n_spl, fhouri, update_blend, regional, bc_update_interval,  &
-            regional_bcs_from_gsi, write_restart_with_bcs, nrows_blend,  &
+            regional_bcs_from_gsi, write_restart_with_bcs, nrows_blend, var_grav, &
             write_coarse_restart_files,&
             write_coarse_diagnostics,&
             write_only_coarse_intermediate_restarts, &

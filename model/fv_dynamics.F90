@@ -172,7 +172,6 @@ implicit none
    integer :: kmax=1
    integer :: k_rf = 0
 
-   real :: agrav
 #ifdef HIWPP
    real, allocatable:: u00(:,:,:), v00(:,:,:)
 #endif
@@ -191,7 +190,7 @@ contains
                         ps, pe, pk, peln, pkz, phis, q_con, omga, ua, va, uc, vc,     &
                         ak, bk, mfx, mfy, cx, cy, ze0, hybrid_z,                      &
                         gridstruct, flagstruct, neststruct, idiag, bd,                &
-                        parent_grid, domain, diss_est, inline_mp)
+                        parent_grid, domain, diss_est, inline_mp, grav_var_h, grav_var)
 
     use mpp_mod,           only: FATAL, mpp_error
     use ccpp_static_api,   only: ccpp_physics_timestep_init,    &
@@ -260,6 +259,9 @@ contains
 
     type(inline_mp_type), intent(inout) :: inline_mp
 
+    real, intent(inout), dimension(bd%isd:bd%ied,bd%jsd:bd%jed,npz) :: grav_var
+    real, intent(inout), dimension(bd%isd:bd%ied,bd%jsd:bd%jed,npz+1) :: grav_var_h
+
 ! Accumulated Mass flux arrays: the "Flux Capacitor"
     real, intent(inout) ::  mfx(bd%is:bd%ie+1, bd%js:bd%je,   npz)
     real, intent(inout) ::  mfy(bd%is:bd%ie  , bd%js:bd%je+1, npz)
@@ -281,6 +283,8 @@ contains
       real:: m_fac(bd%is:bd%ie,bd%js:bd%je)
       real:: pfull(npz)
       real, dimension(bd%is:bd%ie):: cvm
+      real, dimension(bd%is:bd%ie,bd%js:bd%je,npz) :: rdg
+      real, dimension(bd%is:bd%ie,bd%js:bd%je,npz+1) :: newrad
 #ifdef MULTI_GASES
       real, allocatable :: kapad(:,:,:)
       real, allocatable :: wam_kappain(:,:,:)  
@@ -292,7 +296,7 @@ contains
 #endif
       real t(bd%isd:bd%ied,bd%jsd:bd%jed)
       real       :: correct, aave_t1, ttsave, tdsave
-      real:: akap, rdg, ph1, ph2, mdt, gam, amdt, u0
+      real:: akap, ph1, ph2, mdt, gam, amdt, u0
       real:: recip_k_split,reg_bc_update_time
       integer:: kord_tracer(ncnst)
       integer :: i,j,k, n, iq, n_map, nq, nr, nwat, k_split
@@ -325,15 +329,39 @@ contains
       jed = bd%jed
 
 
-     cv_air =  cp_air - rdgas
-      agrav = 1. / grav
-        dt2 = 0.5*bdt
+      cv_air =  cp_air - rdgas
+      dt2 = 0.5*bdt
       k_split = flagstruct%k_split
       recip_k_split=1./real(k_split)
       nwat = flagstruct%nwat
       nq = nq_tot - flagstruct%dnats
       nr = nq_tot - flagstruct%dnrts
-      rdg = -rdgas * agrav
+
+      grav_var_h = grav
+      grav_var = grav
+
+      if(flagstruct%var_grav)then
+        do j=js,je
+          do i=is,ie
+            newrad(i,j,npz+1) = radius + (phis(i,j)/grav)
+            grav_var_h(i,j,npz+1) = grav*((radius**2)/(newrad(i,j,npz+1)**2))
+            do k=npz,1,-1
+              newrad(i,j,k) = newrad(i,j,k+1) - delz(i,j,k)
+              grav_var_h(i,j,k) = grav*((radius**2)/(newrad(i,j,k)**2))
+              grav_var(i,j,k) = (grav_var_h(i,j,k+1)+grav_var_h(i,j,k))/2.
+              rdg(i,j,k) = -rdgas/grav_var(i,j,k)
+            enddo
+          enddo
+        enddo
+      else
+        do k=1,npz
+          do j=js,je
+            do i=is,ie
+              rdg(i,j,k) = -rdgas/grav_var(i,j,k)
+            enddo
+          enddo
+        enddo
+      endif
 
       ! Call CCPP timestep init
       call ccpp_physics_timestep_init(cdata, suite_name=trim(ccpp_suite), group_name="fast_physics", ierr=ierr)
@@ -492,7 +520,7 @@ contains
 
 #ifdef MOIST_CAPPA
                cappa(i,j,k) = rdgas/(rdgas + cvm(i)/(1.+dp1(i,j,k)) )
-               pkz(i,j,k) = exp(cappa(i,j,k)*log(rdg*delp(i,j,k)*pt(i,j,k)*    &
+               pkz(i,j,k) = exp(cappa(i,j,k)*log(rdg(i,j,k)*delp(i,j,k)*pt(i,j,k)*    &
 #ifdef MULTI_GASES
                             (1.+dp1(i,j,k))                  /delz(i,j,k)) )
 #else
@@ -500,7 +528,7 @@ contains
 #endif
 
 #else
-               pkz(i,j,k) = exp( kappa*log(rdg*delp(i,j,k)*pt(i,j,k)*    &
+               pkz(i,j,k) = exp( kappa*log(rdg(i,j,k)*delp(i,j,k)*pt(i,j,k)*    &
                             (1.+dp1(i,j,k))/delz(i,j,k)) )
 !			    
 ! >>>>  Rd_multi = Rdgas*(1.+dp1(i,j,k))=Rdgas*virq(q(i,j,k,:))
@@ -518,9 +546,9 @@ contains
                  dp1(i,j,k) = 0.
 #ifdef MULTI_GASES
                  kapad(i,j,k)= kappa * (virqd(q(i,j,k,1:num_gas))/vicpqd(q(i,j,k,1:num_gas)))
-                 pkz(i,j,k) = exp(kapad(i,j,k)*log(rdg*virqd(q(i,j,k,1:num_gas))*delp(i,j,k)*pt(i,j,k)/delz(i,j,k)))
+                 pkz(i,j,k) = exp(kapad(i,j,k)*log(rdg(i,j,k)*virqd(q(i,j,k,1:num_gas))*delp(i,j,k)*pt(i,j,k)/delz(i,j,k)))
 #else
-                 pkz(i,j,k) = exp(kappa*log(rdg*delp(i,j,k)*pt(i,j,k)/delz(i,j,k)))
+                 pkz(i,j,k) = exp(kappa*log(rdg(i,j,k)*delp(i,j,k)*pt(i,j,k)/delz(i,j,k)))
 #endif
               enddo
            enddo
@@ -556,7 +584,7 @@ contains
                                      gridstruct%rsin2, gridstruct%cosa_s, &
                                      zvir, cp_air, rdgas, hlv, te_2d, ua, va, teq,        &
                                      flagstruct%moist_phys, nwat, sphum, liq_wat, rainwat,   &
-                                     ice_wat, snowwat, graupel, hailwat, hydrostatic, idiag%id_te)
+                                     ice_wat, snowwat, graupel, hailwat, hydrostatic, idiag%id_te, grav_var)
            if( idiag%id_te>0 ) then
                used = send_data(idiag%id_te, teq, fv_time)
 !              te_den=1.E-9*g_sum(teq, is, ie, js, je, ng, area, 0)/(grav*4.*pi*radius**2)
@@ -566,7 +594,7 @@ contains
 
       if( (flagstruct%consv_am .or. idiag%id_amdt>0) .and. (.not.do_adiabatic_init) ) then
           call compute_aam(npz, is, ie, js, je, isd, ied, jsd, jed, gridstruct, bd,   &
-                           ptop, ua, va, u, v, delp, teq, ps2, m_fac)
+                           ptop, ua, va, u, v, delp, teq, ps2, m_fac, grav_var)
       endif
 
       if( .not.flagstruct%RF_fast .and. flagstruct%tau .ne. 0. ) then
@@ -675,6 +703,7 @@ contains
 #ifndef ROT3
       call start_group_halo_update(i_pack(8), u, v, domain, gridtype=DGRID_NE)
 #endif
+      if(flagstruct%var_grav) call start_group_halo_update(i_pack(2), grav_var_h, domain)
                                            call timing_off('COMM_TOTAL')
 #ifdef __GFORTRAN__
 !$OMP parallel do default(none) shared(isd,ied,jsd,jed,npz,delp)
@@ -727,7 +756,7 @@ contains
 #ifdef MULTI_GASES
                     kapad,  &
 #endif
-                    grav, hydrostatic, &
+                    grav_var_h, hydrostatic, &
                     u, v, w, delz, pt, q, delp, pe, pk, phis, ws, omga, ptop, pfull, ua, va,           &
                     uc, vc, mfx, mfy, cx, cy, pkz, peln, q_con, ak, bk, ks, &
                     gridstruct, flagstruct, neststruct, idiag, bd, &
@@ -735,10 +764,10 @@ contains
                                            call timing_off('DYN_CORE')
      
 #ifdef SW_DYNAMICS
-!!$OMP parallel do default(none) shared(is,ie,js,je,ps,delp,agrav)
+!!$OMP parallel do default(none) shared(is,ie,js,je,ps,delp,grav_var)
       do j=js,je
          do i=is,ie
-            ps(i,j) = delp(i,j,1) * agrav
+            ps(i,j) = delp(i,j,1) / grav_var(i,j,npz)
          enddo
       enddo
 #else
@@ -823,9 +852,24 @@ contains
                      hybrid_z,     &
                      flagstruct%adiabatic, do_adiabatic_init, flagstruct%do_inline_mp, &
                      inline_mp, flagstruct%c2l_ord, bd, flagstruct%fv_debug, &
-                     flagstruct%moist_phys, flagstruct%remap_option, flagstruct%gmao_remap)
+                     flagstruct%moist_phys, flagstruct%remap_option, flagstruct%gmao_remap, grav_var)
      
                                                   call timing_off('Remapping')
+
+      if(flagstruct%var_grav)then
+        do j=js,je
+          do i=is,ie
+            newrad(i,j,npz+1) = radius + (phis(i,j)/grav)
+            grav_var_h(i,j,npz+1) = grav*((radius**2)/(newrad(i,j,npz+1)**2))
+            do k=npz,1,-1
+              newrad(i,j,k) = newrad(i,j,k+1) - delz(i,j,k)
+              grav_var_h(i,j,k) = grav*((radius**2)/(newrad(i,j,k)**2))
+              grav_var(i,j,k) = (grav_var_h(i,j,k+1)+grav_var_h(i,j,k))/2.
+              rdg(i,j,k) = -rdgas/grav_var(i,j,k)
+            enddo
+          enddo
+        enddo
+      endif
 
      if(last_step)then 
 #ifdef __GFORTRAN__
@@ -860,7 +904,7 @@ contains
 
 #ifdef MOIST_CAPPA
                cappa(i,j,k) = rdgas/(rdgas + cvm(i)/(1.+dp1(i,j,k)) )
-               pkz(i,j,k) = exp(cappa(i,j,k)*log(rdg*delp(i,j,k)*pt(i,j,k)*    &
+               pkz(i,j,k) = exp(cappa(i,j,k)*log(rdg(i,j,k)*delp(i,j,k)*pt(i,j,k)*    &
 #ifdef MULTI_GASES
                             (1.+dp1(i,j,k))                  /delz(i,j,k)) )
 #else
@@ -868,7 +912,7 @@ contains
 #endif
 
 #else
-               pkz(i,j,k) = exp( kappa*log(rdg*delp(i,j,k)*pt(i,j,k)*    &
+               pkz(i,j,k) = exp( kappa*log(rdg(i,j,k)*delp(i,j,k)*pt(i,j,k)*    &
                             (1.+dp1(i,j,k))/delz(i,j,k)) )
 !			    
 ! >>>>  Rd_multi = Rdgas*(1.+dp1(i,j,k))=Rdgas*virq(q(i,j,k,:))
@@ -885,9 +929,9 @@ contains
                dp1(i,j,k) = 0.
 #ifdef MULTI_GASES
                kapad(i,j,k)= kappa * (virqd(q(i,j,k,1:num_gas))/vicpqd(q(i,j,k,1:num_gas)))
-               pkz(i,j,k) = exp(kapad(i,j,k)*log(rdg*virqd(q(i,j,k,1:num_gas))*delp(i,j,k)*pt(i,j,k)/delz(i,j,k)))
+               pkz(i,j,k) = exp(kapad(i,j,k)*log(rdg(i,j,k)*virqd(q(i,j,k,1:num_gas))*delp(i,j,k)*pt(i,j,k)/delz(i,j,k)))
 #else
-               pkz(i,j,k) = exp(kappa*log(rdg*delp(i,j,k)*pt(i,j,k)/delz(i,j,k)))
+               pkz(i,j,k) = exp(kappa*log(rdg(i,j,k)*delp(i,j,k)*pt(i,j,k)/delz(i,j,k)))
 #endif
              enddo
            enddo
@@ -954,9 +998,9 @@ contains
            do j=js,je
              do i=is,ie
 #ifdef MOIST_CAPPA
-               pkz(i,j,k) = exp((cappa(i,j,k)/(1.-cappa(i,j,k)))*log(rdg*delp(i,j,k)*pt(i,j,k)/delz(i,j,k)))
+               pkz(i,j,k) = exp((cappa(i,j,k)/(1.-cappa(i,j,k)))*log(rdg(i,j,k)*delp(i,j,k)*pt(i,j,k)/delz(i,j,k)))
 #else
-               pkz(i,j,k) = exp( (kappa/(1.-kappa))*log(rdg*delp(i,j,k)*pt(i,j,k)/delz(i,j,k)))
+               pkz(i,j,k) = exp( (kappa/(1.-kappa))*log(rdg(i,j,k)*delp(i,j,k)*pt(i,j,k)/delz(i,j,k)))
 #endif	   
              enddo
            enddo
@@ -967,9 +1011,9 @@ contains
            do j=js,je
              do i=is,ie
 #ifdef MULTI_GASES
-               pkz(i,j,k) = exp((kapad(i,j,k)/(1.-kapad(i,j,k)))*log(rdg*delp(i,j,k)*pt(i,j,k)/delz(i,j,k)))
+               pkz(i,j,k) = exp((kapad(i,j,k)/(1.-kapad(i,j,k)))*log(rdg(i,j,k)*delp(i,j,k)*pt(i,j,k)/delz(i,j,k)))
 #else
-               pkz(i,j,k) = exp((kappa/(1.-kappa))*log(rdg*delp(i,j,k)*pt(i,j,k)/delz(i,j,k)))
+               pkz(i,j,k) = exp((kappa/(1.-kappa))*log(rdg(i,j,k)*delp(i,j,k)*pt(i,j,k)/delz(i,j,k)))
 #endif
              enddo
            enddo
@@ -1090,7 +1134,7 @@ contains
                               q(isd,jsd,1,snowwat), &
                               q(isd,jsd,1,graupel), &
                               q(isd,jsd,1,hailwat), &
-                              q(isd,jsd,1,cld_amt), flagstruct%check_negative)
+                              grav_var, q(isd,jsd,1,cld_amt), flagstruct%check_negative)
      else
         call neg_adj4(is, ie, js, je, ng, npz,        &
                       flagstruct%hydrostatic,         &
@@ -1101,7 +1145,7 @@ contains
                                 q(isd,jsd,1,ice_wat), &
                                 q(isd,jsd,1,snowwat), &
                                 q(isd,jsd,1,graupel), &
-                                q(isd,jsd,1,hailwat), check_negative=flagstruct%check_negative)
+                                q(isd,jsd,1,hailwat), grav_var, check_negative=flagstruct%check_negative)
      endif
      if ( flagstruct%fv_debug ) then
        call prt_mxm('T_dyn_a3',    pt, is, ie, js, je, ng, npz, 1., gridstruct%area_64, domain)
@@ -1126,7 +1170,7 @@ contains
                               q(isd,jsd,1,ice_wat), &
                               q(isd,jsd,1,snowwat), &
                               q(isd,jsd,1,graupel), &
-                              q(isd,jsd,1,cld_amt), flagstruct%check_negative)
+                              grav_var, q(isd,jsd,1,cld_amt), flagstruct%check_negative)
      else
         call neg_adj3(is, ie, js, je, ng, npz,        &
                       flagstruct%hydrostatic,         &
@@ -1136,7 +1180,7 @@ contains
                                 q(isd,jsd,1,rainwat), &
                                 q(isd,jsd,1,ice_wat), &
                                 q(isd,jsd,1,snowwat), &
-                                q(isd,jsd,1,graupel), check_negative=flagstruct%check_negative)
+                                q(isd,jsd,1,graupel), grav_var, check_negative=flagstruct%check_negative)
      endif
      if ( flagstruct%fv_debug ) then
        call prt_mxm('T_dyn_a3',    pt, is, ie, js, je, ng, npz, 1., gridstruct%area_64, domain)
@@ -1159,7 +1203,7 @@ contains
                               q(isd,jsd,1,rainwat), &
                               q(isd,jsd,1,ice_wat), &
                               q(isd,jsd,1,snowwat), &
-                              q(isd,jsd,1,cld_amt), flagstruct%check_negative)
+                              grav_var, q(isd,jsd,1,cld_amt), flagstruct%check_negative)
      else
         call neg_adj2(is, ie, js, je, ng, npz,        &
                       flagstruct%hydrostatic,         &
@@ -1169,7 +1213,7 @@ contains
                                 q(isd,jsd,1,rainwat), &
                                 q(isd,jsd,1,ice_wat), &
                                 q(isd,jsd,1,snowwat), &
-                                check_negative=flagstruct%check_negative)
+                                grav_var, check_negative=flagstruct%check_negative)
      endif
      if ( flagstruct%fv_debug ) then
        call prt_mxm('T_dyn_a3',    pt, is, ie, js, je, ng, npz, 1., gridstruct%area_64, domain)
@@ -1183,7 +1227,7 @@ contains
 
   if( (flagstruct%consv_am.or.idiag%id_amdt>0.or.idiag%id_aam>0) .and. (.not.do_adiabatic_init)  ) then
       call compute_aam(npz, is, ie, js, je, isd, ied, jsd, jed, gridstruct, bd,   &
-                       ptop, ua, va, u, v, delp, te_2d, ps, m_fac)
+                       ptop, ua, va, u, v, delp, te_2d, ps, m_fac, grav_var)
       if( idiag%id_aam>0 ) then
           used = send_data(idiag%id_aam, te_2d, fv_time)
       endif
@@ -1773,12 +1817,13 @@ contains
 
 !>@brief The subroutine 'compute_aam' computes vertically (mass) integrated Atmospheric Angular Momentum.
  subroutine compute_aam(npz, is, ie, js, je, isd, ied, jsd, jed, gridstruct, bd,   &
-                        ptop, ua, va, u, v, delp, aam, ps, m_fac)
+                        ptop, ua, va, u, v, delp, aam, ps, m_fac, grav_var)
 ! Compute vertically (mass) integrated Atmospheric Angular Momentum
     integer, intent(in):: npz
     integer, intent(in):: is,  ie,  js,  je
     integer, intent(in):: isd, ied, jsd, jed
     real, intent(in):: ptop
+    real, intent(in):: grav_var(isd:ied,jsd:jed,npz)
     real, intent(inout):: u(isd:ied  ,jsd:jed+1,npz) !< D grid zonal wind (m/s)
     real, intent(inout):: v(isd:ied+1,jsd:jed,npz) !< D grid meridional wind (m/s)
     real, intent(inout):: delp(isd:ied,jsd:jed,npz)
@@ -1794,7 +1839,7 @@ contains
 
     call c2l_ord2(u, v, ua, va, gridstruct, npz, gridstruct%grid_type, bd, gridstruct%bounded_domain)
 
-!$OMP parallel do default(none) shared(is,ie,js,je,npz,gridstruct,aam,m_fac,ps,ptop,delp,agrav,ua) &
+!$OMP parallel do default(none) shared(is,ie,js,je,npz,gridstruct,aam,m_fac,ps,ptop,delp,grav_var,ua) &
 !$OMP                          private(r1, r2, dm)
   do j=js,je
      do i=is,ie
@@ -1808,7 +1853,7 @@ contains
         do i=is,ie
            dm(i) = delp(i,j,k)
            ps(i,j) = ps(i,j) + dm(i)
-           dm(i) = dm(i)*agrav
+           dm(i) = dm(i)/ grav_var(i,j,k)
            aam(i,j) = aam(i,j) + (r2(i)*omega + r1(i)*ua(i,j,k)) * dm(i)
            m_fac(i,j) = m_fac(i,j) + dm(i)*r2(i)
         enddo
