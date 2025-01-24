@@ -1,15 +1,14 @@
 Some notes on ideal setup: 
  
-The idealized option runs FV3 in a doubly-periodic domain. The environmental setup is done through the test_case_nml namelist. There are a number of test_case options for the 'solo' code that may or may not work with the UFS-FV3. Here, test_case=60 is set up as a generic case that can set up several different hard-coded thermal and wind profile soundings (or read a provided sounding file) and do some simple initialization like a thermal bubble. 
+The idealized option runs FV3 in a doubly-periodic domain. The environmental setup is done through the test_case_nml namelist. There are many hard-coded test cases in test_case.F90 that are only intended to work in FV3 SOLO, but here we provide the ability for the user to choose their idealized set up at run time. Options include several different hard-coded thermal and wind profile soundings along with the ability to read in a provided sounding file. Users can also add initial thermal bubbles at their chosen locations and intensities. 
 
-All cases require sfc_data.nc and oro_data.nc even if surface/PBL physics are not utilized. The grids in these files must be at least 1 grid point larger, in both x & y directions, than npx & npy. A configurable python script (create_ideal_sfc_oro_input.py) is provided here to generate idealized versions of these files. 
+Use of this capability require sfc_data.nc and oro_data.nc even if surface/PBL physics are not utilized. The grids in these files must be at least 1 grid point larger, in both x & y directions, than npx & npy. A configurable python script (create_ideal_sfc_oro_input.py) is provided here to generate idealized versions of these files. 
   
-See tools/test_cases.F90 in the atmos_cubed_sphere directory for test case initialization routines
+See driver/UFS/fv_ideal.F90 in the atmos_cubed_sphere directory for code specifics.
   
 Example namelist settings:
   
   &test_case_nml
-      test_case = 60 ! Only case we can guarantee will work
       bubble_type = 3
 	! 0 (default) : no bubble ; 1 : single bubble in domain center ; 2 : Line of N-S bubbles on left side of domain to initialize a squall line ; 3 : User-entered x,y locations of n_nun bubble centers
       n_bub = 3
