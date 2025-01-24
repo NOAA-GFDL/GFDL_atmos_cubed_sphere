@@ -494,7 +494,7 @@
 
         character(*), intent(IN) :: nml_filename
         integer :: ierr, f_unit, unit, ios
-        namelist /test_case_nml/test_case, bubble_do, alpha, nsolitons, soliton_Umax, soliton_size, &
+        namelist /test_case_nml/bubble_do, &
                                 t_profile, q_profile, ws_profile, bubble_t, bubble_q,  &
                                 bubble_zc, do_coriolis, iso_t, adi_th, us0, bubble_type,n_bub, &
                                 icenters,jcenters, bubble_rad_x, bubble_rad_y, do_rand_perts, &
