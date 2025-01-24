@@ -21,6 +21,45 @@
 
      module fv_ideal_mod
 
+! <table>
+! <tr>
+!     <th>Module Name</th>
+!     <th>Functions Included</th>
+!   </tr>
+!   <tr>
+!     <td>constants_mod</td>
+!     <td>cnst_radius=>radius, pi=>pi_8, omega, grav, rdgas,
+!     cp_air, rvgas</td>
+!   </tr>
+!   <tr>
+!     <td>init_hydro_mod</td>
+!     <td>p_var</td>
+!   </tr>
+!   <tr>
+!     <td>fv_mp_mod</td>
+!     <td>is_master</td>
+!   </tr>
+!   <tr>
+!     <td>fv_grid_utils_mod</td>
+!     <td>ptop_min</td>
+!   </tr> 
+!     <td>mpp_mod</td>
+!     <td>mpp_error, FATAL, stdlog, input_nml_file </td>
+!   </tr>
+!   <tr>
+!     <td>fms_mod</td>
+!     <td>check_nml_error</td>
+!   </tr>
+!   <tr>
+!     <td>mpp_domains_mod</td>
+!     <td>domain2d</td>
+!   </tr>>
+!   <tr>
+!     <td>fv_arrays_mod</td>
+!     <td>fv_grid_type, fv_flags_type, fv_grid_bounds_type, R_GRID</td>
+!  </tr>
+! </table>
+
 #ifdef OVERLOAD_R4
       use constantsR4_mod,   only: pi=>pi_8, omega, grav, kappa, rdgas, cp_air, rvgas
 #else
