@@ -141,7 +141,11 @@ module fv_control_mod
    use fv_mp_mod,           only: mp_start, domain_decomp, mp_assign_gid, global_nest_domain
    use fv_mp_mod,           only: broadcast_domains, mp_barrier, is_master, setup_master, grids_master_procs, tile_fine
    use fv_mp_mod,           only: MAX_NNEST, MAX_NTILE
+#ifdef GFS_PHYS
+   use fv_ideal_mod,        only: read_namelist_fv_ideal
+#else
    use test_cases_mod,      only: read_namelist_test_case_nml
+#endif
    use fv_timing_mod,       only: timing_on, timing_off, timing_init, timing_prt
    use mpp_domains_mod,     only: domain2D
    use mpp_domains_mod,     only: mpp_define_nest_domains, nest_domain_type, mpp_get_global_domain
@@ -580,7 +584,11 @@ module fv_control_mod
         call read_namelist_molecular_diffusion_nml(Atm(this_grid)%nml_filename, &
                   Atm(this_grid)%flagstruct%ncnst,  Atm(this_grid)%flagstruct%nwat)
      endif
+#ifdef GFS_PHYS
+     call read_namelist_fv_ideal(Atm(this_grid)%nml_filename)
+#else
      call read_namelist_test_case_nml(Atm(this_grid)%nml_filename)
+#endif
      call mpp_get_current_pelist(Atm(this_grid)%pelist, commID=commID) ! for commID
      call mp_start(commID,halo_update_type)
 
