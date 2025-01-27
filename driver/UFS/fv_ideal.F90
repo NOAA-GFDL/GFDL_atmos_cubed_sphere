@@ -533,7 +533,7 @@
 
         character(*), intent(IN) :: nml_filename
         integer :: ierr, f_unit, unit, ios
-        namelist /test_case_nml/bubble_do, &
+        namelist /fv_ideal_nml/bubble_do, &
                                 t_profile, q_profile, ws_profile, bubble_t, bubble_q,  &
                                 bubble_zc, do_coriolis, iso_t, adi_th, us0, bubble_type,n_bub, &
                                 icenters,jcenters, bubble_rad_x, bubble_rad_y, do_rand_perts, &
@@ -546,12 +546,11 @@
         ! Make alpha = 0 the default:
         alpha = 0.
         bubble_do = .false.
-        test_case = 11   ! (USGS terrain)
 
         ! Read Test_Case namelist
-        read (input_nml_file,test_case_nml,iostat=ios)
-        ierr = check_nml_error(ios,'test_case_nml')
-        write(unit, nml=test_case_nml)
+        read (input_nml_file,fv_ideal_nml,iostat=ios)
+        ierr = check_nml_error(ios,'fv_ideal_nml')
+        write(unit, nml=fv_ideal_nml)
 
 
       end subroutine read_namelist_fv_ideal 
