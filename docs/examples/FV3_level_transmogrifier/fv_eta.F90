@@ -113,9 +113,10 @@ module fv_eta_mod
    else if (trim(npz_type) == 'input') then
 ! Jili Dong add ak/bk input
       print*, 'input type not supported'
-
    else
 
+      print*, 'input type supported'
+      
       select case (km)
 
       case (5,10) ! does this work????
@@ -171,7 +172,7 @@ module fv_eta_mod
                bk(k) = b32old(k)
             enddo
          elseif (trim(npz_type) == 'lowtop') then
-            ptop = 100.
+            ptop = 120.
             stretch_fac = 1.035
             auto_routine = 1
          else
@@ -183,12 +184,26 @@ module fv_eta_mod
          endif
          !miz
       case (33)
-         ks = 7
-         do k=1,km+1
-            ak(k) = a33(k)
-            bk(k) = b33(k)
-         enddo
-         !miz
+         if (trim(npz_type) == 'gfs') then
+            print*, "GFS type coordinate!"
+            ptop = 100.
+            pint = 5579.
+            stretch_fac = 1.035
+            auto_routine = 6
+         elseif (trim(npz_type) == 'hi') then
+            print*, "Hi type coordinate!"
+            ptop = 100.
+            pint = 5579.
+            stretch_fac = 1.035
+            auto_routine = 1
+         else 
+            print*, "AM 4 type coordinate!"
+            ks = 7
+            do k=1,km+1
+               ak(k) = a33(k)
+               bk(k) = b33(k)
+            enddo
+         end if
 
       case (39)               ! N = 5
          ptop = 100.
@@ -533,6 +548,7 @@ module fv_eta_mod
 
    endif ! superC/superK
 
+   print*, auto_routine
    select case (auto_routine)
 
    case (1)
@@ -554,7 +570,11 @@ module fv_eta_mod
 
    call check_eta_levels (ak, bk)
 
+   print*, is_master()
+
    if (is_master()) then
+      print*, 'ptop = ', ptop
+      print*, 'pint = ', pint
       write(*, '(A4, A13, A13, A11)') 'klev', 'ak', 'bk', 'p_ref'
       do k=1,km+1
          write(*,'(I4, F13.5, F13.5, F11.2)') k, ak(k), bk(k), 1000.E2*bk(k) + ak(k)
@@ -787,7 +807,7 @@ module fv_eta_mod
       enddo
 
       do k=km-k_inc-1, 9, -1
-         s_fac(k) = s_rate * s_fac(k+1)
+         s_fac(k) = s_rate * s_fac(k+1)                                                                                                                                                                         
       enddo
       s_fac(8) = 0.5*(1.1+s_rate)*s_fac(9)
       s_fac(7) = 1.10*s_fac(8)
@@ -859,6 +879,7 @@ module fv_eta_mod
       pint = pe1(ks+1)
 
 #ifdef NO_UKMO_HB
+      print*, "NO_UKMO_HB IS defined"
       do k=1,ks+1
          ak(k) = pe1(k)
          bk(k) = 0.
@@ -872,6 +893,7 @@ module fv_eta_mod
       ak(km+1) = 0.
 #else
 ! Problematic for non-hydrostatic
+      print*, "NO_UKMO_HB not defined"
       do k=1,km+1
          eta(k) = pe1(k) / pe1(km+1)
       enddo
@@ -2312,7 +2334,7 @@ module fv_eta_mod
   end subroutine zflip
 
   logical function is_master()
-    is_master = .false.
+    is_master = .true.
   end function is_master
 
 end module fv_eta_mod
