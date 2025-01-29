@@ -807,7 +807,7 @@ module fv_eta_mod
       enddo
 
       do k=km-k_inc-1, 9, -1
-         s_fac(k) = s_rate * s_fac(k+1)                                                                                                                                                                         
+         s_fac(k) = s_rate * s_fac(k+1)
       enddo
       s_fac(8) = 0.5*(1.1+s_rate)*s_fac(9)
       s_fac(7) = 1.10*s_fac(8)
