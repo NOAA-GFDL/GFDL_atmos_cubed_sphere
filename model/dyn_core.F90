@@ -297,7 +297,7 @@ contains
 
     call init_ijk_mem(isd, ied, jsd, jed, npz, heat_source, 0.)
 
-    if ( flagstruct%convert_ke .or. flagstruct%vtdm4> 1.E-4 ) then
+    if ( flagstruct%convert_ke .or. (flagstruct%do_vort_damp .and. flagstruct%vtdm4> 1.E-4) ) then
          n_con = npz
     else
          if ( flagstruct%d2_bg_k1 < 1.E-3 ) then
