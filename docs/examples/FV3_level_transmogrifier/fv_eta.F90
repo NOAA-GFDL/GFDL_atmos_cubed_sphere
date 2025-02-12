@@ -41,14 +41,13 @@ module fv_eta_mod
  contains
 
  !This is the version of set_eta used in SHiELD and AM4
- subroutine set_eta(km, ak, bk, npz_type, doenforce_2nd_order_continuity, dzmax_in, stretch_fac_u_in, stretch_fac_in, pint_in, ptop_in, k_inc_in, s0_in, s_k_inc_in, nfilter_in)
+ subroutine set_eta(km, ak, bk, npz_type, dzmax_in, stretch_fac_u_in, stretch_fac_in, pint_in, ptop_in, k_inc_in, s0_in, s_k_inc_in)
 
 !Level definitions are now in this header file
 #include <fv_eta.h>
 
    integer,  intent(in)::  km           ! vertical dimension
-   integer,  intent(in), optional::k_inc_in, nfilter_in
-   logical, intent(in) :: doenforce_2nd_order_continuity ! this does not work yet 
+   integer,  intent(in), optional::k_inc_in
    real, intent(out):: ak(km+1)
    real, intent(out):: bk(km+1)
    character(24), intent(IN) :: npz_type
@@ -71,7 +70,6 @@ module fv_eta_mod
    real, parameter :: pint_default = 100.E2
    real, parameter :: ptop_default = 1.
    integer, parameter:: k_inc_default = 25   ! # of layers from bottom up to near const dz region
-   integer, parameter :: nfilter_default =0
    real, parameter:: s0_default = 0.13 ! lowest layer stretch factor
    real, parameter :: s_k_inc_default = 1.0
    real, parameter :: dzmax_default = 2000.
@@ -115,12 +113,6 @@ module fv_eta_mod
       s_k_inc = s_k_inc_default
    end if
 
-   if (present(nfilter_in)) then
-      nfilter = nfilter_in
-   else
-      nfilter = nfilter_default
-   end if
-
    if (present(dzmax_in)) then
       dzmax = dzmax_in
    else
@@ -137,9 +129,8 @@ module fv_eta_mod
    print*, 'pint: ', pint
    print*, 'ptop: ', ptop
    print*, 's0: ', s0
-   ! print*, 's_k_inc: ', s_k_inc
+   print*, 's_k_inc: ', s_k_inc
    print*, 'k_inc: ', k_inc
-   print*, 'nfilter: ', nfilter
 
 
 
@@ -185,12 +176,13 @@ module fv_eta_mod
 
    else if (trim(npz_type) == 'input') then
 ! Jili Dong add ak/bk input
+      print*, 'input type not supported'
+
    else if (trim(npz_type) == 'wrf') then
       auto_routine = 7
    elseif (trim(npz_type) == 'gfs_type') then
       auto_routine = 6
    else
-      
       select case (km)
 
       case (5,10) ! does this work????
@@ -246,7 +238,7 @@ module fv_eta_mod
                bk(k) = b32old(k)
             enddo
          elseif (trim(npz_type) == 'lowtop') then
-            ptop = 120.
+            ptop = 100.
             stretch_fac = 1.035
             auto_routine = 1
          else
@@ -258,26 +250,12 @@ module fv_eta_mod
          endif
          !miz
       case (33)
-         if (trim(npz_type) == 'gfs') then
-            print*, "GFS type coordinate!"
-            ptop = 100.
-            pint = 5579.
-            stretch_fac = 1.035
-            auto_routine = 6
-         elseif (trim(npz_type) == 'hi') then
-            print*, "Hi type coordinate!"
-            ptop = 100.
-            pint = 5579.
-            stretch_fac = 1.035
-            auto_routine = 1
-         else 
-            print*, "AM 4 type coordinate!"
-            ks = 7
-            do k=1,km+1
-               ak(k) = a33(k)
-               bk(k) = b33(k)
-            enddo
-         end if
+         ks = 7
+         do k=1,km+1
+            ak(k) = a33(k)
+            bk(k) = b33(k)
+         enddo
+         !miz
 
       case (39)               ! N = 5
          ptop = 100.
@@ -619,7 +597,6 @@ module fv_eta_mod
 
    endif ! superC/superK
 
-   print*, auto_routine
    select case (auto_routine)
 
    case (1)
@@ -633,7 +610,7 @@ module fv_eta_mod
    case (5)
       call var_dz(km, ak, bk, ptop, ks, pint, stretch_fac)
    case (6)
-      call var_gfs(km, ak, bk, ptop, ks, pint, stretch_fac, k_inc, s0, s_k_inc, doenforce_2nd_order_continuity, nfilter)
+      call var_gfs(km, ak, bk, ptop, ks, pint, stretch_fac, k_inc, s0, s_k_inc)
    case (7)
       call var_wrf(km, ak, bk, ptop, ks, pint, stretch_fac, stretch_fac_u, s0, dzmax)
    end select
@@ -643,11 +620,7 @@ module fv_eta_mod
 
    call check_eta_levels (ak, bk)
 
-   print*, is_master()
-
    if (is_master()) then
-      print*, 'ptop = ', ptop
-      print*, 'pint = ', pint
       write(*, '(A4, A13, A13, A11, A11)') 'klev', 'ak', 'bk', 'p_ref', 'p_full'
       do k=1,km+1
          if (k.le.km) then
@@ -849,16 +822,15 @@ module fv_eta_mod
 
 
 
- subroutine var_gfs(km, ak, bk, ptop, ks, pint, s_rate, k_inc, s0, s_k_inc_in, doenforce_2nd_order_continuity, nfilter)
+ subroutine var_gfs(km, ak, bk, ptop, ks, pint, s_rate, k_inc, s0, s_k_inc_in)
   integer, intent(in):: km 
-  integer, intent(in) :: k_inc, nfilter
+  integer, intent(in) :: k_inc
   real,    intent(in):: ptop, s_k_inc_in
   real,    intent(in) ::s0
   real,    intent(in):: s_rate        ! between [1. 1.1]
   real,    intent(out):: ak(km+1), bk(km+1)
   real,    intent(inout):: pint
   integer, intent(out):: ks
-  logical, intent(in) :: doenforce_2nd_order_continuity
 ! Local
   real, parameter:: p00 = 1.E5
   real, dimension(km+1):: ze, pe1, peln, eta
@@ -877,14 +849,7 @@ module fv_eta_mod
      t0 = 270.
      ztop = rdgas/grav*t0*(peln(km+1) - peln(1))
      
-     if (doenforce_2nd_order_continuity) then
-       s_increase_factor = (1. - (1.-s_rate) * (0.5 + 2. * real(k_inc))) / (1. - (1.-s_rate) * (0.5+real(k_inc)))
-       s_k_inc = s0 * s_increase_factor
-     else
-       s_k_inc = s_k_inc_in
-     end if
-     print*, 's_k_inc: ', s_k_inc, ' increase_factor: ', s_increase_factor
-
+      s_k_inc = s_k_inc_in
       s_inc = (s_k_inc-s0) / real(k_inc)
       s_fac(km)  = s0
 
@@ -937,7 +902,7 @@ module fv_eta_mod
 !          enddo
       endif
 
-      call sm1_edge(1, 1, 1, 1, km, 1, 1, ze, nfilter)
+!     call sm1_edge(1, 1, 1, 1, km, 1, 1, ze, 3)
 
 ! Given z --> p
       do k=1,km
@@ -965,7 +930,6 @@ module fv_eta_mod
       pint = pe1(ks+1)
 
 #ifdef NO_UKMO_HB
-      print*, "NO_UKMO_HB IS defined"
       do k=1,ks+1
          ak(k) = pe1(k)
          bk(k) = 0.
@@ -979,7 +943,6 @@ module fv_eta_mod
       ak(km+1) = 0.
 #else
 ! Problematic for non-hydrostatic
-      print*, "NO_UKMO_HB not defined"
       do k=1,km+1
          eta(k) = pe1(k) / pe1(km+1)
       enddo
@@ -1047,6 +1010,7 @@ module fv_eta_mod
       t0 = 270.
       ztop = rdgas/grav*t0*(peln(km+1) - peln(1))
       
+      ! The following code has been adapated from subroutine levels in module module_initialize_real.F of WRF
       s_fac(km)  = s0
       s_inc = s0
        do k=km-1, 1, -1
@@ -2326,10 +2290,6 @@ module fv_eta_mod
   real flux(km+1)
   integer k, n, k1, k2
 
-  if (ntimes.eq.0) then
-     return
-  end if
-
       k2 = km-1
       do k=1,km
          dz(k) = ze(i,j,k+1) - ze(i,j,k)
@@ -2571,7 +2531,7 @@ module fv_eta_mod
   end subroutine zflip
 
   logical function is_master()
-    is_master = .true.
+    is_master = .false.
   end function is_master
 
 end module fv_eta_mod
