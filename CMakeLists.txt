@@ -35,6 +35,8 @@ option(use_WRTCOMP "Enable compiler definition -Duse_WRTCOMP"              OFF)
 option(INTERNAL_FILE_NML     "Enable compiler definition -DINTERNAL_FILE_NML"      ON)
 option(ENABLE_QUAD_PRECISION "Enable compiler definition -DENABLE_QUAD_PRECISION"  ON)
 option(HYDRO       "Enable compiler definition -DHYDRO"                    OFF)
+option(ENABLE_RRFS_WAR "Enable independent parallel I/O when io_layout=1,1 -DENABLE_RRFS_WAR"  OFF)
+option(ENABLE_PARALLELRESTART "Enable collective parallel reads -DENABLE_PARALLELRESTART"  OFF)
 
 find_package(MPI REQUIRED)
 if(OPENMP)
@@ -165,6 +167,14 @@ endif()
 
 if(ENABLE_QUAD_PRECISION)
   list(APPEND fv3_defs ENABLE_QUAD_PRECISION)
+endif()
+
+if(ENABLE_PARALLELRESTART)
+  list(APPEND fv3_defs ENABLE_PARALLELRESTART)
+endif()
+
+if(ENABLE_RRFS_WAR)
+  list(APPEND fv3_defs ENABLE_RRFS_WAR)
 endif()
 
 if(OPENMP)
