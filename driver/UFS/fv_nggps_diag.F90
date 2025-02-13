@@ -651,7 +651,6 @@ contains
        enddo
        call store_data(id_delp, wk, Time, kstt_delp, kend_delp)
     endif
-
     !--- Surface Pressure (PS)
     ! Re-compute pressure (dry_mass + water_vapor) surface pressure
     if(id_ps > 0) then

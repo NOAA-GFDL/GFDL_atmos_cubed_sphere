@@ -730,7 +730,7 @@ contains
 
        if (Atm%flagstruct%grid_type == 4) then
           call setup_cartesian(npx, npy, Atm%flagstruct%dx_const, Atm%flagstruct%dy_const, &
-               Atm%flagstruct%deglat, Atm%bd)
+               Atm%flagstruct%deglat, Atm%flagstruct%deglon, Atm%flagstruct%deg_domain, Atm%bd)
        elseif (Atm%flagstruct%grid_type == 5) then
           call setup_orthogonal_grid(npx, npy, Atm%bd, grid_file)
        else
@@ -1472,11 +1472,11 @@ contains
 
   contains
 
-    subroutine setup_cartesian(npx, npy, dx_const, dy_const, deglat, bd)
+    subroutine setup_cartesian(npx, npy, dx_const, dy_const, deglat, deglon, deg_domain, bd)
 
       type(fv_grid_bounds_type), intent(IN) :: bd
        integer, intent(in):: npx, npy
-       real(kind=R_GRID), intent(IN) :: dx_const, dy_const, deglat
+       real(kind=R_GRID), intent(IN) :: dx_const, dy_const, deglat, deglon, deg_domain
        real(kind=R_GRID) lat_rad, lon_rad, domain_rad
        integer i,j
        integer :: is,  ie,  js,  je
@@ -1491,9 +1491,9 @@ contains
        jsd = bd%jsd
        jed = bd%jed
 
-       domain_rad = pi/16.   ! arbitrary
+       domain_rad = deg_domain * pi/180. !pi/16.   ! arbitrary
        lat_rad = deglat * pi/180.
-       lon_rad = 0.          ! arbitrary
+       lon_rad = deglon * pi/180. !0.          ! arbitrary
 
        dx(:,:)  = dx_const
        rdx(:,:) = 1./dx_const
