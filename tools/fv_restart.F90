@@ -336,10 +336,6 @@ contains
        !This call still appears to be necessary to get isd, etc. correct
        !call switch_current_Atm(Atm(n)) !TODO should NOT be necessary now that we manually set isd, etc.
 
-       !--- call fv_io_register_restart to register restart field to be written out in fv_io_write_restart
-       !if (n==this_grid) call fv_io_register_restart(Atm(n)%domain,Atm(n:n))
-       !if (Atm(n)%neststruct%nested) call fv_io_register_restart_BCs(Atm(n)) !TODO put into fv_io_register_restart
-
        if (n==this_grid) then
 
           !3. External_ic
