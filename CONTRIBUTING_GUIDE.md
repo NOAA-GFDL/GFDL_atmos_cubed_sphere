@@ -9,7 +9,7 @@ There are 4 different development branches being supported in this repository.
 
 | Branch | Description |
 | :--- | :--- |
-| main | This branch is the main development branch. The SHiELD model will compile with this branch. When there is a Public Release of the FV3 Dyncamical Core, updates will first be introduced to this branch. |
+| main | This branch is the main development branch. The SHiELD model will compile with this branch. When there is a Public Release of the FV3 Dynamical Core, updates will first be introduced to this branch. |
 | dev/gfdl | This branch is used for all AM4 based GFDL Models. |
 | dev/emc | This branch is used for the UFS Weather Model development. |
 | dev/gfdl_am5 | This branch is being used for GFDL AM5 development. |
