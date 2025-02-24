@@ -1,3 +1,23 @@
+!***********************************************************************
+!*                   GNU Lesser General Public License
+!*
+!* This file is part of the FV3 dynamical core.
+!*
+!* The FV3 dynamical core is free software: you can redistribute it
+!* and/or modify it under the terms of the
+!* GNU Lesser General Public License as published by the
+!* Free Software Foundation, either version 3 of the License, or
+!* (at your option) any later version.
+!*
+!* The FV3 dynamical core is distributed in the hope that it will be
+!* useful, but WITHOUT ANY WARRANTY; without even the implied warranty
+!* of MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.
+!* See the GNU General Public License for more details.
+!*
+!* You should have received a copy of the GNU Lesser General Public
+!* License along with the FV3 dynamical core.
+!* If not, see <http://www.gnu.org/licenses/>.
+!***********************************************************************
  subroutine ATMOSPHERE_GRID_BDRY_ (blon, blat, global)
 !---------------------------------------------------------------
 !    returns the longitude and latitude grid box edges
@@ -65,7 +85,7 @@
            t_bot(i,j) = _DBL_(_RL_(Atm(mygrid)%pt(i,j,npz)))
            p_bot(i,j) = _DBL_(_RL_(Atm(mygrid)%delp(i,j,npz)/(Atm(mygrid)%peln(i,npz+1,j)-Atm(mygrid)%peln(i,npz,j))))
            z_bot(i,j) = rrg*t_bot(i,j)*_DBL_(_RL_((1.+zvir*Atm(mygrid)%q(i,j,npz,sphum)))) *  &
-                        _DBL_(_RL_((1. - Atm(mygrid)%pe(i,npz,j)/p_bot(i,j))))
+                      & _DBL_(_RL_((1. - Atm(mygrid)%pe(i,npz,j)/p_bot(i,j))))
         enddo
      enddo
 
@@ -83,8 +103,7 @@
        do j=jsc,jec
           do i=isc,iec
              ! sea level pressure
-             tref(i,j) = _DBL_(_RL_(Atm(mygrid)%pt(i,j,kr) * (Atm(mygrid)%delp(i,j,kr)/ &
-                              ((Atm(mygrid)%peln(i,kr+1,j)-Atm(mygrid)%peln(i,kr,j))*Atm(mygrid)%ps(i,j)))**(-rrg*tlaps)))
+             tref(i,j) = _DBL_(_RL_(Atm(mygrid)%pt(i,j,kr) * (Atm(mygrid)%delp(i,j,kr)/((Atm(mygrid)%peln(i,kr+1,j)-Atm(mygrid)%peln(i,kr,j))*Atm(mygrid)%ps(i,j)))**(-rrg*tlaps)))
              slp(i,j) = _DBL_(_RL_(Atm(mygrid)%ps(i,j)*(1.+tlaps*Atm(mygrid)%phis(i,j)/(real(tref(i,j))*grav))**(1./(rrg*tlaps))))
           enddo
        enddo
@@ -144,9 +163,7 @@
         do k=1,npz
            do i=isc,iec
 ! Warning: the following works only with AM2 physics: water vapor; cloud water, cloud ice.
-              wm(i,j) = wm(i,j) + _DBL_(_RL_(Atm(mygrid)%delp(i,j,k) * ( Atm(mygrid)%q(i,j,k,sphum)   +  &
-                                                              Atm(mygrid)%q(i,j,k,liq_wat) +  &
-                                                              Atm(mygrid)%q(i,j,k,ice_wat) )))
+              wm(i,j) = wm(i,j) + _DBL_(_RL_(Atm(mygrid)%delp(i,j,k) * ( Atm(mygrid)%q(i,j,k,sphum) + Atm(mygrid)%q(i,j,k,liq_wat) + Atm(mygrid)%q(i,j,k,ice_wat) )))
            enddo
         enddo
      enddo
