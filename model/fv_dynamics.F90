@@ -1420,6 +1420,8 @@ contains
 
     if ( .not. RF_initialized ) then
           allocate( rf(npz) )
+          rf(:) = 0.0
+          kmax = 0
           if( is_master() ) write(6,*) 'Rayleigh friction E-folding time (days):'
           do k=1, npz
              if ( pm(k) < rf_cutoff ) then
@@ -1432,6 +1434,8 @@ contains
           enddo
           RF_initialized = .true.
     endif
+
+    if ( kmax == 0 ) return
 
     allocate( u2f(isd:ied,jsd:jed,kmax) )
 
