@@ -283,6 +283,7 @@ character(len=20)   :: mod_name = 'UFS/atmosphere_mod'
 
 !---dynamics tendencies for use in fv_subgrid_z and during fv_update_phys
   real, allocatable, dimension(:,:,:)   :: u_dt, v_dt, t_dt, qv_dt
+  real, allocatable, dimension(:,:,:) :: pt_tend, pt_save, delz_save
   real, allocatable                     :: pref(:,:), dum1d(:)
 
   logical :: first_diag = .true.
@@ -326,11 +327,12 @@ contains
    integer :: blocksize    = 1
    logical :: chksum_debug = .false.
    logical :: dycore_only  = .false.
+   logical :: pdc          = .true.
    logical :: debug        = .false.
    logical :: sync         = .false.
    logical :: ignore_rst_cksum = .false.
    real    :: avg_max_length = 3600.
-   namelist /atmos_model_nml/ blocksize, chksum_debug, dycore_only, debug, sync, ccpp_suite, avg_max_length, &
+   namelist /atmos_model_nml/ blocksize, chksum_debug, dycore_only, pdc, debug, sync, ccpp_suite, avg_max_length, &
                               ignore_rst_cksum
    ! *DH 20210326
 
@@ -447,6 +449,13 @@ contains
              qv_dt(isc:iec,jsc:jec,npz) )
 !--- allocate pref
    allocate(pref(npz+1,2), dum1d(npz+1))
+
+   if(pdc)then
+     allocate(pt_tend(isd:ied,jsd:jed,npz), pt_save(isd:ied,jsd:jed,npz), delz_save(isc:iec,jsc:jec,npz))
+     pt_tend = 0.
+     pt_save = 0.
+     delz_save = 0.
+   endif
 
    ! DH* 20210326
    ! First, read atmos_model_nml namelist section - this is a workaround to avoid
@@ -645,8 +654,9 @@ contains
 
 !>@brief The subroutine 'atmosphere_dynamics' is an API for the main driver
 !! of the FV3 dynamical core responsible for executing a "dynamics" step.
- subroutine atmosphere_dynamics ( Time )
+ subroutine atmosphere_dynamics ( Time, pdc )
    type(time_type),intent(in) :: Time
+   logical,intent(in) :: pdc
    integer :: n, psc, atmos_time_step
    integer :: k, w_diff, nt_dyn, n_split_loc, seconds, days
    logical :: used
@@ -684,26 +694,49 @@ contains
    do psc=1,abs(p_split)
       p_step = psc
                     call timing_on('fv_dynamics')
+      if(pdc)then
 !uc/vc only need be same on coarse grid? However BCs do need to be the same
-     call fv_dynamics(npx, npy, npz, nq, Atm(n)%ng, dt_atmos/real(abs(p_split)),&
-                      Atm(n)%flagstruct%consv_te, Atm(n)%flagstruct%fill,       &
-                      Atm(n)%flagstruct%reproduce_sum, kappa, cp_air, zvir,     &
-                      Atm(n)%ptop, Atm(n)%ks, nq,                               &
-                      n_split_loc, Atm(n)%flagstruct%q_split,                   &
-!                     Atm(n)%flagstruct%n_split, Atm(n)%flagstruct%q_split,     &
-                      Atm(n)%u,    Atm(n)%v,     Atm(n)%w,  Atm(n)%delz,        &
-                      Atm(n)%flagstruct%hydrostatic,                            &
-                      Atm(n)%pt  , Atm(n)%delp,  Atm(n)%q,  Atm(n)%ps,          &
-                      Atm(n)%pe,   Atm(n)%pk,    Atm(n)%peln,                   &
-                      Atm(n)%pkz,  Atm(n)%phis,  Atm(n)%q_con,                  &
-                      Atm(n)%omga, Atm(n)%ua,    Atm(n)%va, Atm(n)%uc,          &
-                      Atm(n)%vc,   Atm(n)%ak,    Atm(n)%bk, Atm(n)%mfx,         &
-                      Atm(n)%mfy , Atm(n)%cx,    Atm(n)%cy, Atm(n)%ze0,         &
-                      Atm(n)%flagstruct%hybrid_z,                               &
-                      Atm(n)%gridstruct,  Atm(n)%flagstruct,                    &
-                      Atm(n)%neststruct,  Atm(n)%idiag, Atm(n)%bd,              &
-                      Atm(n)%parent_grid, Atm(n)%domain,Atm(n)%diss_est,        &
-                      Atm(n)%inline_mp)
+       call fv_dynamics(npx, npy, npz, nq, Atm(n)%ng, dt_atmos/real(abs(p_split)),&
+                        Atm(n)%flagstruct%consv_te, Atm(n)%flagstruct%fill,       &
+                        Atm(n)%flagstruct%reproduce_sum, kappa, cp_air, zvir,     &
+                        Atm(n)%ptop, Atm(n)%ks, nq,                               &
+                        n_split_loc, Atm(n)%flagstruct%q_split,                   &
+!                       Atm(n)%flagstruct%n_split, Atm(n)%flagstruct%q_split,     &
+                        Atm(n)%u,    Atm(n)%v,     Atm(n)%w,  Atm(n)%delz,        &
+                        Atm(n)%flagstruct%hydrostatic,                            &
+                        Atm(n)%pt  , Atm(n)%delp,  Atm(n)%q,  Atm(n)%ps,          &
+                        Atm(n)%pe,   Atm(n)%pk,    Atm(n)%peln,                   &
+                        Atm(n)%pkz,  Atm(n)%phis,  Atm(n)%q_con,                  &
+                        Atm(n)%omga, Atm(n)%ua,    Atm(n)%va, Atm(n)%uc,          &
+                        Atm(n)%vc,   Atm(n)%ak,    Atm(n)%bk, Atm(n)%mfx,         &
+                        Atm(n)%mfy , Atm(n)%cx,    Atm(n)%cy, Atm(n)%ze0,         &
+                        Atm(n)%flagstruct%hybrid_z,                               &
+                        Atm(n)%gridstruct,  Atm(n)%flagstruct,                    &
+                        Atm(n)%neststruct,  Atm(n)%idiag, Atm(n)%bd,              &
+                        Atm(n)%parent_grid, Atm(n)%domain,Atm(n)%diss_est,        &
+                        Atm(n)%inline_mp, pt_tend=pt_tend, pt_save=pt_save, delz_save=delz_save)
+      else
+!uc/vc only need be same on coarse grid? However BCs do need to be the same
+       call fv_dynamics(npx, npy, npz, nq, Atm(n)%ng, dt_atmos/real(abs(p_split)),&
+                        Atm(n)%flagstruct%consv_te, Atm(n)%flagstruct%fill,       &
+                        Atm(n)%flagstruct%reproduce_sum, kappa, cp_air, zvir,     &
+                        Atm(n)%ptop, Atm(n)%ks, nq,                               &
+                        n_split_loc, Atm(n)%flagstruct%q_split,                   &
+!                       Atm(n)%flagstruct%n_split, Atm(n)%flagstruct%q_split,     &
+                        Atm(n)%u,    Atm(n)%v,     Atm(n)%w,  Atm(n)%delz,        &
+                        Atm(n)%flagstruct%hydrostatic,                            &
+                        Atm(n)%pt  , Atm(n)%delp,  Atm(n)%q,  Atm(n)%ps,          &
+                        Atm(n)%pe,   Atm(n)%pk,    Atm(n)%peln,                   &
+                        Atm(n)%pkz,  Atm(n)%phis,  Atm(n)%q_con,                  &
+                        Atm(n)%omga, Atm(n)%ua,    Atm(n)%va, Atm(n)%uc,          &
+                        Atm(n)%vc,   Atm(n)%ak,    Atm(n)%bk, Atm(n)%mfx,         &
+                        Atm(n)%mfy , Atm(n)%cx,    Atm(n)%cy, Atm(n)%ze0,         &
+                        Atm(n)%flagstruct%hybrid_z,                               &
+                        Atm(n)%gridstruct,  Atm(n)%flagstruct,                    &
+                        Atm(n)%neststruct,  Atm(n)%idiag, Atm(n)%bd,              &
+                        Atm(n)%parent_grid, Atm(n)%domain,Atm(n)%diss_est,        &
+                        Atm(n)%inline_mp)
+      endif
 
      call timing_off('fv_dynamics')
 
@@ -840,6 +873,7 @@ contains
    deallocate (Atm)
 
    deallocate( u_dt, v_dt, t_dt, qv_dt, pref, dum1d )
+   if(allocated(pt_tend)) deallocate(pt_tend, pt_save, delz_save)
 
  end subroutine atmosphere_end
 
@@ -1529,6 +1563,7 @@ contains
    dnats = Atm(mygrid)%flagstruct%dnats
    nq_adv = nq - dnats
 
+
    if( nq<3 ) call mpp_error(FATAL, 'GFS phys must have 3 interactive tracers')
 
    if (IAU_Data%in_interval) then
@@ -1631,6 +1666,7 @@ contains
          v_dt(i,j,k1) = v_dt(i,j,k1) + (IPD_Stateout%gv0(im,k) - IPD_Statein%vgrs(im,k)) * rdt
 !         t_dt(i,j,k1) = (IPD_Stateout%gt0(im,k) - IPD_Statein%tgrs(im,k)) * rdt
          t_dt(i,j,k1) = t_dt(i,j,k1) + (IPD_Stateout%gt0(im,k) - IPD_Statein%tgrs(im,k)) * rdt
+
 ! SJL notes:
 ! ---- DO not touch the code below; dry mass conservation may change due to 64bit <-> 32bit conversion
 ! DH notes:

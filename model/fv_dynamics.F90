@@ -158,6 +158,7 @@ module fv_dynamics_mod
    use fv_arrays_mod,       only: fv_grid_type, fv_flags_type, fv_atmos_type, fv_nest_type, fv_diag_type, fv_grid_bounds_type, inline_mp_type
    use fv_nwp_nudge_mod,    only: do_adiabatic_init
    use time_manager_mod,    only: get_time
+   use fv_update_phys_mod,  only: temp_to_pt
 
 #ifdef MULTI_GASES
    use multi_gases_mod,  only:  virq, vicpq, virqd, vicpqd
@@ -191,7 +192,7 @@ contains
                         ps, pe, pk, peln, pkz, phis, q_con, omga, ua, va, uc, vc,     &
                         ak, bk, mfx, mfy, cx, cy, ze0, hybrid_z,                      &
                         gridstruct, flagstruct, neststruct, idiag, bd,                &
-                        parent_grid, domain, diss_est, inline_mp)
+                        parent_grid, domain, diss_est, inline_mp, pt_tend, pt_save, delz_save)
 
     use mpp_mod,           only: FATAL, mpp_error
     use ccpp_static_api,   only: ccpp_physics_timestep_init,    &
@@ -259,6 +260,12 @@ contains
 
     type(inline_mp_type), intent(inout) :: inline_mp
 
+    logical :: pdc
+    real, intent(inout), optional :: pt_tend(bd%isd:bd%ied,bd%jsd:bd%jed,npz)
+    real, intent(inout), optional :: pt_save(bd%isd:bd%ied,bd%jsd:bd%jed,npz)
+    real, intent(inout), optional :: delz_save(bd%is:bd%ie,bd%js:bd%je,npz)
+    real, allocatable :: delp_phys(:,:,:)
+
 ! Accumulated Mass flux arrays: the "Flux Capacitor"
     real, intent(inout) ::  mfx(bd%is:bd%ie+1, bd%js:bd%je,   npz)
     real, intent(inout) ::  mfy(bd%is:bd%ie  , bd%js:bd%je+1, npz)
@@ -302,6 +309,7 @@ contains
       integer :: ierr
       real :: time_total
       integer :: seconds, days
+      logical, save :: lfirst = .true.
 
       real, dimension(:,:,:), pointer :: cappa
       real, dimension(:,:,:), pointer :: dp1
@@ -322,7 +330,6 @@ contains
       jsd = bd%jsd
       jed = bd%jed
 
-
 !     cv_air =  cp_air - rdgas
       agrav = 1. / grav
         dt2 = 0.5*bdt
@@ -332,6 +339,14 @@ contains
       nq = nq_tot - flagstruct%dnats
       nr = nq_tot - flagstruct%dnrts
       rdg = -rdgas * agrav
+
+      pdc = present(pt_tend) .and. .not.hydrostatic .and. .not.flagstruct%adiabatic
+
+      if(pdc)then
+        if(.not.allocated(delp_phys)) allocate(delp_phys(isd:ied,jsd:jed,npz))
+        delp_phys = delp
+        if(lfirst) pt_tend = 0.
+      endif
 
       ! Call CCPP timestep init
       call ccpp_physics_timestep_init(cdata, suite_name=trim(ccpp_suite), group_name="fast_physics", ierr=ierr)
@@ -599,6 +614,16 @@ contains
   endif
 #endif
 
+  if(pdc .and. .not.lfirst)then
+    call temp_to_pt(is,ie,js,je,isd,ied,jsd,jed,npz,ncnst,rdgas,flagstruct,rdg,zvir,kappa,nwat,delp,delz_save,q,pt_save)
+    pt_tend = (pt-pt_save)/bdt
+    pt = pt_save
+    delz = delz_save
+    if(flagstruct%fv_debug) call prt_mxm('theta tend', pt_tend, is, ie, js, je, ng, npz, 1., gridstruct%area_64, domain)
+  elseif(pdc)then
+    lfirst = .false.
+  endif
+
   GFDL_interstitial%last_step = .false.
   mdt = bdt / real(k_split)
 
@@ -660,15 +685,29 @@ contains
 #endif
 
                                            call timing_on('DYN_CORE')
-      call dyn_core(npx, npy, npz, ng, sphum, nq, mdt, n_map, n_split, zvir, cp_air, akap, cappa, &
+     if(pdc)then
+       call dyn_core(npx, npy, npz, ng, sphum, nq, mdt, n_map, n_split, zvir, cp_air, akap, cappa, &
 #ifdef MULTI_GASES
-                    kapad, &
-#endif
-                    grav, hydrostatic, &
-                    u, v, w, delz, pt, q, delp, pe, pk, phis, ws, omga, ptop, pfull, ua, va,           &
-                    uc, vc, mfx, mfy, cx, cy, pkz, peln, q_con, ak, bk, ks, &
-                    gridstruct, flagstruct, neststruct, idiag, bd, &
-                    domain, n_map==1, i_pack, GFDL_interstitial%last_step, diss_est,time_total)
+                     kapad, &
+#endif 
+                     grav, hydrostatic, &
+                     u, v, w, delz, pt, q, delp, pe, pk, phis, ws, omga, ptop, pfull, ua, va,           &
+                     uc, vc, mfx, mfy, cx, cy, pkz, peln, q_con, ak, bk, ks, &
+                     gridstruct, flagstruct, neststruct, idiag, bd, &
+                     domain, n_map==1, i_pack, GFDL_interstitial%last_step, diss_est,time_total=time_total, &
+                     pt_tend=pt_tend, delp_phys=delp_phys)
+     else
+       call dyn_core(npx, npy, npz, ng, sphum, nq, mdt, n_map, n_split, zvir, cp_air, akap, cappa, &
+#ifdef MULTI_GASES
+                     kapad, &
+#endif 
+                     grav, hydrostatic, &
+                     u, v, w, delz, pt, q, delp, pe, pk, phis, ws, omga, ptop, pfull, ua, va,           &
+                     uc, vc, mfx, mfy, cx, cy, pkz, peln, q_con, ak, bk, ks, &
+                     gridstruct, flagstruct, neststruct, idiag, bd, &
+                     domain, n_map==1, i_pack, GFDL_interstitial%last_step, diss_est,time_total=time_total)
+     endif
+
                                            call timing_off('DYN_CORE')
 
 
@@ -810,6 +849,8 @@ contains
       end if
 #endif
   enddo    ! n_map loop
+
+
                                                   call timing_off('FV_DYN_LOOP')
   if ( flagstruct%molecular_diffusion ) then
      if( .not. md_time .and. time_total - time_offset .gt. md_wait_sec ) then
@@ -989,6 +1030,11 @@ contains
       enddo
       enddo
     endif   !  consv_am
+  endif
+
+  if(pdc)then
+    pt_save = pt
+    delz_save = delz
   endif
 
 911  call cubed_to_latlon(u, v, ua, va, gridstruct, &

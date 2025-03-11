@@ -129,7 +129,7 @@ module fv_update_phys_mod
 
   implicit none
 
-  public :: fv_update_phys, del2_phys
+  public :: fv_update_phys, del2_phys, temp_to_pt, pt_to_temp
   real,parameter:: con_cp  = cp_air
   real, parameter :: tmax = 330
 
@@ -879,5 +879,204 @@ module fv_update_phys_mod
    enddo
 
   end subroutine del2_phys
+
+  subroutine temp_to_pt(is,ie,js,je,isd,ied,jsd,jed,npz,ncnst,rdgas,flagstruct,rdg,zvir,kappa,nwat,delp,delz,q,pt)
+
+    integer, intent(in) :: is, ie, js, je, isd, ied, jsd, jed, npz, ncnst, nwat
+    real, intent(in) :: rdgas, rdg, zvir, kappa
+    type(fv_flags_type), intent(in) :: flagstruct
+    real, intent(in), dimension(isd:ied,jsd:jed,npz) :: delp
+    real, intent(in), dimension(is:ie,js:je,npz) :: delz
+    real, intent(inout), dimension(isd:ied,jsd:jed,npz) :: pt
+    real, intent(in), dimension(isd:ied,jsd:jed,npz,ncnst) :: q
+    real, dimension(isd:ied,jsd:jed,npz) :: q_con, cappa, pkz, dp1
+#ifdef MULTI_GASES
+    real, dimension(isd:ied,jsd:jed,npz) :: kapad
+#endif
+    real, dimension(is:ie) :: cvm
+    integer :: sphum, liq_wat, ice_wat, rainwat, snowwat, graupel, hailwat, cld_amt
+    integer :: i, j, k
+
+    sphum = get_tracer_index (MODEL_ATMOS, 'sphum')
+    liq_wat = get_tracer_index (MODEL_ATMOS, 'liq_wat')
+    ice_wat = get_tracer_index (MODEL_ATMOS, 'ice_wat')
+    rainwat = get_tracer_index (MODEL_ATMOS, 'rainwat')
+    snowwat = get_tracer_index (MODEL_ATMOS, 'snowwat')
+    graupel = get_tracer_index (MODEL_ATMOS, 'graupel')
+    hailwat = get_tracer_index (MODEL_ATMOS, 'hailwat')
+    cld_amt = get_tracer_index (MODEL_ATMOS, 'cld_amt')
+
+    !$OMP parallel do default(none) shared(is,ie,js,je,isd,ied,jsd,jed,npz,dp1,zvir,q,q_con,sphum,liq_wat, &
+!$OMP                                  rainwat,ice_wat,snowwat,graupel,hailwat,pkz,flagstruct, &
+#ifdef MULTI_GASES
+!$OMP                                  kapad,                                          &
+#endif
+!$OMP                                  cappa,kappa,rdg,delp,pt,delz,nwat,rdgas)              &
+!$OMP                          private(cvm,i,j,k)
+       do k=1,npz
+         if ( flagstruct%moist_phys ) then
+           do j=js,je
+#ifdef MOIST_CAPPA
+             call moist_cv(is,ie,isd,ied,jsd,jed, npz, j, k, nwat, sphum, liq_wat, rainwat,    &
+                           ice_wat, snowwat, graupel, hailwat, q, q_con(is:ie,j,k), cvm)
+#endif
+             do i=is,ie
+#ifdef MULTI_GASES
+                dp1(i,j,k) = virq(q(i,j,k,:))-1.
+                kapad(i,j,k)= kappa * (virqd(q(i,j,k,:))/vicpqd(q(i,j,k,:)))
+#else
+                dp1(i,j,k) = zvir*q(i,j,k,sphum)
+#endif
+
+#ifdef MOIST_CAPPA
+               cappa(i,j,k) = rdgas/(rdgas + cvm(i)/(1.+dp1(i,j,k)))
+               pkz(i,j,k) = exp(cappa(i,j,k)*log(rdg*delp(i,j,k)*pt(i,j,k)*    &
+#ifdef MULTI_GASES
+                            (1.+dp1(i,j,k))                  /delz(i,j,k)) )
+#else
+                            (1.+dp1(i,j,k))*(1.-q_con(i,j,k))/delz(i,j,k)) )
+#endif
+#else
+               pkz(i,j,k) = exp( kappa*log(rdg*delp(i,j,k)*pt(i,j,k)*    &
+                            (1.+dp1(i,j,k))/delz(i,j,k)) )
+! Using dry pressure for the definition of the virtual potential temperature
+!              pkz(i,j,k) = exp( kappa*log(rdg*delp(i,j,k)*pt(i,j,k)*    &
+!                                      (1.-q(i,j,k,sphum))/delz(i,j,k)) )
+#endif
+
+             enddo
+           enddo
+         else
+           do j=js,je
+              do i=is,ie
+                 dp1(i,j,k) = 0.
+#ifdef MULTI_GASES
+                 kapad(i,j,k)= kappa * (virqd(q(i,j,k,:))/vicpqd(q(i,j,k,:)))
+                 pkz(i,j,k) = exp(kapad(i,j,k)*log(rdg*virqd(q(i,j,k,:))*delp(i,j,k)*pt(i,j,k)/delz(i,j,k)))
+#else
+                 pkz(i,j,k) = exp(kappa*log(rdg*delp(i,j,k)*pt(i,j,k)/delz(i,j,k)))
+#endif
+              enddo
+           enddo
+         endif
+       enddo
+
+  do k=1,npz
+     do j=js,je
+        do i=is,ie
+
+#ifdef MULTI_GASES
+           pt(i,j,k) = pt(i,j,k)*(1.+dp1(i,j,k))/pkz(i,j,k)
+#else
+#ifdef USE_COND
+           pt(i,j,k) = pt(i,j,k)*(1.+dp1(i,j,k))*(1.-q_con(i,j,k))/pkz(i,j,k)
+#else
+           pt(i,j,k) = pt(i,j,k)*(1.+dp1(i,j,k))/pkz(i,j,k)
+#endif
+#endif
+        enddo
+     enddo
+  enddo
+
+  end subroutine temp_to_pt
+
+  subroutine pt_to_temp(is,ie,js,je,isd,ied,jsd,jed,npz,ncnst,rdgas,flagstruct,rdg,zvir,kappa,nwat,delp,delz,q,pt)
+
+    integer, intent(in) :: is, ie, js, je, isd, ied, jsd, jed, npz, ncnst, nwat
+    real, intent(in) :: rdgas, rdg, zvir, kappa
+    type(fv_flags_type), intent(in) :: flagstruct
+    real, intent(in), dimension(isd:ied,jsd:jed,npz) :: delp
+    real, intent(in), dimension(is:ie,js:je,npz) :: delz
+    real, intent(inout), dimension(isd:ied,jsd:jed,npz) :: pt
+    real, intent(in), dimension(isd:ied,jsd:jed,npz,ncnst) :: q
+    real, dimension(isd:ied,jsd:jed,npz) :: cappa, pkz, dp1
+    real, dimension(is:ie,js:je,npz) :: q_con
+#ifdef MULTI_GASES
+    real, dimension(isd:ied,jsd:jed,npz) :: kapad
+#endif
+    real, dimension(is:ie) :: cvm, gz
+    integer :: sphum, liq_wat, ice_wat, rainwat, snowwat, graupel, hailwat, cld_amt
+    integer :: i, j, k
+
+    sphum = get_tracer_index (MODEL_ATMOS, 'sphum')
+    liq_wat = get_tracer_index (MODEL_ATMOS, 'liq_wat')
+    ice_wat = get_tracer_index (MODEL_ATMOS, 'ice_wat')
+    rainwat = get_tracer_index (MODEL_ATMOS, 'rainwat')
+    snowwat = get_tracer_index (MODEL_ATMOS, 'snowwat')
+    graupel = get_tracer_index (MODEL_ATMOS, 'graupel')
+    hailwat = get_tracer_index (MODEL_ATMOS, 'hailwat')
+    cld_amt = get_tracer_index (MODEL_ATMOS, 'cld_amt')
+
+#ifdef __GFORTRAN__
+!$OMP parallel do default(none) shared(is,ie,js,je,isd,ied,jsd,jed,npz, &
+#else
+!$OMP parallel do default(none) shared(is,ie,js,je,isd,ied,jsd,jed,npz, &
+#endif
+!$OMP                                  pkz,flagstruct,q,q_con,nwat,sphum,liq_wat,rainwat, &
+!$OMP                                  ice_wat, snowwat, graupel, hailwat, dp1, zvir, rdgas, &
+#ifdef MULTI_GASES
+!$OMP                                  kapad, &
+#endif
+#ifdef __GFORTRAN__
+!$OMP                                  kappa,rdg,delp,pt,delz)                    &
+#else
+!$OMP                                  cappa,kappa,rdg,delp,pt,delz)              &
+#endif
+!$OMP                          private(cvm,i,j,k)
+       do k=1,npz
+         if ( flagstruct%moist_phys ) then
+           do j=js,je
+             call moist_cv(is,ie,isd,ied,jsd,jed, npz, j, k, nwat, sphum, liq_wat, rainwat,    &
+                           ice_wat, snowwat, graupel, hailwat, q, q_con(is:ie,j,k), cvm)
+             do i=is,ie
+#ifdef MOIST_CAPPA
+               dp1(i,j,k) = zvir*q(i,j,k,sphum)
+               cappa(i,j,k) = rdgas/(rdgas + cvm(i)/(1.+dp1(i,j,k)))
+               pkz(i,j,k) = exp((cappa(i,j,k)/(1.-cappa(i,j,k)))*log(rdg*delp(i,j,k)*pt(i,j,k)/delz(i,j,k)))
+#else
+               pkz(i,j,k) = exp( (kappa/(1.-kappa))*log(rdg*delp(i,j,k)*pt(i,j,k)/delz(i,j,k)))
+#endif	   
+             enddo
+           enddo
+         else
+!	 
+! dry-physics
+!	 
+           do j=js,je
+             do i=is,ie
+#ifdef MULTI_GASES
+               dp1(i,j,k) = virq(q(i,j,k,:))-1.
+               pkz(i,j,k) = exp((kapad(i,j,k)/(1.-kapad(i,j,k)))*log(rdg*delp(i,j,k)*pt(i,j,k)/delz(i,j,k)))
+#else
+               pkz(i,j,k) = exp((kappa/(1.-kappa))*log(rdg*delp(i,j,k)*pt(i,j,k)/delz(i,j,k)))
+#endif
+             enddo
+           enddo
+         endif
+       enddo
+
+#ifdef __GFORTRAN__
+!$OMP parallel do default(none) shared(is,ie,js,je,npz,pt,pkz,q_con,zvir,q,sphum)
+#else
+!$OMP parallel do default(none) shared(is,ie,js,je,npz,pt,dp1,pkz,q_con,zvir,q,sphum)
+#endif
+       do k=1,npz
+         do j=js,je
+           do i=is,ie
+#ifdef MULTI_GASES
+             pt(i,j,k) = (pt(i,j,k)/(1.+dp1(i,j,k)))*pkz(i,j,k)
+! Tv = T*Rv/Rd=T*(1.+ dp1)	   
+#else
+#ifdef USE_COND
+             pt(i,j,k) = (pt(i,j,k)/((1.+dp1(i,j,k))*(1.-q_con(i,j,k))))*pkz(i,j,k)
+#else
+             pt(i,j,k) = (pt(i,j,k)/(1.+dp1(i,j,k)))*pkz(i,j,k)
+#endif
+#endif
+           enddo
+         enddo
+       enddo
+
+  end subroutine pt_to_temp
 
 end module fv_update_phys_mod

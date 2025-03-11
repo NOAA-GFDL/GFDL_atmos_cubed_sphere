@@ -125,7 +125,7 @@ module fv_mapz_mod
   private
 
   public compute_total_energy, Lagrangian_to_Eulerian, moist_cv, moist_cp,   &
-         rst_remap, mappm, E_Flux, remap_2d, map_scalar
+         rst_remap, mappm, E_Flux, remap_2d, map_scalar, map1_ppm
 
 contains
 

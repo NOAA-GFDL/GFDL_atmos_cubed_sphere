@@ -145,6 +145,7 @@ module dyn_core_mod
 #endif
   use fv_regional_mod,     only: dump_field, exch_uv, H_STAGGER, U_STAGGER, V_STAGGER
   use fv_regional_mod,     only: a_step, p_step, k_step, n_step
+  use fv_mapz_mod,         only: map1_ppm
 
 implicit none
 private
@@ -180,7 +181,7 @@ contains
                      u,  v,  w, delz, pt, q, delp, pe, pk, phis, ws, omga, ptop, pfull, ua, va, &
                      uc, vc, mfx, mfy, cx, cy, pkz, peln, q_con, ak, bk, &
                      ks, gridstruct, flagstruct, neststruct, idiag, bd, domain, &
-                     init_step, i_pack, end_step, diss_est,time_total)
+                     init_step, i_pack, end_step, diss_est, time_total, pt_tend, delp_phys)
 
     integer, intent(IN) :: npx
     integer, intent(IN) :: npy
@@ -208,7 +209,9 @@ contains
     real, intent(inout) :: pt(  bd%isd:bd%ied  ,bd%jsd:bd%jed  ,npz)  !< potential temperature (K)
     real, intent(inout) :: delp(bd%isd:bd%ied  ,bd%jsd:bd%jed  ,npz)  !< pressure thickness (pascal)
     real, intent(inout) :: q(   bd%isd:bd%ied  ,bd%jsd:bd%jed  ,npz, nq)  !
-    real, intent(in), optional:: time_total  !< total time (seconds) since start
+    real, intent(in), optional :: time_total  !< total time (seconds) since start
+    real, intent(in), optional :: pt_tend(bd%isd:bd%ied,bd%jsd:bd%jed,npz)  
+    real, intent(in), optional :: delp_phys(bd%isd:bd%ied,bd%jsd:bd%jed,npz)
     real, intent(inout) :: diss_est(bd%isd:bd%ied  ,bd%jsd:bd%jed  ,npz)  !< skeb dissipation estimate
 
 !-----------------------------------------------------------------------
@@ -252,6 +255,9 @@ contains
     type(domain2d),      intent(INOUT)         :: domain
 
     real, allocatable, dimension(:,:,:):: pem, heat_source
+    real, dimension(bd%isd:bd%ied,bd%jsd:bd%jed,npz) :: pt_tend_int
+    real, dimension(bd%is:bd%ie,npz+1) :: pe1, pe2
+
 ! Auto 1D & 2D arrays:
     real, dimension(bd%isd:bd%ied,bd%jsd:bd%jed):: ws3, z_rat
     real:: dp_ref(npz)
@@ -286,6 +292,7 @@ contains
     real    :: reg_bc_update_time
     logical :: last_step, remap_step
     logical used
+    logical :: pdc
     real :: split_timestep_bc
 
     integer :: is,  ie,  js,  je
@@ -299,6 +306,8 @@ contains
       ied = bd%ied
       jsd = bd%jsd
       jed = bd%jed
+
+    pdc = present(pt_tend) .and. .not.hydrostatic .and. .not.flagstruct%adiabatic
 
 #ifdef SW_DYNAMICS
     peln1 = 0.
@@ -415,6 +424,30 @@ contains
           remap_step = .false.
      endif
 
+
+    if(pdc)then
+      pt_tend_int = pt_tend
+      do j=js,je+1
+        do i=is,ie
+          pe1(i,1) = ptop
+          pe2(i,1) = ptop
+          do k=2,npz+1
+            pe1(i,k) = pe1(i,k-1) + delp_phys(i,j,k-1)
+            pe2(i,k) = pe2(i,k-1) + delp(i,j,k-1)
+          enddo
+        enddo
+        do k=1,npz+1
+          do i=is,ie
+            pe1(i,k) = log(pe1(i,k))
+            pe2(i,k) = log(pe2(i,k))
+          enddo
+        enddo
+
+        call map1_ppm(npz, pe1, pt_tend, pt_tend(is:ie,j,npz),npz, pe2, pt_tend_int, is, ie, j, isd, &
+                      ied, jsd, jed, -2, 17)
+      enddo
+    endif
+
      if ( flagstruct%fv_debug ) then
           if(is_master()) write(*,*) 'n_split loop, it=', it
           if ( .not. flagstruct%hydrostatic )    &
@@ -440,6 +473,7 @@ contains
      if ( .not. hydrostatic ) then
                              call timing_on('COMM_TOTAL')
          call start_group_halo_update(i_pack(7), w, domain)
+         if(pdc) call start_group_halo_update(i_pack(13), pt_tend_int, domain)
                              call timing_off('COMM_TOTAL')
 
       if ( it==1 ) then
@@ -521,8 +555,13 @@ contains
 
                                                      call timing_on('COMM_TOTAL')
      call complete_group_halo_update(i_pack(8), domain)
-     if( .not. hydrostatic )  &
+     if( .not. hydrostatic )then
           call complete_group_halo_update(i_pack(7), domain)
+          if(pdc)then
+            call complete_group_halo_update(i_pack(13), domain)
+            ptc = 0.
+          endif
+     endif
                                                      call timing_off('COMM_TOTAL')
 
                                                      call timing_on('c_sw')
@@ -539,6 +578,17 @@ contains
                       gridstruct, flagstruct)
       enddo
                                                      call timing_off('c_sw')
+
+      if(pdc)then
+        do k=1,npz
+          do j=jsd,jed
+            do i=isd,ied
+              ptc(i,j,k) = ptc(i,j,k) + dt2*pt_tend_int(i,j,k)
+            enddo
+          enddo
+        enddo
+      endif
+
       if ( flagstruct%nord > 0 ) then
                                                    call timing_on('COMM_TOTAL')
           call start_group_halo_update(i_pack(3), divgd, domain, position=CORNER)
@@ -920,6 +970,16 @@ contains
             enddo
        endif
     enddo           ! end openMP k-loop
+
+    if(pdc)then
+      do k=1,npz
+        do j=jsd,jed
+          do i=isd,ied
+            pt(i,j,k) = pt(i,j,k) + dt*pt_tend_int(i,j,k)
+          enddo
+        enddo
+      enddo
+    endif
 
     if (flagstruct%regional) then
        call mpp_update_domains(uc, vc, domain, gridtype=CGRID_NE)
