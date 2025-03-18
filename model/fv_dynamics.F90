@@ -158,7 +158,6 @@ module fv_dynamics_mod
    use fv_arrays_mod,       only: fv_grid_type, fv_flags_type, fv_atmos_type, fv_nest_type, fv_diag_type, fv_grid_bounds_type, inline_mp_type
    use fv_nwp_nudge_mod,    only: do_adiabatic_init
    use time_manager_mod,    only: get_time
-   use fv_update_phys_mod,  only: temp_to_pt
 
 #ifdef MULTI_GASES
    use multi_gases_mod,  only:  virq, vicpq, virqd, vicpqd
@@ -192,7 +191,8 @@ contains
                         ps, pe, pk, peln, pkz, phis, q_con, omga, ua, va, uc, vc,     &
                         ak, bk, mfx, mfy, cx, cy, ze0, hybrid_z,                      &
                         gridstruct, flagstruct, neststruct, idiag, bd,                &
-                        parent_grid, domain, diss_est, inline_mp, pt_tend, pt_save, delz_save)
+                        parent_grid, domain, diss_est, inline_mp, pt_tend, pt_save,   &
+                        delz_save, u_tend, u_save, v_tend, v_save, delp_save, q_tend, q_save)
 
     use mpp_mod,           only: FATAL, mpp_error
     use ccpp_static_api,   only: ccpp_physics_timestep_init,    &
@@ -260,12 +260,6 @@ contains
 
     type(inline_mp_type), intent(inout) :: inline_mp
 
-    logical :: pdc
-    real, intent(inout), optional :: pt_tend(bd%isd:bd%ied,bd%jsd:bd%jed,npz)
-    real, intent(inout), optional :: pt_save(bd%isd:bd%ied,bd%jsd:bd%jed,npz)
-    real, intent(inout), optional :: delz_save(bd%is:bd%ie,bd%js:bd%je,npz)
-    real, allocatable :: delp_phys(:,:,:)
-
 ! Accumulated Mass flux arrays: the "Flux Capacitor"
     real, intent(inout) ::  mfx(bd%is:bd%ie+1, bd%js:bd%je,   npz)
     real, intent(inout) ::  mfy(bd%is:bd%ie  , bd%js:bd%je+1, npz)
@@ -279,6 +273,15 @@ contains
     type(domain2d),      intent(INOUT) :: domain
     type(fv_atmos_type), pointer, intent(IN) :: parent_grid
     type(fv_diag_type),  intent(IN)    :: idiag
+
+    logical :: pdc
+    real, intent(inout), optional :: pt_tend(bd%isd:bd%ied,bd%jsd:bd%jed,npz)
+    real, intent(inout), optional :: pt_save(bd%isd:bd%ied,bd%jsd:bd%jed,npz)
+    real, intent(inout), optional :: delz_save(bd%is:bd%ie,bd%js:bd%je,npz)
+    real, intent(inout), optional :: delp_save(bd%isd:bd%ied,bd%jsd:bd%jed,npz)
+    real, intent(inout), optional, dimension(bd%isd:bd%ied  ,bd%jsd:bd%jed+1,npz) :: u_tend, u_save !< D grid zonal wind (m/s)
+    real, intent(inout), optional, dimension(bd%isd:bd%ied+1,bd%jsd:bd%jed  ,npz) :: v_tend, v_save !< D grid meridional wind (m/s)
+    real, intent(inout), optional, dimension(bd%isd:bd%ied,bd%jsd:bd%jed,npz,nq_tot-flagstruct%dnats) :: q_tend, q_save !< D grid meridional wind (m/s)
 
 ! Local Arrays
       real:: ws(bd%is:bd%ie,bd%js:bd%je)
@@ -301,7 +304,7 @@ contains
       integer :: rainwat = -999, snowwat = -999, graupel = -999, hailwat = -999, cld_amt = -999
       integer :: theta_d = -999
       logical used
-      integer, parameter :: max_packs=13
+      integer, parameter :: max_packs=16
       type(group_halo_update_type), save :: i_pack(max_packs)
       integer :: is,  ie,  js,  je
       integer :: isd, ied, jsd, jed
@@ -309,12 +312,15 @@ contains
       integer :: ierr
       real :: time_total
       integer :: seconds, days
+      real :: qt, q0
+      real, allocatable :: qwat(:)
       logical, save :: lfirst = .true.
 
       real, dimension(:,:,:), pointer :: cappa
       real, dimension(:,:,:), pointer :: dp1
       real, dimension(:,:,:), pointer :: dtdt_m
       real, dimension(:,:), pointer :: te_2d
+
 
       cappa => GFDL_interstitial%cappa
       dp1 => GFDL_interstitial%te0
@@ -340,13 +346,9 @@ contains
       nr = nq_tot - flagstruct%dnrts
       rdg = -rdgas * agrav
 
-      pdc = present(pt_tend) .and. .not.hydrostatic .and. .not.flagstruct%adiabatic
+      allocate(qwat(nq))
 
-      if(pdc)then
-        if(.not.allocated(delp_phys)) allocate(delp_phys(isd:ied,jsd:jed,npz))
-        delp_phys = delp
-        if(lfirst) pt_tend = 0.
-      endif
+      pdc = present(pt_tend) .and. .not.hydrostatic .and. .not.flagstruct%adiabatic
 
       ! Call CCPP timestep init
       call ccpp_physics_timestep_init(cdata, suite_name=trim(ccpp_suite), group_name="fast_physics", ierr=ierr)
@@ -614,16 +616,6 @@ contains
   endif
 #endif
 
-  if(pdc .and. .not.lfirst)then
-    call temp_to_pt(is,ie,js,je,isd,ied,jsd,jed,npz,ncnst,rdgas,flagstruct,rdg,zvir,kappa,nwat,delp,delz_save,q,pt_save)
-    pt_tend = (pt-pt_save)/bdt
-    pt = pt_save
-    delz = delz_save
-    if(flagstruct%fv_debug) call prt_mxm('theta tend', pt_tend, is, ie, js, je, ng, npz, 1., gridstruct%area_64, domain)
-  elseif(pdc)then
-    lfirst = .false.
-  endif
-
   GFDL_interstitial%last_step = .false.
   mdt = bdt / real(k_split)
 
@@ -638,6 +630,95 @@ contains
        enddo
   endif
 
+
+  if(pdc .and. .not.lfirst)then
+    pt_tend = 0.
+    q_tend = 0. 
+    u_tend = 0.
+    v_tend = 0.
+!$OMP parallel do default(none) shared(is,ie,js,je,npz,nq,pt_tend,pt,pt_save,bdt,delz,delz_save,q_tend,q,delp,delp_save,&
+!$OMP                                  q_save,u_tend,u,u_save,v_tend,v,v_save)
+    do k=1,npz
+      do j=js,je
+        do i=is,ie
+          pt_tend(i,j,k) = (pt(i,j,k)-pt_save(i,j,k))/bdt
+          pt(i,j,k) = pt_save(i,j,k)
+          delz(i,j,k) = delz_save(i,j,k)
+          do n=1,nq
+            q_tend(i,j,k,n) = ((q(i,j,k,n)*delp(i,j,k)/delp_save(i,j,k))-q_save(i,j,k,n))/bdt
+            q(i,j,k,n) = q_save(i,j,k,n)
+          enddo
+          delp(i,j,k) = delp_save(i,j,k)
+        enddo
+      enddo
+      do j=js,je+1
+        do i=is,ie
+          u_tend(i,j,k) = (u(i,j,k)-u_save(i,j,k))/bdt
+          u(i,j,k) = u_save(i,j,k)
+        enddo
+      enddo
+      do j=js,je
+        do i=is,ie+1
+          v_tend(i,j,k) = (v(i,j,k)-v_save(i,j,k))/bdt
+          v(i,j,k) = v_save(i,j,k)
+        enddo
+      enddo
+    enddo
+
+!$OMP parallel do default(none) shared(is,ie,js,je,npz,nq,delp_save,delp,q,q_tend,mdt,qwat,qt,q0,nwat)
+    do k=1,npz
+      do j=js,je
+        do i=is,ie
+          do n=1,nq
+            q(i,j,k,n) = q(i,j,k,n) + mdt*q_tend(i,j,k,n)*delp_save(i,j,k)/delp(i,j,k)
+          enddo
+          qwat(1:nq) = delp(i,j,k)*q(i,j,k,1:nq)
+          qt = sum(qwat(1:nwat))
+          q0 = delp(i,j,k)*(1. - sum(q(i,j,k,1:nwat))) + qt
+          delp(i,j,k) = q0
+          q(i,j,k,1:nq) = qwat(1:nq)/q0
+        enddo
+      enddo
+    enddo
+
+    call timing_on('COMM_TOTAL')
+    call start_group_halo_update(i_pack(14), delp_save, domain)!, complete=.false.)
+    call start_group_halo_update(i_pack(15), pt_tend,   domain)!, complete=.true.)
+    call start_group_halo_update(i_pack(16), u_tend, v_tend, domain, gridtype=DGRID_NE)
+    call timing_off('COMM_TOTAL')
+
+    call timing_on('COMM_TOTAL')
+    call complete_group_halo_update(i_pack(14), domain)
+    call complete_group_halo_update(i_pack(15), domain)
+    call complete_group_halo_update(i_pack(16), domain)
+    call timing_off('COMM_TOTAL')
+
+  elseif(pdc)then
+!$OMP parallel do default(none) shared(isd,ied,jsd,jed,npz,nq,pt_tend,q_tend,delp,delp_save,&
+!$OMP                                  u_tend,v_tend)
+    do k=1,npz
+      do j=jsd,jed
+        do i=isd,ied
+          delp_save(i,j,k) = delp(i,j,k)
+          pt_tend(i,j,k) = 0.
+          do n=1,nq
+            q_tend(i,j,k,n) = 0.
+          enddo
+        enddo
+      enddo
+      do j=jsd,jed+1
+        do i=isd,ied
+          u_tend(i,j,k) = 0.
+        enddo
+      enddo
+      do j=jsd,jed
+        do i=isd,ied+1
+          v_tend(i,j,k) = 0.
+        enddo
+      enddo
+    enddo
+    lfirst = .false.
+  endif
 
                                                   call timing_on('FV_DYN_LOOP')
   do n_map=1, k_split   ! first level of time-split
@@ -695,7 +776,7 @@ contains
                      uc, vc, mfx, mfy, cx, cy, pkz, peln, q_con, ak, bk, ks, &
                      gridstruct, flagstruct, neststruct, idiag, bd, &
                      domain, n_map==1, i_pack, GFDL_interstitial%last_step, diss_est,time_total=time_total, &
-                     pt_tend=pt_tend, delp_phys=delp_phys)
+                     pt_tend=pt_tend, delp_save=delp_save, u_tend=u_tend, v_tend=v_tend)
      else
        call dyn_core(npx, npy, npz, ng, sphum, nq, mdt, n_map, n_split, zvir, cp_air, akap, cappa, &
 #ifdef MULTI_GASES
@@ -743,6 +824,24 @@ contains
        endif
                                              call timing_off('tracer_2d')
 
+       if(pdc .and. .not.GFDL_interstitial%last_step)then
+!$OMP parallel do default(none) shared(is,ie,js,je,npz,nq,delp_save,delp,q,q_tend,mdt,qwat,qt,q0,nwat)
+         do k=1,npz
+           do j=js,je
+             do i=is,ie
+               do n=1,nq
+                 q(i,j,k,n) = q(i,j,k,n) + mdt*q_tend(i,j,k,n)*delp_save(i,j,k)/delp(i,j,k)
+               enddo
+               qwat(1:nq) = delp(i,j,k)*q(i,j,k,1:nq)
+               qt = sum(qwat(1:nwat))
+               q0 = delp(i,j,k)*(1. - sum(q(i,j,k,1:nwat))) + qt
+               delp(i,j,k) = q0
+               q(i,j,k,1:nq) = qwat(1:nq)/q0
+             enddo
+           enddo
+         enddo
+       endif
+
 #ifdef FILL2D
      if ( flagstruct%hord_tr<8 .and. flagstruct%moist_phys ) then
                                                   call timing_on('Fill2D')
@@ -787,6 +886,20 @@ contains
                                                   call avec_timer_start(6)
 #endif
 
+       if(pdc)then
+         call Lagrangian_to_Eulerian(GFDL_interstitial%last_step, consv_te, ps, pe, delp,          &
+                     pkz, pk, mdt, bdt, npx, npy, npz, is,ie,js,je, isd,ied,jsd,jed,       &
+                     nr, nwat, sphum, q_con, u,  v, w, delz, pt, q, phis,    &
+                     zvir, cp_air, akap, cappa, flagstruct%kord_mt, flagstruct%kord_wz, &
+                     kord_tracer, flagstruct%kord_tm, peln, te_2d,               &
+                     ng, ua, va, omga, dp1, ws, fill, reproduce_sum,             &
+                     idiag%id_mdt>0, dtdt_m, ptop, ak, bk, pfull, gridstruct, domain,   &
+                     flagstruct%do_sat_adj, hydrostatic, flagstruct%phys_hydrostatic, &
+                     hybrid_z,     &
+                     flagstruct%adiabatic, do_adiabatic_init, flagstruct%do_inline_mp, &
+                     inline_mp, flagstruct%c2l_ord, bd, flagstruct%fv_debug, &
+                     flagstruct%moist_phys, pt_save=pt_save)
+       else
          call Lagrangian_to_Eulerian(GFDL_interstitial%last_step, consv_te, ps, pe, delp,          &
                      pkz, pk, mdt, bdt, npx, npy, npz, is,ie,js,je, isd,ied,jsd,jed,       &
                      nr, nwat, sphum, q_con, u,  v, w, delz, pt, q, phis,    &
@@ -799,6 +912,7 @@ contains
                      flagstruct%adiabatic, do_adiabatic_init, flagstruct%do_inline_mp, &
                      inline_mp, flagstruct%c2l_ord, bd, flagstruct%fv_debug, &
                      flagstruct%moist_phys)
+       endif
 
      if ( flagstruct%molecular_diffusion ) then
 ! do thermosphere adjustment if it is turned on and at GFDL_interstitial%last_step.
@@ -1033,8 +1147,29 @@ contains
   endif
 
   if(pdc)then
-    pt_save = pt
-    delz_save = delz
+    !pt_save = pt
+!$OMP parallel do default(none) shared(is,ie,js,je,npz,nq,delz_save,delz,delp_save,delp,q_save,q,u_save,u,v_save,v)
+    do k=1,npz
+      do j=js,je
+        do i=is,ie
+          delz_save(i,j,k) = delz(i,j,k)
+          delp_save(i,j,k) = delp(i,j,k)
+          do n=1,nq
+            q_save(i,j,k,n) = q(i,j,k,n)
+          enddo
+        enddo
+      enddo
+      do j=js,je+1
+        do i=is,ie
+          u_save(i,j,k) = u(i,j,k)
+        enddo
+      enddo
+      do j=js,je
+        do i=is,ie+1
+          v_save(i,j,k) = v(i,j,k)
+        enddo
+      enddo
+    enddo
   endif
 
 911  call cubed_to_latlon(u, v, ua, va, gridstruct, &

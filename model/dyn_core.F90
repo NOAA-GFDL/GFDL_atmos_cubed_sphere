@@ -181,7 +181,8 @@ contains
                      u,  v,  w, delz, pt, q, delp, pe, pk, phis, ws, omga, ptop, pfull, ua, va, &
                      uc, vc, mfx, mfy, cx, cy, pkz, peln, q_con, ak, bk, &
                      ks, gridstruct, flagstruct, neststruct, idiag, bd, domain, &
-                     init_step, i_pack, end_step, diss_est, time_total, pt_tend, delp_phys)
+                     init_step, i_pack, end_step, diss_est, time_total, pt_tend, delp_save, &
+                     u_tend, v_tend)
 
     integer, intent(IN) :: npx
     integer, intent(IN) :: npy
@@ -200,6 +201,8 @@ contains
     type(fv_grid_bounds_type), intent(IN) :: bd
     real, intent(inout), dimension(bd%isd:bd%ied  ,bd%jsd:bd%jed+1,npz):: u  !< D grid zonal wind (m/s)
     real, intent(inout), dimension(bd%isd:bd%ied+1,bd%jsd:bd%jed  ,npz):: v  !< D grid meridional wind (m/s)
+    real, intent(in), optional, dimension(bd%isd:bd%ied  ,bd%jsd:bd%jed+1,npz):: u_tend 
+    real, intent(in), optional, dimension(bd%isd:bd%ied+1,bd%jsd:bd%jed  ,npz):: v_tend
     real, intent(inout) :: w(   bd%isd:,bd%jsd:,1:)  !< vertical vel. (m/s)
     real, intent(inout) ::  delz(bd%is:,bd%js:,1:)  !< delta-height (m, negative)
     real, intent(inout) :: cappa(bd%isd:bd%ied,bd%jsd:bd%jed,1:npz)  !< moist kappa
@@ -211,7 +214,7 @@ contains
     real, intent(inout) :: q(   bd%isd:bd%ied  ,bd%jsd:bd%jed  ,npz, nq)  !
     real, intent(in), optional :: time_total  !< total time (seconds) since start
     real, intent(in), optional :: pt_tend(bd%isd:bd%ied,bd%jsd:bd%jed,npz)  
-    real, intent(in), optional :: delp_phys(bd%isd:bd%ied,bd%jsd:bd%jed,npz)
+    real, intent(in), optional :: delp_save(bd%isd:bd%ied,bd%jsd:bd%jed,npz)
     real, intent(inout) :: diss_est(bd%isd:bd%ied  ,bd%jsd:bd%jed  ,npz)  !< skeb dissipation estimate
 
 !-----------------------------------------------------------------------
@@ -256,7 +259,11 @@ contains
 
     real, allocatable, dimension(:,:,:):: pem, heat_source
     real, dimension(bd%isd:bd%ied,bd%jsd:bd%jed,npz) :: pt_tend_int
+    real, dimension(bd%isd:bd%ied,bd%jsd:bd%jed+1,npz) :: ud_tend_int
+    real, dimension(bd%isd:bd%ied+1,bd%jsd:bd%jed,npz) :: vd_tend_int
     real, dimension(bd%is:bd%ie,npz+1) :: pe1, pe2
+    real, dimension(bd%is:bd%ie+1,npz+1) :: pe3, pe4
+    real, dimension(bd%is:bd%ie+1) :: bc_int
 
 ! Auto 1D & 2D arrays:
     real, dimension(bd%isd:bd%ied,bd%jsd:bd%jed):: ws3, z_rat
@@ -308,6 +315,7 @@ contains
       jed = bd%jed
 
     pdc = present(pt_tend) .and. .not.hydrostatic .and. .not.flagstruct%adiabatic
+    bc_int = 0.
 
 #ifdef SW_DYNAMICS
     peln1 = 0.
@@ -425,28 +433,6 @@ contains
      endif
 
 
-    if(pdc)then
-      pt_tend_int = pt_tend
-      do j=js,je+1
-        do i=is,ie
-          pe1(i,1) = ptop
-          pe2(i,1) = ptop
-          do k=2,npz+1
-            pe1(i,k) = pe1(i,k-1) + delp_phys(i,j,k-1)
-            pe2(i,k) = pe2(i,k-1) + delp(i,j,k-1)
-          enddo
-        enddo
-        do k=1,npz+1
-          do i=is,ie
-            pe1(i,k) = log(pe1(i,k))
-            pe2(i,k) = log(pe2(i,k))
-          enddo
-        enddo
-
-        call map1_ppm(npz, pe1, pt_tend, pt_tend(is:ie,j,npz),npz, pe2, pt_tend_int, is, ie, j, isd, &
-                      ied, jsd, jed, -2, 17)
-      enddo
-    endif
 
      if ( flagstruct%fv_debug ) then
           if(is_master()) write(*,*) 'n_split loop, it=', it
@@ -473,7 +459,6 @@ contains
      if ( .not. hydrostatic ) then
                              call timing_on('COMM_TOTAL')
          call start_group_halo_update(i_pack(7), w, domain)
-         if(pdc) call start_group_halo_update(i_pack(13), pt_tend_int, domain)
                              call timing_off('COMM_TOTAL')
 
       if ( it==1 ) then
@@ -533,6 +518,61 @@ contains
           beta_d = beta
      endif
 
+    if(pdc)then
+!$OMP parallel do default(none) shared(isd,ied,jsd,jed,npz,dt,pt_tend,delp_save,delp,pt)
+      do k=1,npz
+        do j=jsd,jed
+          do i=isd,ied
+            pt(i,j,k) = pt(i,j,k) + dt*pt_tend(i,j,k)*delp_save(i,j,k)/delp(i,j,k)
+          enddo
+        enddo
+      enddo
+
+      ud_tend_int = 0.
+      vd_tend_int = 0.
+
+!$OMP parallel do default(none) shared(is,ie,js,je,npz,pe1,pe2,pe3,pe4,ptop,delp_save,delp,u_tend,bc_int,ud_tend_int,&
+!$OMP                                  isd,ied,jsd,jed,v_tend,vd_tend_int)
+      do j=js,je+1
+        do i=is,ie
+          pe1(i,1) = ptop
+          pe2(i,1) = ptop
+          do k=2,npz+1
+            pe1(i,k) = pe1(i,k-1) + 0.5*(delp_save(i,j-1,k-1)+delp_save(i,j,k-1))
+            pe2(i,k) = pe2(i,k-1) + 0.5*(delp(i,j-1,k-1)+delp(i,j,k-1))
+          enddo
+        enddo
+ 
+        call map1_ppm(npz, pe1, u_tend, bc_int(is:ie),npz, pe2, ud_tend_int, is, ie, j, isd, &
+                      ied, jsd, jed+1, -2, 9)
+        do i=is,ie+1
+          pe3(i,1) = ptop
+          pe4(i,1) = ptop
+          do k=2,npz+1
+            pe3(i,k) = pe3(i,k-1) + 0.5*(delp_save(i-1,j,k-1)+delp_save(i,j,k-1))
+            pe4(i,k) = pe4(i,k-1) + 0.5*(delp(i-1,j,k-1)+delp(i,j,k-1))
+          enddo
+        enddo
+
+        call map1_ppm(npz, pe3, v_tend, bc_int(is:ie+1),npz, pe4, vd_tend_int, is, ie+1, j, isd, &
+                      ied+1, jsd, jed, -2, 9)
+      enddo
+
+!$OMP parallel do default(none) shared(is,ie,js,je,u,dt,ud_tend_int,npz,v,vd_tend_int)
+        do k=1,npz
+          do j=js,je+1
+            do i=is,ie
+              u(i,j,k) = u(i,j,k) + dt*ud_tend_int(i,j,k)
+            enddo
+          enddo
+          do j=js,je
+            do i=is,ie+1
+              v(i,j,k) = v(i,j,k) + dt*vd_tend_int(i,j,k)
+            enddo
+          enddo
+        enddo
+    endif
+
      if ( it==n_split .and. end_step ) then
        if ( flagstruct%use_old_omega ) then
           allocate ( pem(is-1:ie+1,npz+1,js-1:je+1) )
@@ -557,10 +597,6 @@ contains
      call complete_group_halo_update(i_pack(8), domain)
      if( .not. hydrostatic )then
           call complete_group_halo_update(i_pack(7), domain)
-          if(pdc)then
-            call complete_group_halo_update(i_pack(13), domain)
-            ptc = 0.
-          endif
      endif
                                                      call timing_off('COMM_TOTAL')
 
@@ -578,16 +614,6 @@ contains
                       gridstruct, flagstruct)
       enddo
                                                      call timing_off('c_sw')
-
-      if(pdc)then
-        do k=1,npz
-          do j=jsd,jed
-            do i=isd,ied
-              ptc(i,j,k) = ptc(i,j,k) + dt2*pt_tend_int(i,j,k)
-            enddo
-          enddo
-        enddo
-      endif
 
       if ( flagstruct%nord > 0 ) then
                                                    call timing_on('COMM_TOTAL')
@@ -725,6 +751,7 @@ contains
 
       endif   ! end hydro check
 
+
       call p_grad_c(dt2, npz, delpc, pkc, gz, uc, vc, bd, gridstruct%rdxc, gridstruct%rdyc, hydrostatic)
 
                                                                    call timing_on('COMM_TOTAL')
@@ -821,7 +848,7 @@ contains
 !$OMP                                  is,ie,js,je,isd,ied,jsd,jed,omga,delp,gridstruct,npx,npy,  &
 !$OMP                                  ng,zh,vt,ptc,pt,u,v,w,uc,vc,ua,va,divgd,mfx,mfy,cx,cy,     &
 !$OMP                                  crx,cry,xfx,yfx,q_con,zvir,sphum,nq,q,dt,bd,rdt,iep1,jep1, &
-!$OMP                                  heat_source,diss_est,ptop,first_call)                                      &
+!$OMP                                  heat_source,diss_est,ptop,first_call) &
 !$OMP                          private(nord_k, nord_w, nord_t, damp_w, damp_t, d2_divg,   &
 !$OMP                          d_con_k,kgb, hord_m, hord_v, hord_t, hord_p, wk, heat_s,diss_e, z_rat)
     do k=1,npz
@@ -929,6 +956,7 @@ contains
             enddo
          enddo
        endif
+
        call d_sw(vt(isd,jsd,k), delp(isd,jsd,k), ptc(isd,jsd,k),  pt(isd,jsd,k),      &
                   u(isd,jsd,k),    v(isd,jsd,k),   w(isd:,jsd:,k),  uc(isd,jsd,k),      &
                   vc(isd,jsd,k),   ua(isd,jsd,k),  va(isd,jsd,k), divgd(isd,jsd,k),   &
@@ -970,16 +998,6 @@ contains
             enddo
        endif
     enddo           ! end openMP k-loop
-
-    if(pdc)then
-      do k=1,npz
-        do j=jsd,jed
-          do i=isd,ied
-            pt(i,j,k) = pt(i,j,k) + dt*pt_tend_int(i,j,k)
-          enddo
-        enddo
-      enddo
-    endif
 
     if (flagstruct%regional) then
        call mpp_update_domains(uc, vc, domain, gridtype=CGRID_NE)
