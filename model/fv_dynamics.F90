@@ -641,51 +641,116 @@ contains
     do k=1,npz
       do j=js,je
         do i=is,ie
-          pt_tend(i,j,k) = (pt(i,j,k)-pt_save(i,j,k))/bdt
+          pt_tend(i,j,k) = pt(i,j,k)-pt_save(i,j,k)
           pt(i,j,k) = pt_save(i,j,k)
           delz(i,j,k) = delz_save(i,j,k)
           do n=1,nq
-            q_tend(i,j,k,n) = ((q(i,j,k,n)*delp(i,j,k)/delp_save(i,j,k))-q_save(i,j,k,n))/bdt
+            q_tend(i,j,k,n) = (q(i,j,k,n)*delp(i,j,k)/delp_save(i,j,k))-q_save(i,j,k,n)
             q(i,j,k,n) = q_save(i,j,k,n)
           enddo
-          delp(i,j,k) = delp_save(i,j,k)
         enddo
       enddo
       do j=js,je+1
         do i=is,ie
-          u_tend(i,j,k) = (u(i,j,k)-u_save(i,j,k))/bdt
+          u_tend(i,j,k) = u(i,j,k)-u_save(i,j,k)
           u(i,j,k) = u_save(i,j,k)
         enddo
       enddo
       do j=js,je
         do i=is,ie+1
-          v_tend(i,j,k) = (v(i,j,k)-v_save(i,j,k))/bdt
+          v_tend(i,j,k) = v(i,j,k)-v_save(i,j,k)
           v(i,j,k) = v_save(i,j,k)
         enddo
       enddo
     enddo
 
-!$OMP parallel do default(none) shared(is,ie,js,je,npz,nq,delp_save,delp,q,q_tend,mdt,qwat,qt,q0,nwat)
+!$OMP parallel do default(none) shared(is,ie,js,je,npz,nq,delp_save,delp,q,q_tend,mdt,bdt,qwat,qt,q0,nwat)
     do k=1,npz
       do j=js,je
         do i=is,ie
           do n=1,nq
-            q(i,j,k,n) = q(i,j,k,n) + mdt*q_tend(i,j,k,n)*delp_save(i,j,k)/delp(i,j,k)
+            q(i,j,k,n) = q(i,j,k,n) + (mdt/bdt)*q_tend(i,j,k,n)*delp_save(i,j,k)/delp(i,j,k)
           enddo
           qwat(1:nq) = delp(i,j,k)*q(i,j,k,1:nq)
           qt = sum(qwat(1:nwat))
           q0 = delp(i,j,k)*(1. - sum(q(i,j,k,1:nwat))) + qt
           delp(i,j,k) = q0
+          delp_save(i,j,k) = delp(i,j,k)
           q(i,j,k,1:nq) = qwat(1:nq)/q0
         enddo
       enddo
     enddo
 
     call timing_on('COMM_TOTAL')
-    call start_group_halo_update(i_pack(14), delp_save, domain)!, complete=.false.)
-    call start_group_halo_update(i_pack(15), pt_tend,   domain)!, complete=.true.)
+    call start_group_halo_update(i_pack(14), delp_save, domain)
+    call start_group_halo_update(i_pack(15), pt_tend,   domain)
     call start_group_halo_update(i_pack(16), u_tend, v_tend, domain, gridtype=DGRID_NE)
     call timing_off('COMM_TOTAL')
+!$OMP parallel do default(none) shared(is,ie,js,je,npz,pe,delp,peln,pk,kappa)
+   do j=js,je
+      do k=2,npz+1
+         do i=is,ie
+              pe(i,k,j) = pe(i,k-1,j) + delp(i,j,k-1)
+            peln(i,k,j) = log( pe(i,k,j) )
+              pk(i,j,k) = exp( kappa*peln(i,k,j) )
+         enddo
+      enddo
+   enddo
+
+!$OMP parallel do default(none) shared(is,ie,js,je,isd,ied,jsd,jed,npz,dp1,zvir,q,q_con,sphum,liq_wat, &
+!$OMP                                  rainwat,ice_wat,snowwat,graupel,hailwat,pkz,flagstruct, &
+#ifdef MULTI_GASES
+!$OMP                                  kapad,                                          &
+#endif
+!$OMP                                  cappa,kappa,rdg,delp,pt,delz,nwat)              &
+!$OMP                          private(cvm,i,j,k)
+       do k=1,npz
+         if ( flagstruct%moist_phys ) then
+           do j=js,je
+#ifdef MOIST_CAPPA
+             call moist_cv(is,ie,isd,ied,jsd,jed, npz, j, k, nwat, sphum, liq_wat, rainwat,    &
+                           ice_wat, snowwat, graupel, hailwat, q, q_con(is:ie,j,k), cvm)
+#endif
+             do i=is,ie
+#ifdef MULTI_GASES
+                dp1(i,j,k) = virq(q(i,j,k,:))-1.
+                kapad(i,j,k)= kappa * (virqd(q(i,j,k,:))/vicpqd(q(i,j,k,:)))
+#else
+                dp1(i,j,k) = zvir*q(i,j,k,sphum)
+#endif
+
+#ifdef MOIST_CAPPA
+               cappa(i,j,k) = rdgas/(rdgas + cvm(i)/(1.+dp1(i,j,k)))
+               pkz(i,j,k) = exp(cappa(i,j,k)*log(rdg*delp(i,j,k)*pt(i,j,k)*    &
+#ifdef MULTI_GASES
+                            (1.+dp1(i,j,k))                  /delz(i,j,k)) )
+#else
+                            (1.+dp1(i,j,k))*(1.-q_con(i,j,k))/delz(i,j,k)) )
+#endif
+#else
+               pkz(i,j,k) = exp( kappa*log(rdg*delp(i,j,k)*pt(i,j,k)*    &
+                            (1.+dp1(i,j,k))/delz(i,j,k)) )
+! Using dry pressure for the definition of the virtual potential temperature
+!              pkz(i,j,k) = exp( kappa*log(rdg*delp(i,j,k)*pt(i,j,k)*    &
+!                                      (1.-q(i,j,k,sphum))/delz(i,j,k)) )
+#endif
+
+             enddo
+           enddo
+         else
+           do j=js,je
+              do i=is,ie
+                 dp1(i,j,k) = 0.
+#ifdef MULTI_GASES
+                 kapad(i,j,k)= kappa * (virqd(q(i,j,k,:))/vicpqd(q(i,j,k,:)))
+                 pkz(i,j,k) = exp(kapad(i,j,k)*log(rdg*virqd(q(i,j,k,:))*delp(i,j,k)*pt(i,j,k)/delz(i,j,k)))
+#else
+                 pkz(i,j,k) = exp(kappa*log(rdg*delp(i,j,k)*pt(i,j,k)/delz(i,j,k)))
+#endif
+              enddo
+           enddo
+         endif
+       enddo
 
     call timing_on('COMM_TOTAL')
     call complete_group_halo_update(i_pack(14), domain)
@@ -825,12 +890,12 @@ contains
                                              call timing_off('tracer_2d')
 
        if(pdc .and. .not.GFDL_interstitial%last_step)then
-!$OMP parallel do default(none) shared(is,ie,js,je,npz,nq,delp_save,delp,q,q_tend,mdt,qwat,qt,q0,nwat)
+!$OMP parallel do default(none) shared(is,ie,js,je,npz,nq,delp_save,delp,q,q_tend,mdt,bdt,qwat,qt,q0,nwat)
          do k=1,npz
            do j=js,je
              do i=is,ie
                do n=1,nq
-                 q(i,j,k,n) = q(i,j,k,n) + mdt*q_tend(i,j,k,n)*delp_save(i,j,k)/delp(i,j,k)
+                 q(i,j,k,n) = q(i,j,k,n) + (mdt/bdt)*q_tend(i,j,k,n)*delp_save(i,j,k)/delp(i,j,k)
                enddo
                qwat(1:nq) = delp(i,j,k)*q(i,j,k,1:nq)
                qt = sum(qwat(1:nwat))

@@ -519,20 +519,17 @@ contains
      endif
 
     if(pdc)then
-!$OMP parallel do default(none) shared(isd,ied,jsd,jed,npz,dt,pt_tend,delp_save,delp,pt)
+!$OMP parallel do default(none) shared(isd,ied,jsd,jed,npz,dt,flagstruct,bdt,pt_tend,delp_save,delp,pt)
       do k=1,npz
         do j=jsd,jed
           do i=isd,ied
-            pt(i,j,k) = pt(i,j,k) + dt*pt_tend(i,j,k)*delp_save(i,j,k)/delp(i,j,k)
+            pt(i,j,k) = pt(i,j,k) + (dt/(flagstruct%k_split*bdt))*pt_tend(i,j,k)*delp_save(i,j,k)/delp(i,j,k)
           enddo
         enddo
       enddo
 
-      ud_tend_int = 0.
-      vd_tend_int = 0.
-
 !$OMP parallel do default(none) shared(is,ie,js,je,npz,pe1,pe2,pe3,pe4,ptop,delp_save,delp,u_tend,bc_int,ud_tend_int,&
-!$OMP                                  isd,ied,jsd,jed,v_tend,vd_tend_int)
+!$OMP                                  isd,ied,jsd,jed,v_tend,vd_tend_int,flagstruct)
       do j=js,je+1
         do i=is,ie
           pe1(i,1) = ptop
@@ -544,7 +541,7 @@ contains
         enddo
  
         call map1_ppm(npz, pe1, u_tend, bc_int(is:ie),npz, pe2, ud_tend_int, is, ie, j, isd, &
-                      ied, jsd, jed+1, -2, 9)
+                      ied, jsd, jed+1, -1, flagstruct%kord_mt)
         do i=is,ie+1
           pe3(i,1) = ptop
           pe4(i,1) = ptop
@@ -555,19 +552,19 @@ contains
         enddo
 
         call map1_ppm(npz, pe3, v_tend, bc_int(is:ie+1),npz, pe4, vd_tend_int, is, ie+1, j, isd, &
-                      ied+1, jsd, jed, -2, 9)
+                      ied+1, jsd, jed, -1, flagstruct%kord_mt)
       enddo
 
-!$OMP parallel do default(none) shared(is,ie,js,je,u,dt,ud_tend_int,npz,v,vd_tend_int)
+!$OMP parallel do default(none) shared(is,ie,js,je,u,dt,flagstruct,bdt,ud_tend_int,npz,v,vd_tend_int)
         do k=1,npz
           do j=js,je+1
             do i=is,ie
-              u(i,j,k) = u(i,j,k) + dt*ud_tend_int(i,j,k)
+              u(i,j,k) = u(i,j,k) + (dt/(flagstruct%k_split*bdt))*ud_tend_int(i,j,k)
             enddo
           enddo
           do j=js,je
             do i=is,ie+1
-              v(i,j,k) = v(i,j,k) + dt*vd_tend_int(i,j,k)
+              v(i,j,k) = v(i,j,k) + (dt/(flagstruct%k_split*bdt))*vd_tend_int(i,j,k)
             enddo
           enddo
         enddo
