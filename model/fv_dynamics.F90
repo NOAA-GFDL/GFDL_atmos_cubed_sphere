@@ -949,7 +949,8 @@ contains
                                                   call avec_timer_start(6)
 #endif
 
-       if(present(pdc_in))then
+       if(present(pdc_in) .and. GFDL_interstitial%last_step)then
+         if(.not.allocated(pt_save)) allocate(pt_save(isd:ied,jsd:jed,npz))
          call Lagrangian_to_Eulerian(GFDL_interstitial%last_step, consv_te, ps, pe, delp,          &
                      pkz, pk, mdt, bdt, npx, npy, npz, is,ie,js,je, isd,ied,jsd,jed,       &
                      nr, nwat, sphum, q_con, u,  v, w, delz, pt, q, phis,    &

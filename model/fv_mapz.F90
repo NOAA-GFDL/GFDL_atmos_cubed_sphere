@@ -208,7 +208,7 @@ contains
 
   type(inline_mp_type), intent(inout):: inline_mp
 
-  real, intent(inout), allocatable, optional :: pt_save(:,:,:)
+  real, intent(inout), optional :: pt_save(isd:ied,jsd:jed,km)
 
 ! !DESCRIPTION:
 !
@@ -838,7 +838,6 @@ endif        ! end last_step check
 !!!  if ( is_master() ) write(*,*) 'dtmp=', dtmp, nwat
 
     if(present(pt_save))then
-      if(.not.allocated(pt_save)) allocate(pt_save(isd:ied,jsd:jed,km))
       pt_save = 0.
 !$OMP do
        do k=1,km
