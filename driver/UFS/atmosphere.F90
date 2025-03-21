@@ -283,8 +283,6 @@ character(len=20)   :: mod_name = 'UFS/atmosphere_mod'
 
 !---dynamics tendencies for use in fv_subgrid_z and during fv_update_phys
   real, allocatable, dimension(:,:,:)   :: u_dt, v_dt, t_dt, qv_dt
-  real, allocatable, dimension(:,:,:) :: pt_tend, pt_save, delz_save, u_tend, u_save, v_tend, v_save, delp_save
-  real, allocatable, dimension(:,:,:,:) :: q_tend, q_save
   real, allocatable                     :: pref(:,:), dum1d(:)
 
   logical :: first_diag = .true.
@@ -450,23 +448,6 @@ contains
              qv_dt(isc:iec,jsc:jec,npz) )
 !--- allocate pref
    allocate(pref(npz+1,2), dum1d(npz+1))
-
-   if(pdc)then
-     allocate(pt_tend(isd:ied,jsd:jed,npz), pt_save(isd:ied,jsd:jed,npz), delz_save(isc:iec,jsc:jec,npz), &
-              u_tend(isd:ied,jsd:jed+1,npz), u_save(isd:ied,jsd:jed+1,npz), v_tend(isd:ied+1,jsd:jed,npz), &
-              v_save(isd:ied+1,jsd:jed,npz), delp_save(isd:ied,jsd:jed,npz), &
-              q_tend(isd:ied,jsd:jed,npz,nq), q_save(isd:ied,jsd:jed,npz,nq))
-     pt_tend = 0.
-     pt_save = 0.
-     delz_save = 0.
-     u_tend = 0.
-     u_save = 0.
-     v_tend = 0.
-     v_save = 0.
-     delp_save = 0.
-     q_tend = 0.
-     q_save = 0.
-   endif
 
    ! DH* 20210326
    ! First, read atmos_model_nml namelist section - this is a workaround to avoid
@@ -725,9 +706,7 @@ contains
                         Atm(n)%gridstruct,  Atm(n)%flagstruct,                    &
                         Atm(n)%neststruct,  Atm(n)%idiag, Atm(n)%bd,              &
                         Atm(n)%parent_grid, Atm(n)%domain,Atm(n)%diss_est,        &
-                        Atm(n)%inline_mp, pt_tend=pt_tend, pt_save=pt_save, delz_save=delz_save, &
-                        u_tend=u_tend, u_save=u_save, v_tend=v_tend, v_save=v_save, delp_save=delp_save, &
-                        q_tend=q_tend, q_save=q_save)
+                        Atm(n)%inline_mp,pdc)
       else
 !uc/vc only need be same on coarse grid? However BCs do need to be the same
        call fv_dynamics(npx, npy, npz, nq, Atm(n)%ng, dt_atmos/real(abs(p_split)),&
@@ -886,7 +865,6 @@ contains
    deallocate (Atm)
 
    deallocate( u_dt, v_dt, t_dt, qv_dt, pref, dum1d )
-   if(allocated(pt_tend)) deallocate(pt_tend, pt_save, delz_save, u_tend, u_save, v_tend, v_save, delp_save, q_tend, q_save)
 
  end subroutine atmosphere_end
 

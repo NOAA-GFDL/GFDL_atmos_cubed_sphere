@@ -168,7 +168,6 @@ public :: dyn_core, del2_cubed, init_ijk_mem
   real, parameter    ::     rad2deg = 180./pi
 
 contains
-
 !-----------------------------------------------------------------------
 !     dyn_core :: FV Lagrangian dynamics driver
 !-----------------------------------------------------------------------
@@ -181,7 +180,7 @@ contains
                      u,  v,  w, delz, pt, q, delp, pe, pk, phis, ws, omga, ptop, pfull, ua, va, &
                      uc, vc, mfx, mfy, cx, cy, pkz, peln, q_con, ak, bk, &
                      ks, gridstruct, flagstruct, neststruct, idiag, bd, domain, &
-                     init_step, i_pack, end_step, diss_est, time_total, pt_tend, delp_save, &
+                     init_step, i_pack, end_step, diss_est, pdc_in, time_total, pt_tend, delp_save, &
                      u_tend, v_tend)
 
     integer, intent(IN) :: npx
@@ -194,6 +193,7 @@ contains
     real   , intent(IN) :: ptop
     logical, intent(IN) :: hydrostatic
     logical, intent(IN) :: init_step, end_step
+    logical, intent(IN) :: pdc_in
     real, intent(in) :: pfull(npz)
     real, intent(in),     dimension(npz+1) :: ak, bk
     integer, intent(IN) :: ks
@@ -257,8 +257,8 @@ contains
     type(fv_diag_type),  intent(IN)            :: idiag
     type(domain2d),      intent(INOUT)         :: domain
 
+    logical :: pdc
     real, allocatable, dimension(:,:,:):: pem, heat_source
-    real, dimension(bd%isd:bd%ied,bd%jsd:bd%jed,npz) :: pt_tend_int
     real, dimension(bd%isd:bd%ied,bd%jsd:bd%jed+1,npz) :: ud_tend_int
     real, dimension(bd%isd:bd%ied+1,bd%jsd:bd%jed,npz) :: vd_tend_int
     real, dimension(bd%is:bd%ie,npz+1) :: pe1, pe2
@@ -299,7 +299,6 @@ contains
     real    :: reg_bc_update_time
     logical :: last_step, remap_step
     logical used
-    logical :: pdc
     real :: split_timestep_bc
 
     integer :: is,  ie,  js,  je
@@ -314,7 +313,7 @@ contains
       jsd = bd%jsd
       jed = bd%jed
 
-    pdc = present(pt_tend) .and. .not.hydrostatic .and. .not.flagstruct%adiabatic
+    pdc = pdc_in .and. present(delp_save) .and. present(pt_tend) .and. present(u_tend) .and. present(v_tend)
     bc_int = 0.
 
 #ifdef SW_DYNAMICS
@@ -518,58 +517,6 @@ contains
           beta_d = beta
      endif
 
-    if(pdc)then
-!$OMP parallel do default(none) shared(isd,ied,jsd,jed,npz,dt,flagstruct,bdt,pt_tend,delp_save,delp,pt)
-      do k=1,npz
-        do j=jsd,jed
-          do i=isd,ied
-            pt(i,j,k) = pt(i,j,k) + (dt/(flagstruct%k_split*bdt))*pt_tend(i,j,k)*delp_save(i,j,k)/delp(i,j,k)
-          enddo
-        enddo
-      enddo
-
-!$OMP parallel do default(none) shared(is,ie,js,je,npz,pe1,pe2,pe3,pe4,ptop,delp_save,delp,u_tend,bc_int,ud_tend_int,&
-!$OMP                                  isd,ied,jsd,jed,v_tend,vd_tend_int,flagstruct)
-      do j=js,je+1
-        do i=is,ie
-          pe1(i,1) = ptop
-          pe2(i,1) = ptop
-          do k=2,npz+1
-            pe1(i,k) = pe1(i,k-1) + 0.5*(delp_save(i,j-1,k-1)+delp_save(i,j,k-1))
-            pe2(i,k) = pe2(i,k-1) + 0.5*(delp(i,j-1,k-1)+delp(i,j,k-1))
-          enddo
-        enddo
- 
-        call map1_ppm(npz, pe1, u_tend, bc_int(is:ie),npz, pe2, ud_tend_int, is, ie, j, isd, &
-                      ied, jsd, jed+1, -1, flagstruct%kord_mt)
-        do i=is,ie+1
-          pe3(i,1) = ptop
-          pe4(i,1) = ptop
-          do k=2,npz+1
-            pe3(i,k) = pe3(i,k-1) + 0.5*(delp_save(i-1,j,k-1)+delp_save(i,j,k-1))
-            pe4(i,k) = pe4(i,k-1) + 0.5*(delp(i-1,j,k-1)+delp(i,j,k-1))
-          enddo
-        enddo
-
-        call map1_ppm(npz, pe3, v_tend, bc_int(is:ie+1),npz, pe4, vd_tend_int, is, ie+1, j, isd, &
-                      ied+1, jsd, jed, -1, flagstruct%kord_mt)
-      enddo
-
-!$OMP parallel do default(none) shared(is,ie,js,je,u,dt,flagstruct,bdt,ud_tend_int,npz,v,vd_tend_int)
-        do k=1,npz
-          do j=js,je+1
-            do i=is,ie
-              u(i,j,k) = u(i,j,k) + (dt/(flagstruct%k_split*bdt))*ud_tend_int(i,j,k)
-            enddo
-          enddo
-          do j=js,je
-            do i=is,ie+1
-              v(i,j,k) = v(i,j,k) + (dt/(flagstruct%k_split*bdt))*vd_tend_int(i,j,k)
-            enddo
-          enddo
-        enddo
-    endif
-
      if ( it==n_split .and. end_step ) then
        if ( flagstruct%use_old_omega ) then
           allocate ( pem(is-1:ie+1,npz+1,js-1:je+1) )
@@ -596,6 +543,60 @@ contains
           call complete_group_halo_update(i_pack(7), domain)
      endif
                                                      call timing_off('COMM_TOTAL')
+
+
+    if(pdc)then
+!$OMP parallel do default(none) shared(isd,ied,jsd,jed,npz,flagstruct,recip_k_split_n_split,pt_tend,delp_save,delp,pt)
+      do k=1,npz
+        do j=jsd,jed
+          do i=isd,ied
+            pt(i,j,k) = pt(i,j,k) + recip_k_split_n_split*pt_tend(i,j,k)*delp_save(i,j,k)/delp(i,j,k)
+          enddo
+        enddo
+      enddo
+
+!$OMP parallel do default(none) shared(is,ie,js,je,npz,ptop,delp_save,delp,u_tend,bc_int,ud_tend_int,&
+!$OMP                                  isd,ied,jsd,jed,v_tend,vd_tend_int,flagstruct) &
+!$OMP                           private(pe1,pe2,pe3,pe4)
+      do j=js,je+1
+        do i=is,ie
+          pe1(i,1) = ptop
+          pe2(i,1) = ptop
+          do k=2,npz+1
+            pe1(i,k) = pe1(i,k-1) + 0.5*(delp_save(i,j-1,k-1)+delp_save(i,j,k-1))
+            pe2(i,k) = pe2(i,k-1) + 0.5*(delp(i,j-1,k-1)+delp(i,j,k-1))
+          enddo
+        enddo
+ 
+        call map1_ppm(npz, pe1, u_tend, bc_int(is:ie),npz, pe2, ud_tend_int, is, ie, j, isd, &
+                      ied, jsd, jed+1, -1, flagstruct%kord_mt)
+        do i=is,ie+1
+          pe3(i,1) = ptop
+          pe4(i,1) = ptop
+          do k=2,npz+1
+            pe3(i,k) = pe3(i,k-1) + 0.5*(delp_save(i-1,j,k-1)+delp_save(i,j,k-1))
+            pe4(i,k) = pe4(i,k-1) + 0.5*(delp(i-1,j,k-1)+delp(i,j,k-1))
+          enddo
+        enddo
+
+        call map1_ppm(npz, pe3, v_tend, bc_int(is:ie+1),npz, pe4, vd_tend_int, is, ie+1, j, isd, &
+                      ied+1, jsd, jed, -1, flagstruct%kord_mt)
+      enddo
+
+!$OMP parallel do default(none) shared(is,ie,js,je,u,flagstruct,recip_k_split_n_split,ud_tend_int,npz,v,vd_tend_int)
+        do k=1,npz
+          do j=js,je+1
+            do i=is,ie
+              u(i,j,k) = u(i,j,k) + recip_k_split_n_split*ud_tend_int(i,j,k)
+            enddo
+          enddo
+          do j=js,je
+            do i=is,ie+1
+              v(i,j,k) = v(i,j,k) + recip_k_split_n_split*vd_tend_int(i,j,k)
+            enddo
+          enddo
+        enddo
+    endif
 
                                                      call timing_on('c_sw')
 !$OMP parallel do default(none) shared(npz,isd,jsd,delpc,delp,ptc,pt,u,v,w,uc,vc,ua,va, &
