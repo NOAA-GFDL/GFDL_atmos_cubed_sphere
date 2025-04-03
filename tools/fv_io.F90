@@ -123,7 +123,7 @@ module fv_io_mod
   private
 
   public :: fv_io_init, fv_io_exit, fv_io_read_restart, remap_restart, fv_io_write_restart
-  public :: fv_io_read_tracers, fv_io_register_restart, fv_io_register_nudge_restart
+  public :: fv_io_read_tracers, fv_io_register_nudge_restart
   public :: fv_io_register_restart_BCs
   public :: fv_io_write_BCs, fv_io_read_BCs
   public :: fv_io_register_axis
@@ -638,6 +638,13 @@ contains
     type(FmsNetcdfDomainFile_t) :: FV_tile_restart_r, Tra_restart_r
     type(FmsNetcdfFile_t)       :: Fv_restart_r
     integer, allocatable, dimension(:) :: pes !< Array of the pes in the current pelist
+    character(len=8), dimension(2)  :: dim_names_2d_ak !< Dimension names used to register restart fields
+    character(len=8), dimension(3)  :: dim_names_3d_phis !< Dimension names used to register restart fields
+    character(len=8), dimension(4)  :: dim_names_4d_u, dim_names_4d_v, dim_names_4d_w, dim_names_4d_ze0 !< Dimension
+                                       !! names used to register restart fields
+    integer, dimension(1) :: xpos, ypos !< x/y position for registering axis
+    integer, dimension(2) :: xpos_2d, ypos_2d !< 2-dim x/y position for registering axis
+    integer, dimension(2) :: zsize_2d !< 2-dim z axis size for registering axis
 
 !
 !-------------------------------------------------------------------------
@@ -686,12 +693,39 @@ contains
            allocate ( ze0_r(isc:iec, jsc:jec,  npz_rst+1) )
     endif
 
+    dim_names_2d_ak(1) = "xaxis_1"
+    dim_names_2d_ak(2) = "Time"
+    dim_names_3d_phis(1) = "xaxis_1"
+    dim_names_3d_phis(2) = "yaxis_2"
+    dim_names_3d_phis(3) = "Time"
+    dim_names_4d_u(1) = "xaxis_1"
+    dim_names_4d_u(2) = "yaxis_1"
+    dim_names_4d_u(3) = "zaxis_1"
+    dim_names_4d_u(4) = "Time"
+    dim_names_4d_v = dim_names_4d_u
+    dim_names_4d_v(1) = "xaxis_2"
+    dim_names_4d_v(2) = "yaxis_2"
+    dim_names_4d_w = dim_names_4d_u
+    dim_names_4d_w(2) = "yaxis_2"
+    dim_names_4d_ze0 = dim_names_4d_u
+    dim_names_4d_ze0(2) = "yaxis_2"
+    dim_names_4d_ze0(3) = "zaxis_2"
+    xpos = (/CENTER/)
+    ypos = (/CENTER/)
+    xpos_2d = (/CENTER, EAST/)
+    ypos_2d = (/NORTH, CENTER/)
+    zsize_2d(1) = npz_rst
+    zsize_2d(2) = npz_rst+1
+
     fname = 'INPUT/fv_core.res.nc'
     allocate(pes(mpp_npes()))
     call mpp_get_current_pelist(pes)
     if (open_file(Fv_restart_r,fname,"read", is_restart=.true., pelist=pes)) then
-       call read_data(Fv_restart_r, 'ak', ak_r(:))
-       call read_data(Fv_restart_r, 'bk', bk_r(:))
+       call register_axis(Fv_restart_r, "xaxis_1", size(ak_r(:), 1))
+       call register_axis(Fv_restart_r, "Time", unlimited)
+       call register_restart_field (Fv_restart_r, 'ak', ak_r(:), dim_names_2d_ak)
+       call register_restart_field (Fv_restart_r, 'bk', bk_r(:), dim_names_2d_ak)
+       call read_restart(Fv_restart_r)
        call close_file(Fv_restart_r)
     endif
     deallocate(pes)
@@ -704,24 +738,23 @@ contains
        stile_name = ''
     endif
 
-!!!! A NOTE about file names
-!!! file_exist() needs the full relative path, including INPUT/
-!!! But register_restart_field ONLY looks in INPUT/ and so JUST needs the file name!!
-
        fname = 'INPUT/fv_core.res'//trim(stile_name)//'.nc'
        if (open_file(Fv_tile_restart_r, fname, "read", fv_domain, is_restart=.true.)) then
-          call read_data(Fv_tile_restart_r, 'u', u_r)
-          call read_data(Fv_tile_restart_r, 'v', v_r)
+          call fv_io_register_axis(Fv_tile_restart_r, numx=2, numy=2, xpos=xpos_2d, ypos=ypos_2d, numz=2, &
+               zsize=zsize_2d)
+          call register_restart_field (Fv_tile_restart_r, 'u', u_r, dim_names_4d_u)
+          call register_restart_field (Fv_tile_restart_r, 'v', v_r, dim_names_4d_v)
           if (.not.Atm(1)%flagstruct%hydrostatic) then
-             call read_data(Fv_tile_restart_r, 'W', w_r)
-             call read_data(Fv_tile_restart_r, 'DZ', delz_r)
+             call register_restart_field (Fv_tile_restart_r, 'W', w_r, dim_names_4d_w, is_optional=.true.)
+             call register_restart_field (Fv_tile_restart_r, 'DZ', delz_r, dim_names_4d_w, is_optional=.true.)
              if ( Atm(1)%flagstruct%hybrid_z ) then
-                call read_data(Fv_tile_restart_r, 'ZE0', ze0_r)
+                call register_restart_field (Fv_tile_restart_r, 'ZE0', ze0_r, dim_names_4d_ze0, is_optional=.true.)
              endif
           endif
-          call read_data(Fv_tile_restart_r, 'T', pt_r)
-          call read_data(Fv_tile_restart_r, 'delp', delp_r)
-          call read_data(Fv_tile_restart_r, 'phis', Atm(1)%phis)
+          call register_restart_field (Fv_tile_restart_r, 'T', pt_r, dim_names_4d_w)
+          call register_restart_field (Fv_tile_restart_r, 'delp', delp_r, dim_names_4d_w)
+          call register_restart_field (Fv_tile_restart_r, 'phis', Atm(1)%phis, dim_names_3d_phis)
+          call read_restart(Fv_tile_restart_r, ignore_checksum=Atm(1)%flagstruct%ignore_rst_cksum)
           call close_file(FV_tile_restart_r)
        endif
 
@@ -743,7 +776,8 @@ contains
          fname = 'INPUT/mg_drag.res'//trim(stile_name)//'.nc'
          Atm(1)%Mg_restart_is_open = open_file(Atm(1)%Mg_restart, fname, "read", fv_domain, is_restart=.true.)
          if (Atm(1)%Mg_restart_is_open) then
-            call read_data(Atm(1)%Mg_restart, 'ghprime', Atm(1)%sgh)
+            call fv_io_register_restart(Atm(1))
+            call read_restart(Atm(1)%Mg_restart, ignore_checksum=Atm(1)%flagstruct%ignore_rst_cksum)
             call close_file(Atm(1)%Mg_restart)
             Atm(1)%Mg_restart_is_open = .false.
          else
@@ -753,7 +787,8 @@ contains
          fname = 'INPUT/fv_land.res'//trim(stile_name)//'.nc'
          Atm(1)%Lnd_restart_is_open = open_file(Atm(1)%Lnd_restart, fname, "read", fv_domain, is_restart=.true.)
          if (Atm(1)%Lnd_restart_is_open) then
-           call read_data(Atm(1)%Lnd_restart, 'oro', Atm(1)%oro)
+           call fv_io_register_restart(Atm(1))
+           call read_restart(Atm(1)%Lnd_restart, ignore_checksum=Atm(1)%flagstruct%ignore_rst_cksum)
            call close_file(Atm(1)%Lnd_restart)
            Atm(1)%Lnd_restart_is_open = .false.
          else
@@ -763,20 +798,18 @@ contains
 
        fname = 'INPUT/fv_tracer.res'//trim(stile_name)//'.nc'
        if (open_file(Tra_restart_r, fname, "read", fv_domain, is_restart=.true.)) then
+         call fv_io_register_axis(Tra_restart_r, numx=1, numy=1, xpos=xpos, ypos=ypos, numz=1, zsize=(/npz_rst/))
          do nt = 1, ntprog
             call get_tracer_names(MODEL_ATMOS, nt, tracer_name)
-            call set_tracer_profile (MODEL_ATMOS, nt, q_r(isc:iec,jsc:jec,:,nt)  )
-            if (variable_exists(Tra_restart_r, tracer_name)) then
-               call read_data(Tra_restart_r, tracer_name, q_r(:,:,:,nt))
-            endif
+           call register_restart_field(Tra_restart_r, tracer_name, q_r(:,:,:,nt), &
+                dim_names_4d_u, is_optional=.true.)
          enddo
          do nt = ntprog+1, ntracers
             call get_tracer_names(MODEL_ATMOS, nt, tracer_name)
-            call set_tracer_profile (MODEL_ATMOS, nt, qdiag_r(isc:iec,jsc:jec,:,nt)  )
-            if (variable_exists(Tra_restart_r, tracer_name)) then
-               call read_data (Tra_restart_r, tracer_name, qdiag_r(:,:,:,nt))
-            endif
+            call register_restart_field(Tra_restart_r, tracer_name, qdiag_r(:,:,:,nt), &
+                 dim_names_4d_u, is_optional=.true.)
          enddo
+         call read_restart(Tra_restart_r, ignore_checksum=Atm(1)%flagstruct%ignore_rst_cksum)
          call close_file(Tra_restart_r)
        else
          call mpp_error(NOTE,'==> Warning from remap_restart: Expected file '//trim(fname)//' does not exist')
