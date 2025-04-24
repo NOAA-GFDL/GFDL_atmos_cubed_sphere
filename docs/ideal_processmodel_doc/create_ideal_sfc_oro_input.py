@@ -1,8 +1,10 @@
-#!/usr/bin/env /home/Ted.Mansell/miniconda3/bin/python3
-# #!/usr/bin/env /home/Larissa.Reames/scratch/miniconda3/bin/python3
-# #!/usr/bin/env /Users/Shared/miniconda3/bin/python3
-
-# Creates sfcdat_ideal.nc and orogdat_ideal.nc for UFS ideal setup
+#!/usr/bin/env python3
+# NOTE: requires the netcdf4 package, which is not standard on system installs. 
+# On hera, try /home/Ted.Mansell/miniconda3/bin/python3 which has netcdf installed, or 
+# otherwise install netcdf in your own miniconda
+#
+# Purpose: Creates sfc_data.nc and oro_data.nc for UFS ideal setup with user-specified 
+# values (affecting land surface, radiation, etc.)
 #   THIS WILL NOT OVERWRITE EXISITNG FILES (Error code will be issued)
 # nx and ny can be any value greater than or equal to the npy, npy in the fv_core_nml 
 #
@@ -14,8 +16,8 @@ from netCDF4 import Dataset    # Note: python is case-sensitive!
 import numpy as np
 
 # filenames can be anything, but then must link as INPUT/sfc_data.nc and INPUT/oro_data.nc
-sfcfilename = 'sfcdat_ideal.nc'
-orofilename = 'orogdat_ideal.nc'
+sfcfilename = 'sfc_data.nc'
+orofilename = 'oro_data.nc'
 
 # dimensions:
 nx = 300 # should have nx >= npx
