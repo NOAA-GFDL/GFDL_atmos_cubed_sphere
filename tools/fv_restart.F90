@@ -174,7 +174,7 @@ module fv_restart_mod
   use multi_gases_mod,  only:  virq
 #endif
 #ifdef GFS_PHYS
-  use fv_ideal_mod,     only: fv_init_ideal
+  use fv_processmodel_mod, only: fv_init_processmodel
 #endif
 
   implicit none
@@ -434,8 +434,8 @@ contains
                 endif
              elseif (grid_type == 4) then
 #ifdef GFS_PHYS
-                print*, "CALLING FV_INIT_IDEAL"
-                 call fv_init_ideal(Atm(n)%u,Atm(n)%v,Atm(n)%w,Atm(n)%pt, &
+                print*, "CALLING fv_init_processmodel"
+                 call fv_init_processmodel(Atm(n)%u,Atm(n)%v,Atm(n)%w,Atm(n)%pt, &
                      Atm(n)%delp,Atm(n)%q,Atm(n)%phis, Atm(n)%ps,Atm(n)%pe, &
                      Atm(n)%peln,Atm(n)%pk,Atm(n)%pkz, &
                      Atm(n)%uc,Atm(n)%vc, Atm(n)%ua,Atm(n)%va,        &

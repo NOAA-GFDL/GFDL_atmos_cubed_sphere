@@ -19,46 +19,15 @@
 !* If not, see <http://www.gnu.org/licenses/>.
 !***********************************************************************
 
-     module fv_ideal_mod
+     module fv_processmodel_mod
 
-! <table>
-! <tr>
-!     <th>Module Name</th>
-!     <th>Functions Included</th>
-!   </tr>
-!   <tr>
-!     <td>constants_mod</td>
-!     <td>cnst_radius=>radius, pi=>pi_8, omega, grav, rdgas,
-!     cp_air, rvgas</td>
-!   </tr>
-!   <tr>
-!     <td>init_hydro_mod</td>
-!     <td>p_var</td>
-!   </tr>
-!   <tr>
-!     <td>fv_mp_mod</td>
-!     <td>is_master</td>
-!   </tr>
-!   <tr>
-!     <td>fv_grid_utils_mod</td>
-!     <td>ptop_min</td>
-!   </tr> 
-!     <td>mpp_mod</td>
-!     <td>mpp_error, FATAL, stdlog, input_nml_file </td>
-!   </tr>
-!   <tr>
-!     <td>fms_mod</td>
-!     <td>check_nml_error</td>
-!   </tr>
-!   <tr>
-!     <td>mpp_domains_mod</td>
-!     <td>domain2d</td>
-!   </tr>>
-!   <tr>
-!     <td>fv_arrays_mod</td>
-!     <td>fv_grid_type, fv_flags_type, fv_grid_bounds_type, R_GRID</td>
-!  </tr>
-! </table>
+!***********************************************************************
+! Initialization module for "process model" capability. These routines can read or
+! generate a single sounding for a horizontally homogeneous environment (doubly-
+! periodic) and introduce thermal perturbations (bubbles) to initiate convection,
+! if desired. Eventually can add other capabilities.
+! Namelist of input parameters is fv_processmodel_nml
+!***********************************************************************
 
 #ifdef OVERLOAD_R4
       use constantsR4_mod,   only: pi=>pi_8, omega, grav, kappa, rdgas, cp_air, rvgas
@@ -93,11 +62,11 @@
       real    :: iso_t = 300., adi_th = 300., us0 = 30.
       real,dimension(max_bub)    :: icenters, jcenters
 
-     public :: fv_init_ideal
-     public :: read_namelist_fv_ideal
+     public :: fv_init_processmodel
+     public :: read_namelist_fv_processmodel
      contains
 
-     subroutine fv_init_ideal(u,v,w,pt,delp,q,phis, ps,pe,peln,pk,pkz,  uc,vc, ua,va, ak, bk,  &
+     subroutine fv_init_processmodel(u,v,w,pt,delp,q,phis, ps,pe,peln,pk,pkz,  uc,vc, ua,va, ak, bk,             &
                               gridstruct, flagstruct, npx, npy, npz, ng, ncnst, nwat, ndims, nregions, dry_mass, &
                               mountain, moist_phys, hydrostatic, hybrid_z, delz, ze0, ks, ptop, domain_in, tile_in, bd)
 
@@ -527,13 +496,13 @@
         nullify(acapN)
         nullify(globalarea)
 
-     end subroutine fv_init_ideal
+     end subroutine fv_init_processmodel
 
-     subroutine read_namelist_fv_ideal(nml_filename)
+     subroutine read_namelist_fv_processmodel(nml_filename)
 
         character(*), intent(IN) :: nml_filename
         integer :: ierr, f_unit, unit, ios
-        namelist /fv_ideal_nml/bubble_do, &
+        namelist /fv_processmodel_nml/bubble_do, &
                                 t_profile, q_profile, ws_profile, bubble_t, bubble_q,  &
                                 bubble_zc, do_coriolis, iso_t, adi_th, us0, bubble_type,n_bub, &
                                 icenters,jcenters, bubble_rad_x, bubble_rad_y, do_rand_perts, &
@@ -548,12 +517,12 @@
         bubble_do = .false.
 
         ! Read Test_Case namelist
-        read (input_nml_file,fv_ideal_nml,iostat=ios)
-        ierr = check_nml_error(ios,'fv_ideal_nml')
-        write(unit, nml=fv_ideal_nml)
+        read (input_nml_file,fv_processmodel_nml,iostat=ios)
+        ierr = check_nml_error(ios,'fv_processmodel_nml')
+        write(unit, nml=fv_processmodel_nml)
 
 
-      end subroutine read_namelist_fv_ideal 
+      end subroutine read_namelist_fv_processmodel 
 
      subroutine get_sounding( zk, p, t, rho, u, v, qv, nl_max, nl_in, p00 )
       implicit none
@@ -901,4 +870,4 @@
 
      end subroutine SuperCell_Sounding
 
-    end module fv_ideal_mod
+    end module fv_processmodel_mod
