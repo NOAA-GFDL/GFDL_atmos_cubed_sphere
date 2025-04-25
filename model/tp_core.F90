@@ -495,52 +495,54 @@ contains
            b0(i) = bl(i) + br(i)
            smt5(i) = bl(i)*br(i) < 0.
         enddo
-      elseif ( iord==-5 ) then
-        do i=is-1,ie+1
-           bl(i) = al(i)   - q1(i)
-           br(i) = al(i+1) - q1(i)
-           b0(i) = bl(i) + br(i)
-           smt5(i) = bl(i)*br(i) < 0.
-           da1(i) = br(i) - bl(i)
-           a4(i) = -3.*b0(i)
-        enddo
-        do i=is-1,ie+1
-           if( abs(da1(i)) < -a4(i) ) then
-           if( q1(i)+0.25/a4(i)*da1(i)**2+a4(i)*r12 < 0. ) then
-             if( .not. smt5(i) ) then
-                br(i) = 0.
-                bl(i) = 0.
-                b0(i) = 0.
-             elseif( da1(i) > 0. ) then
-                br(i) = -2.*bl(i)
-                b0(i) =    -bl(i)
-             else
-                bl(i) = -2.*br(i)
-                b0(i) =    -br(i)
-             endif
-           endif
-           endif
-        enddo
       else
-        do i=is-1,ie+1
-           bl(i) = al(i)   - q1(i)
-           br(i) = al(i+1) - q1(i)
-           b0(i) = bl(i) + br(i)
-           smt5(i) = 3.*abs(b0(i)) < abs(bl(i)-br(i))
-        enddo
-      endif
+        if ( iord==-5 ) then
+          do i=is-1,ie+1
+             bl(i) = al(i)   - q1(i)
+             br(i) = al(i+1) - q1(i)
+             b0(i) = bl(i) + br(i)
+             smt5(i) = bl(i)*br(i) < 0.
+             da1(i) = br(i) - bl(i)
+             a4(i) = -3.*b0(i)
+          enddo
+          do i=is-1,ie+1
+             if( abs(da1(i)) < -a4(i) ) then
+             if( q1(i)+0.25/a4(i)*da1(i)**2+a4(i)*r12 < 0. ) then
+               if( .not. smt5(i) ) then
+                  br(i) = 0.
+                  bl(i) = 0.
+                  b0(i) = 0.
+               elseif( da1(i) > 0. ) then
+                  br(i) = -2.*bl(i)
+                  b0(i) =    -bl(i)
+               else
+                  bl(i) = -2.*br(i)
+                  b0(i) =    -br(i)
+               endif
+             endif
+             endif
+          enddo
+        else
+          do i=is-1,ie+1
+             bl(i) = al(i)   - q1(i)
+             br(i) = al(i+1) - q1(i)
+             b0(i) = bl(i) + br(i)
+             smt5(i) = 3.*abs(b0(i)) < abs(bl(i)-br(i))
+          enddo
+        endif
 
 !WMP
 ! fix edge issues
-      if ( (.not. bounded_domain) .and. grid_type < 3) then
-         if( is==1 ) then
-            smt5(0) = bl(0)*br(0) < 0.
-            smt5(1) = bl(1)*br(1) < 0.
-         endif
-         if( (ie+1)==npx ) then
-            smt5(npx-1) = bl(npx-1)*br(npx-1) < 0.
-            smt5(npx ) = bl(npx )*br(npx ) < 0.
-         endif
+        if ( (.not. bounded_domain) .and. grid_type < 3) then
+           if( is==1 ) then
+              smt5(0) = bl(0)*br(0) < 0.
+              smt5(1) = bl(1)*br(1) < 0.
+           endif
+           if( (ie+1)==npx ) then
+              smt5(npx-1) = bl(npx-1)*br(npx-1) < 0.
+              smt5(npx ) = bl(npx )*br(npx ) < 0.
+           endif
+        endif
       endif
 
 !DEC$ VECTOR ALWAYS
@@ -897,59 +899,61 @@ if ( jord < 7 ) then
                 smt5(i,j) = bl(i,j)*br(i,j) < 0.
              enddo
           enddo
-       elseif ( jord==-5 ) then
-          do j=js-1,je+1
-             do i=ifirst,ilast
-                bl(i,j) = al(i,j  ) - q(i,j)
-                br(i,j) = al(i,j+1) - q(i,j)
-                b0(i,j) = bl(i,j) + br(i,j)
-                xt1(i) = br(i,j) - bl(i,j)
-                 a4(i) = -3.*b0(i,j)
-                smt5(i,j) = bl(i,j)*br(i,j) < 0.
-             enddo
-             do i=ifirst,ilast
-                if( abs(xt1(i)) < -a4(i) ) then
-                  if( q(i,j)+0.25/a4(i)*xt1(i)**2+a4(i)*r12 < 0. ) then
-                    if( .not. smt5(i,j) ) then
-                        br(i,j) = 0.
-                        bl(i,j) = 0.
-                        b0(i,j) = 0.
-                    elseif( xt1(i) > 0. ) then
-                        br(i,j) = -2.*bl(i,j)
-                        b0(i,j) =    -bl(i,j)
-                    else
-                        bl(i,j) = -2.*br(i,j)
-                        b0(i,j) =    -br(i,j)
-                    endif
-                  endif
-                endif
-             enddo
-          enddo
        else
-          do j=js-1,je+1
-             do i=ifirst,ilast
-                bl(i,j) = al(i,j  ) - q(i,j)
-                br(i,j) = al(i,j+1) - q(i,j)
-                b0(i,j) = bl(i,j) + br(i,j)
-                smt5(i,j) = 3.*abs(b0(i,j)) < abs(bl(i,j)-br(i,j))
+          if ( jord==-5 ) then
+             do j=js-1,je+1
+                do i=ifirst,ilast
+                   bl(i,j) = al(i,j  ) - q(i,j)
+                   br(i,j) = al(i,j+1) - q(i,j)
+                   b0(i,j) = bl(i,j) + br(i,j)
+                   xt1(i) = br(i,j) - bl(i,j)
+                    a4(i) = -3.*b0(i,j)
+                   smt5(i,j) = bl(i,j)*br(i,j) < 0.
+                enddo
+                do i=ifirst,ilast
+                   if( abs(xt1(i)) < -a4(i) ) then
+                     if( q(i,j)+0.25/a4(i)*xt1(i)**2+a4(i)*r12 < 0. ) then
+                       if( .not. smt5(i,j) ) then
+                           br(i,j) = 0.
+                           bl(i,j) = 0.
+                           b0(i,j) = 0.
+                       elseif( xt1(i) > 0. ) then
+                           br(i,j) = -2.*bl(i,j)
+                           b0(i,j) =    -bl(i,j)
+                       else
+                           bl(i,j) = -2.*br(i,j)
+                           b0(i,j) =    -br(i,j)
+                       endif
+                     endif
+                   endif
+                enddo
              enddo
-          enddo
-       endif
+          else
+             do j=js-1,je+1
+                do i=ifirst,ilast
+                   bl(i,j) = al(i,j  ) - q(i,j)
+                   br(i,j) = al(i,j+1) - q(i,j)
+                   b0(i,j) = bl(i,j) + br(i,j)
+                   smt5(i,j) = 3.*abs(b0(i,j)) < abs(bl(i,j)-br(i,j))
+                enddo
+             enddo
+          endif
 
 !WMP
 ! fix edge issues
-       if ( (.not. bounded_domain) .and. grid_type < 3) then
-          if( js==1 ) then
-             do i=ifirst,ilast
-                smt5(i,0) = bl(i,0)*br(i,0) < 0.
-                smt5(i,1) = bl(i,1)*br(i,1) < 0.
-             enddo
-          endif
-          if( (je+1)==npy ) then
-             do i=ifirst,ilast
-                smt5(i,npy-1) = bl(i,npy-1)*br(i,npy-1) < 0.
-                smt5(i,npy ) = bl(i,npy )*br(i,npy ) < 0.
-             enddo
+          if ( (.not. bounded_domain) .and. grid_type < 3) then
+             if( js==1 ) then
+                do i=ifirst,ilast
+                   smt5(i,0) = bl(i,0)*br(i,0) < 0.
+                   smt5(i,1) = bl(i,1)*br(i,1) < 0.
+                enddo
+             endif
+             if( (je+1)==npy ) then
+                do i=ifirst,ilast
+                   smt5(i,npy-1) = bl(i,npy-1)*br(i,npy-1) < 0.
+                   smt5(i,npy ) = bl(i,npy )*br(i,npy ) < 0.
+                enddo
+             endif
           endif
        endif
 
