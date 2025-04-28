@@ -433,6 +433,7 @@
               zm = 0.5*(ze1(k)+ze1(k+1))
               yrad = dy_const*float(j-jcenter)/yradbub
               xrad = dx_const*float(i-icenter)/xradbub
+              zrad = Abs(zm - zc)/zc
 
               RAD=SQRT(xrad*xrad+yrad*yrad+zrad*zrad)
               IF(RAD <= 1.) THEN
