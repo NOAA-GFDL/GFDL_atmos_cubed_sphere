@@ -698,6 +698,8 @@ module fv_arrays_mod
                          !< considered; and for non-hydrostatic models values of 10 or less should be
                          !< considered, with smaller values for higher-resolution.
    real    :: rf_cutoff = 30.E2   !< Pressure below which no Rayleigh damping is applied if tau > 0.
+   real    :: rf_cutoff_fast = 30.E2   !< Pressure below which no fast vertical velocity Rayleigh
+                                       ! damping is applied if fast_tau_w_sec > 0.
    real    :: fast_tau_w_sec = 0.0 !< Time scale (seconds) for Rayleigh damping applied to vertical velocity only.
                                    !< Values of 0.2 are very effective at eliminating spurious vertical motion in
                                    !< the stratosphere. Default is 0.0, which disables this.
