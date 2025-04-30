@@ -2341,22 +2341,24 @@ end subroutine divergence_corner_nest
               smt5(i) = bl(i)*br(i) < 0.
            enddo
         else
+
            do i=is-1, ie+1
               smt5(i) = 3.*abs(b0(i)) < abs(bl(i)-br(i))
            enddo
-        endif
 !WMP
 ! fix edge issues
-        if ( (.not. bounded_domain) .and. grid_type < 3) then
-           if( is==1 ) then
-              smt5(0) = bl(0)*br(0) < 0.
-              smt5(1) = bl(1)*br(1) < 0.
-           endif
-           if( (ie+1)==npx ) then
-              smt5(npx-1) = bl(npx-1)*br(npx-1) < 0.
-              smt5(npx ) = bl(npx )*br(npx ) < 0.
+           if ( (.not. bounded_domain) .and. grid_type < 3) then
+              if( is==1 ) then
+                 smt5(0) = bl(0)*br(0) < 0.
+                 smt5(1) = bl(1)*br(1) < 0.
+              endif
+              if( (ie+1)==npx ) then
+                 smt5(npx-1) = bl(npx-1)*br(npx-1) < 0.
+                 smt5(npx ) = bl(npx )*br(npx ) < 0.
+              endif
            endif
         endif
+
 !DEC$ VECTOR ALWAYS
         do i=is,ie+1
            if( c(i,j)>0. ) then
