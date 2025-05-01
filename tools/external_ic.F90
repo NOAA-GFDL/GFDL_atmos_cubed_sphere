@@ -154,7 +154,17 @@ module external_ic_mod
    use mpp_mod,            only: mpp_error, FATAL, NOTE, mpp_pe, mpp_root_pe
    use mpp_mod,            only: stdlog, input_nml_file, mpp_npes, mpp_get_current_pelist
    use mpp_parameter_mod,  only: AGRID_PARAM=>AGRID
-   use mpp_domains_mod,    only: mpp_get_tile_id, domain2d, mpp_update_domains, NORTH, EAST
+#ifdef ENABLE_PARALLELRESTART
+   use mpp_domains_mod,    only: mpp_get_tile_id, domain2d, mpp_update_domains, &
+                                 NORTH, EAST, mpp_get_domain_tile_commid, &
+                                 mpp_get_io_domain_layout, mpp_copy_domain, &
+                                 mpp_define_io_domain, mpp_get_layout
+#else
+   use mpp_domains_mod,    only: mpp_get_tile_id, domain2d, mpp_update_domains, &
+                                 NORTH, EAST, &
+                                 mpp_get_io_domain_layout, mpp_copy_domain, &
+                                 mpp_define_io_domain, mpp_get_layout
+#endif
    use tracer_manager_mod, only: get_tracer_names, get_number_tracers, get_tracer_index
    use tracer_manager_mod, only: set_tracer_profile
    use field_manager_mod,  only: MODEL_ATMOS
@@ -875,6 +885,8 @@ contains
     contains
 
       subroutine read_gfs_ic()
+        integer :: read_layout(2)
+        type(domain2D) :: domain_for_read
         !
         !--- read in ak and bk from the gfs control file using fms_io read_data ---
         !
@@ -916,7 +928,17 @@ contains
         dim_names_3d4(1) = "levp"
 
         ! surface pressure (Pa)
+#ifdef ENABLE_PARALLELRESTART
+        call mpp_get_layout(Atm%domain,read_layout)
+        call mpp_copy_domain(Atm%domain, domain_for_read)
+        call mpp_define_io_domain(domain_for_read, read_layout)
+
+        GFS_restart%use_collective = .true.
+        GFS_restart%tile_comm = mpp_get_domain_tile_commid(Atm%domain)
+        if( open_file(GFS_restart, fn_gfs_ics, "read", domain_for_read, is_restart=.true., dont_add_res_to_filename=.true.) ) then
+#else
         if( open_file(GFS_restart, fn_gfs_ics, "read", Atm%domain_for_read, is_restart=.true., dont_add_res_to_filename=.true.) ) then
+#endif
           call register_axis(GFS_restart, "lat", "y")
           call register_axis(GFS_restart, "lon", "x")
           call register_axis(GFS_restart, "lonp", "x", domain_position=east)
@@ -3259,7 +3281,7 @@ contains
       endif
   endif ! data source /= FV3GFS GAUSSIAN NEMSIO/NETCDF and GRIB2 FILE
 
-! For GFS spectral input, omega in pa/sec is stored as w in the input data so actual w(m/s) is calculated
+! For GFS spectral input, omega in Pa/sec is stored as w in the input data so actual w(m/s) is calculated
 ! For GFS nemsio input, omega is 0, so best not to use for input since boundary data will not exist for w
 ! For FV3GFS NEMSIO input, w is already in m/s (but the code reads in as omga) and just needs to be remapped
 !-------------------------------------------------------------

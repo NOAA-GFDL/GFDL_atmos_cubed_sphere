@@ -117,11 +117,15 @@ module fv_nggps_diags_mod
  integer :: kstt_dbz, kend_dbz, kstt_omga, kend_omga
  integer :: kstt_windvect, kend_windvect
  integer :: kstt_o3_ave, kend_o3_ave, kstt_pm25_ave, kend_pm25_ave
+ integer :: kstt_smoke_ave, kend_smoke_ave
+ integer :: kstt_dust_ave, kend_dust_ave
+ integer :: kstt_coarsepm_ave, kend_coarsepm_ave
  integer :: kstt_no_ave, kend_no_ave, kstt_no2_ave, kend_no2_ave
  integer :: id_wmaxup,id_wmaxdn,kstt_wup, kend_wup,kstt_wdn,kend_wdn
  integer :: id_uhmax03,id_uhmin03,id_uhmax25,id_uhmin25,id_maxvort01
  integer :: id_maxvorthy1,kstt_maxvorthy1,kstt_maxvort01,id_ustm
  integer :: id_o3_ave,id_pm25_ave,id_no_ave,id_no2_ave
+ integer :: id_smoke_ave, id_dust_ave, id_coarsepm_ave
  integer :: kend_maxvorthy1,kend_maxvort01,id_vstm,id_srh01,id_srh03
  integer :: kstt_uhmax03,kstt_uhmin03,kend_uhmax03,kend_uhmin03
  integer :: kstt_uhmax25,kstt_uhmin25,kend_uhmax25,kend_uhmin25
@@ -161,6 +165,7 @@ module fv_nggps_diags_mod
  real, dimension(:,:),allocatable :: uhmax25,uhmin25,maxvort01
  real, dimension(:,:),allocatable :: maxvorthy1,maxvort02
  real, dimension(:,:,:),allocatable :: o3_ave,pm25_ave,no_ave,no2_ave
+ real, dimension(:,:),allocatable :: smoke_ave,dust_ave,coarsepm_ave
 
  public :: fv_nggps_diag_init, fv_nggps_diag, fv_nggps_tavg
 #ifdef use_WRTCOMP
@@ -255,14 +260,14 @@ contains
 
        if( Atm(n)%flagstruct%hydrostatic ) then
           id_pfhy = register_diag_field ( trim(file_name), 'pfhy', axes(1:3), Time,        &
-               'hydrostatic pressure', 'pa', missing_value=missing_value )
+               'hydrostatic pressure', 'Pa', missing_value=missing_value )
           if (id_pfhy>0) then
              kstt_pfhy = nlevs+1; kend_pfhy = nlevs+npzo
              nlevs = nlevs + npzo
           endif
        else
           id_pfnh = register_diag_field ( trim(file_name), 'pfnh', axes(1:3), Time,        &
-               'non-hydrostatic pressure', 'pa', missing_value=missing_value )
+               'non-hydrostatic pressure', 'Pa', missing_value=missing_value )
           if (id_pfnh>0) then
              kstt_pfnh = nlevs+1; kend_pfnh = nlevs+npzo
              nlevs = nlevs + npzo
@@ -282,7 +287,7 @@ contains
        endif
 
        id_omga = register_diag_field ( trim(file_name), 'omga', axes(1:3), Time,        &
-            'Vertical pressure velocity', 'pa/sec', missing_value=missing_value )
+            'Vertical pressure velocity', 'Pa/sec', missing_value=missing_value )
        if (id_omga>0) then
           kstt_omga = nlevs+1; kend_omga = nlevs+npzo
           nlevs = nlevs + npzo
@@ -296,7 +301,7 @@ contains
        endif
 
        id_delp = register_diag_field ( trim(file_name), 'delp', axes(1:3), Time,        &
-            'pressure thickness', 'pa', missing_value=missing_value )
+            'pressure thickness', 'Pa', missing_value=missing_value )
        if (id_delp>0) then
           kstt_delp = nlevs+1; kend_delp = nlevs+npzo
           nlevs = nlevs + npzo
@@ -325,7 +330,7 @@ contains
        enddo
 !
        id_ps = register_diag_field ( trim(file_name), 'ps', axes(1:2), Time,    &
-           'surface pressure', 'pa',  missing_value=missing_value )
+           'surface pressure', 'Pa',  missing_value=missing_value )
        if( id_ps > 0) then
           kstt_ps = nlevs+1; kend_ps = nlevs+1
           nlevs = nlevs + 1
@@ -464,6 +469,27 @@ contains
        if( .not.Atm(n)%flagstruct%hydrostatic .and. id_pm25_ave > 0 ) then
            allocate ( pm25_ave(isco:ieco,jsco:jeco,npzo) )
            kstt_pm25_ave = nlevs+1; kend_pm25_ave = nlevs+npzo
+           nlevs = nlevs + npzo
+       endif
+        id_smoke_ave = register_diag_field ( trim(file_name), 'smoke_ave',axes(1:2), Time,      &
+           'Hourly averaged surface smoke', 'ug/kg', missing_value=missing_value )
+       if( .not.Atm(n)%flagstruct%hydrostatic .and. id_smoke_ave > 0 ) then
+           allocate ( smoke_ave(isco:ieco,jsco:jeco) )
+           kstt_smoke_ave = nlevs+1; kend_smoke_ave = nlevs+1
+           nlevs = nlevs + npzo
+       endif
+        id_dust_ave = register_diag_field ( trim(file_name), 'dust_ave',axes(1:2), Time,      &
+           'Hourly averaged surface dust', 'ug/kg', missing_value=missing_value )
+       if( .not.Atm(n)%flagstruct%hydrostatic .and. id_dust_ave > 0 ) then
+           allocate ( dust_ave(isco:ieco,jsco:jeco) )
+           kstt_dust_ave = nlevs+1; kend_dust_ave = nlevs+1
+           nlevs = nlevs + npzo
+       endif
+        id_coarsepm_ave = register_diag_field ( trim(file_name), 'coarsepm_ave',axes(1:2), Time,      &
+           'Hourly averaged surface coarsepm', 'ug/kg', missing_value=missing_value )
+       if( .not.Atm(n)%flagstruct%hydrostatic .and. id_coarsepm_ave > 0 ) then
+           allocate ( coarsepm_ave(isco:ieco,jsco:jeco) )
+           kstt_coarsepm_ave = nlevs+1; kend_coarsepm_ave = nlevs+1
            nlevs = nlevs + npzo
        endif
 !
@@ -784,6 +810,18 @@ contains
     if ( id_pm25_ave > 0) then
       call store_data(id_pm25_ave, pm25_ave, Time, kstt_pm25_ave, kend_pm25_ave)
     endif
+    !--- hourly averaged surface smoke
+    if ( id_smoke_ave > 0) then
+      call store_data(id_smoke_ave, smoke_ave, Time, kstt_smoke_ave, kend_smoke_ave)
+    endif
+    !--- hourly averaged surface dust
+    if ( id_dust_ave > 0) then
+      call store_data(id_dust_ave, dust_ave, Time, kstt_dust_ave, kend_dust_ave)
+    endif
+    !--- hourly averaged surface coarsepm
+    if ( id_coarsepm_ave > 0) then
+      call store_data(id_coarsepm_ave, coarsepm_ave, Time, kstt_coarsepm_ave, kend_coarsepm_ave)
+    endif
     !--- max hourly 0-1km vert. vorticity
     if ( id_maxvort01 > 0) then
       call store_data(id_maxvort01, maxvort01, Time, kstt_maxvort01, kend_maxvort01)
@@ -876,6 +914,7 @@ contains
     real,                intent(in):: zvir
     integer :: i, j, k, n, ngc, nq, itrac
     integer :: o3_idx,no_idx,no2_idx,pm25_idx
+    integer :: smoke_idx,dust_idx,coarsepm_idx
     integer seconds, days, nsteps_per_reset
     logical, save :: first_call=.true.
     real, save :: first_time = 0.
@@ -1000,13 +1039,47 @@ contains
             Atm(n)%q,no2_idx,no2_ave,nsteps_per_reset,ucf1)
     call average_tracer_hy1(isco,ieco,jsco,jeco,isdo,iedo,jsdo,jedo,ncnsto,npzo,&
             Atm(n)%q,pm25_idx,pm25_ave,nsteps_per_reset,ucf2)
+
     kdtt1=kdtt1+1
    !else
    ! print *,'calculating hourly-averaegtd o3 or pm25'
    ! call mpp_error(FATAL, 'Missing hourly-averaged o3 or pm25 in diag_table')
    ! stop
    endif
+   if ( id_smoke_ave > 0 .and. id_dust_ave >0 &
+       .and. id_coarsepm_ave > 0 ) then
+       smoke_idx = get_tracer_index(MODEL_ATMOS, 'smoke')
+       dust_idx = get_tracer_index(MODEL_ATMOS, 'dust')
+       coarsepm_idx = get_tracer_index(MODEL_ATMOS, 'coarsepm')
+    if (first_call) then
+       call get_time(Time_step_atmos, seconds,  days)
+       first_time=seconds
+       first_call=.false.
+       kdtt1=0
+    endif
+       nsteps_per_reset = nint(avg_max_length/first_time)
+    if(mod(kdtt1,nsteps_per_reset)==0)then
+        do j=jsco,jeco
+         do i=isco,ieco
+            smoke_ave(i,j)= 0.
+            dust_ave(i,j)= 0.
+            coarsepm_ave(i,j)= 0.
+         enddo
+        enddo
+    endif
+    call average_tracer_hy2(isco,ieco,jsco,jeco,isdo,iedo,jsdo,jedo,ncnsto,npzo,&
+            Atm(n)%q,smoke_idx,smoke_ave,nsteps_per_reset,ucf2)
+    call average_tracer_hy2(isco,ieco,jsco,jeco,isdo,iedo,jsdo,jedo,ncnsto,npzo,&
+            Atm(n)%q,dust_idx,dust_ave,nsteps_per_reset,ucf2)
+    call average_tracer_hy2(isco,ieco,jsco,jeco,isdo,iedo,jsdo,jedo,ncnsto,npzo,&
+            Atm(n)%q,coarsepm_idx,coarsepm_ave,nsteps_per_reset,ucf2)
 
+    kdtt1=kdtt1+1
+   !else
+   ! print *,'calculating hourly-averaegtd o3 or pm25'
+   ! call mpp_error(FATAL, 'Missing hourly-averaged o3 or pm25 in diag_table')
+   ! stop
+   endif
    !allocate hailcast met field arrays
    if (do_hailcast) then
         call hailcast_compute(Atm(n),sphum,liq_wat,ice_wat,rainwat,snowwat,graupel, zvir, &
@@ -1017,11 +1090,11 @@ contains
  end subroutine fv_nggps_tavg
 !
  subroutine average_tracer_hy1(is,ie,js,je,isd,ied,jsd,jed, &
-                 ncns,npz,tracer,tr_idx,tracer_ave,nstp,unitcf) 
+                 ncns,npz,tracer,tr_idx,tracer_ave,nstp,unitcf)
    integer, intent(in):: is, ie, js, je, isd, ied, jsd, jed
    integer, intent(in):: ncns, npz, nstp, tr_idx
    real, intent(in) :: unitcf
-   real, intent(in), dimension(isd:ied,jsd:jed,npz,ncns):: tracer 
+   real, intent(in), dimension(isd:ied,jsd:jed,npz,ncns):: tracer
    real, intent(inout), dimension(is:ie,js:je,npz):: tracer_ave
    integer i, j, k
 !
@@ -1029,11 +1102,30 @@ contains
     do j=js,je
      do i=is,ie
         tracer_ave(i,j,k)=tracer_ave(i,j,k)+tracer(i,j,k,tr_idx)/nstp*unitcf
-     enddo 
-    enddo 
-   enddo  
+     enddo
+    enddo
+   enddo
 
  end subroutine average_tracer_hy1
+
+!
+ subroutine average_tracer_hy2(is,ie,js,je,isd,ied,jsd,jed, &
+                 ncns,npz,tracer,tr_idx,tracer_ave,nstp,unitcf)
+   integer, intent(in):: is, ie, js, je, isd, ied, jsd, jed
+   integer, intent(in):: ncns, npz, nstp, tr_idx
+   real, intent(in) :: unitcf
+   real, intent(in), dimension(isd:ied,jsd:jed,npz,ncns):: tracer
+   real, intent(inout), dimension(is:ie,js:je):: tracer_ave
+   integer i, j
+!
+
+    do j=js,je
+     do i=is,ie
+        tracer_ave(i,j)=tracer_ave(i,j)+tracer(i,j,npz,tr_idx)/nstp*unitcf
+     enddo 
+    enddo 
+
+ end subroutine average_tracer_hy2
 
 !
  subroutine store_data(id, work, Time, nstt, nend)
@@ -1374,7 +1466,7 @@ contains
      endif
      if( id_pfnh>0  ) then
        call find_outputname(trim(file_name),'pfnh',output_name)
-       call add_field_to_bundle(trim(output_name),'non-hydrostatic pressure', 'pa', "time: point",  &
+       call add_field_to_bundle(trim(output_name),'non-hydrostatic pressure', 'Pa', "time: point",  &
             axes(1:3), fcst_grid, kstt_pfnh,kend_pfnh, dyn_bundle, output_file, rcd=rc)
        if(rc==0)  num_field_dyn=num_field_dyn+1
      endif
@@ -1387,7 +1479,7 @@ contains
    else
      if( id_pfhy>0  ) then
        call find_outputname(trim(file_name),'pfhy',output_name)
-       call add_field_to_bundle(trim(output_name),'hydrostatic pressure', 'pa', "time: point",   &
+       call add_field_to_bundle(trim(output_name),'hydrostatic pressure', 'Pa', "time: point",   &
             axes(1:3), fcst_grid, kstt_pfhy,kend_pfhy, dyn_bundle, output_file, rcd=rc)
        if(rc==0)  num_field_dyn=num_field_dyn+1
      endif
@@ -1395,7 +1487,7 @@ contains
 !
    if( id_omga>0  ) then
      call find_outputname(trim(file_name),'omga',output_name)
-     call add_field_to_bundle(trim(output_name),'Vertical pressure velocity', 'pa/sec', "time: point",   &
+     call add_field_to_bundle(trim(output_name),'Vertical pressure velocity', 'Pa/sec', "time: point",   &
           axes(1:3), fcst_grid, kstt_omga,kend_omga, dyn_bundle, output_file, rcd=rc)
      if(rc==0)  num_field_dyn=num_field_dyn+1
    endif
@@ -1410,7 +1502,7 @@ contains
 !
    if( id_delp > 0) then
      call find_outputname(trim(file_name),'delp',output_name)
-     call add_field_to_bundle(trim(output_name),'pressure thickness', 'pa', "time: point",   &
+     call add_field_to_bundle(trim(output_name),'pressure thickness', 'Pa', "time: point",   &
           axes(1:3), fcst_grid, kstt_delp,kend_delp, dyn_bundle, output_file, rcd=rc)
      if(rc==0)  num_field_dyn=num_field_dyn+1
    endif
@@ -1456,9 +1548,30 @@ contains
      if(rc==0)  num_field_dyn=num_field_dyn+1
    endif
 !
+   if ( id_smoke_ave > 0 ) then
+     call find_outputname(trim(file_name),'smoke_ave',output_name)
+     call add_field_to_bundle(trim(output_name),'hourly averaged surface smoke', 'ug/kg', "time: point",   &
+          axes(1:2), fcst_grid, kstt_smoke_ave,kend_smoke_ave, dyn_bundle, output_file, rcd=rc)
+     if(rc==0)  num_field_dyn=num_field_dyn+1
+   endif
+!
+   if ( id_dust_ave > 0 ) then
+     call find_outputname(trim(file_name),'dust_ave',output_name)
+     call add_field_to_bundle(trim(output_name),'hourly surface dust', 'ug/kg', "time: point",   &
+          axes(1:2), fcst_grid, kstt_dust_ave,kend_dust_ave, dyn_bundle, output_file, rcd=rc)
+     if(rc==0)  num_field_dyn=num_field_dyn+1
+   endif
+!
+   if ( id_coarsepm_ave > 0 ) then
+     call find_outputname(trim(file_name),'coarsepm_ave',output_name)
+     call add_field_to_bundle(trim(output_name),'hourly averaged surface coarsepm', 'ug/kg', "time: point",   &
+          axes(1:2), fcst_grid, kstt_coarsepm_ave,kend_coarsepm_ave, dyn_bundle, output_file, rcd=rc)
+     if(rc==0)  num_field_dyn=num_field_dyn+1
+   endif
+!
    if( id_ps > 0) then
      call find_outputname(trim(file_name),'ps',output_name)
-     call add_field_to_bundle(trim(output_name),'surface pressure', 'pa', "time: point",   &
+     call add_field_to_bundle(trim(output_name),'surface pressure', 'Pa', "time: point",   &
           axes(1:2), fcst_grid, kstt_ps,kend_ps, dyn_bundle, output_file, rcd=rc)
      if(rc==0)  num_field_dyn=num_field_dyn+1
    endif
