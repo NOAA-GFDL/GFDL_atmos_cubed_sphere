@@ -19,8 +19,6 @@
 !* If not, see <http://www.gnu.org/licenses/>.
 !***********************************************************************
 
-     module fv_processmodel_mod
-
 !***********************************************************************
 ! Initialization module for "process model" capability. These routines can read or
 ! generate a single sounding for a horizontally homogeneous environment (doubly-
@@ -29,18 +27,58 @@
 ! Namelist of input parameters is fv_processmodel_nml
 !***********************************************************************
 
+     module fv_processmodel_mod
+! <table>
+!   <tr>
+!     <th>Module Name</th>
+!     <th>Functions Included</th>
+!   </tr>
+!   <tr>
+!     <td>constants_mod</td>
+!     <td>cnst_radius=>radius, pi=>pi_8, omega, grav, kappa, rdgas, cp_air, rvgas</td>
+!   </tr>
+!   <tr>
+!     <td>init_hydro_mod</td>
+!     <td>p_var</td>
+!   </tr>
+!   <tr>
+!     <td>fms_mod</td>
+!     <td>check_nml_error</td>
+!   </tr>
+!   <tr>
+!     <td>fv_arrays_mod</td>
+!     <td>fv_grid_type, fv_flags_type, fv_grid_bounds_type, R_GRID</td>
+!   </tr>
+!   <tr>
+!     <td>fv_grid_utils_mod</td>
+!     <td>ptop_min</td>
+!   </tr>
+!   <tr>
+!     <td>fv_mp_mod</td>
+!     <td>is_master</td>
+!   </tr>
+!   <tr>
+!     <td>mpp_domains_mod</td>
+!     <td>domain2d</td>
+!   </tr>>
+!   <tr>
+!     <td>mpp_mod</td>
+!     <td>mpp_error, FATAL, stdlog, input_nml_file</td>
+!   </tr>
+! </table>
+
 #ifdef OVERLOAD_R4
       use constantsR4_mod,   only: pi=>pi_8, omega, grav, kappa, rdgas, cp_air, rvgas
 #else
       use constants_mod,     only: pi=>pi_8, omega, grav, kappa, rdgas, cp_air, rvgas
 #endif
       use init_hydro_mod,    only: p_var
-      use fv_mp_mod,         only: is_master
+      use fms_mod,           only: check_nml_error
+      use fv_arrays_mod,     only: fv_grid_type, fv_flags_type, fv_grid_bounds_type, R_GRID
       use fv_grid_utils_mod, only: ptop_min
-      use mpp_mod,           only: mpp_error, FATAL, stdlog, input_nml_file
-      use fms_mod,           only: check_nml_error     
+      use fv_mp_mod,         only: is_master
       use mpp_domains_mod,   only: domain2d
-      use fv_arrays_mod,         only: fv_grid_type, fv_flags_type, fv_grid_bounds_type, R_GRID
+      use mpp_mod,           only: mpp_error, FATAL, stdlog, input_nml_file
       implicit none
       private
 

@@ -141,7 +141,9 @@ module fv_control_mod
    use fv_mp_mod,           only: mp_start, domain_decomp, mp_assign_gid, global_nest_domain
    use fv_mp_mod,           only: broadcast_domains, mp_barrier, is_master, setup_master, grids_master_procs, tile_fine
    use fv_mp_mod,           only: MAX_NNEST, MAX_NTILE
+#ifdef GFS_PHYS
    use fv_processmodel_mod, only: read_namelist_fv_processmodel
+#endif
    use test_cases_mod,      only: read_namelist_test_case_nml
    use fv_timing_mod,       only: timing_on, timing_off, timing_init, timing_prt
    use mpp_domains_mod,     only: domain2D
@@ -582,8 +584,9 @@ module fv_control_mod
                   Atm(this_grid)%flagstruct%ncnst,  Atm(this_grid)%flagstruct%nwat)
      endif
 
+#ifdef GFS_PHYS
      call read_namelist_fv_processmodel(Atm(this_grid)%nml_filename)
-
+#endif
      call read_namelist_test_case_nml(Atm(this_grid)%nml_filename)
  
      call mpp_get_current_pelist(Atm(this_grid)%pelist, commID=commID) ! for commID
