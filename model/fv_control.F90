@@ -141,6 +141,9 @@ module fv_control_mod
    use fv_mp_mod,           only: mp_start, domain_decomp, mp_assign_gid, global_nest_domain
    use fv_mp_mod,           only: broadcast_domains, mp_barrier, is_master, setup_master, grids_master_procs, tile_fine
    use fv_mp_mod,           only: MAX_NNEST, MAX_NTILE
+#ifdef GFS_PHYS
+   use fv_processmodel_mod, only: read_namelist_fv_processmodel
+#endif
    use test_cases_mod,      only: read_namelist_test_case_nml
    use fv_timing_mod,       only: timing_on, timing_off, timing_init, timing_prt
    use mpp_domains_mod,     only: domain2D
@@ -399,6 +402,8 @@ module fv_control_mod
      real(kind=R_GRID), pointer :: deglon_start, deglon_stop, &  ! boundaries of latlon patch
           deglat_start, deglat_stop
      real(kind=R_GRID), pointer :: deglat
+     real(kind=R_GRID), pointer :: deglon
+     real(kind=R_GRID), pointer :: deg_domain
 
      logical, pointer :: nested, twowaynest
      logical, pointer :: regional
@@ -578,7 +583,12 @@ module fv_control_mod
         call read_namelist_molecular_diffusion_nml(Atm(this_grid)%nml_filename, &
                   Atm(this_grid)%flagstruct%ncnst,  Atm(this_grid)%flagstruct%nwat)
      endif
+
+#ifdef GFS_PHYS
+     call read_namelist_fv_processmodel(Atm(this_grid)%nml_filename)
+#endif
      call read_namelist_test_case_nml(Atm(this_grid)%nml_filename)
+ 
      call mpp_get_current_pelist(Atm(this_grid)%pelist, commID=commID) ! for commID
      call mp_start(commID,halo_update_type)
 
@@ -978,6 +988,8 @@ module fv_control_mod
        deglat_stop                   => Atm%flagstruct%deglat_stop
 
        deglat                        => Atm%flagstruct%deglat
+       deglon                        => Atm%flagstruct%deglon
+       deg_domain                    => Atm%flagstruct%deg_domain
 
        nested                        => Atm%neststruct%nested
        twowaynest                    => Atm%neststruct%twowaynest
@@ -1083,7 +1095,7 @@ module fv_control_mod
             tau, tau_w, fast_tau_w_sec, tau_h2o, rf_cutoff, nf_omega, hydrostatic, fv_sg_adj, sg_cutoff, breed_vortex_inline,  &
             na_init, nudge_dz, hybrid_z, Make_NH, n_zs_filter, nord_zs_filter, full_zs_filter, reset_eta,         &
             pnats, dnats, dnrts, a2b_ord, remap_t, p_ref, d2_bg_k1, d2_bg_k2,  &
-            c2l_ord, dx_const, dy_const, umax, deglat,      &
+            c2l_ord, dx_const, dy_const, umax, deglat, deglon, deg_domain,      &
             deglon_start, deglon_stop, deglat_start, deglat_stop, &
             phys_hydrostatic, use_hydro_pressure, make_hybrid_z, old_divg_damp, add_noise, butterfly_effect, &
             molecular_diffusion, dz_min, psm_bc, nested, twowaynest, nudge_qv, &
