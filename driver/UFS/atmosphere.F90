@@ -182,6 +182,8 @@ use DYCORE_typedefs,        only: DYCORE_data_type
 #ifdef GFS_TYPES
 use GFS_typedefs,           only: IPD_control_type => GFS_control_type, kind_phys
 use GFS_typedefs,           only: GFS_statein_type, GFS_stateout_type, GFS_sfcprop_type
+! SA-3D-TKE (Samuel)
+use GFS_typedefs,           only: GFS_tbd_type
 #else
 use IPD_typedefs,           only: IPD_data_type, IPD_control_type, kind_phys => IPD_kind_phys
 #endif
@@ -693,11 +695,17 @@ contains
 !                     Atm(n)%flagstruct%n_split, Atm(n)%flagstruct%q_split,     &
                       Atm(n)%u,    Atm(n)%v,     Atm(n)%w,  Atm(n)%delz,        &
                       Atm(n)%flagstruct%hydrostatic,                            &
+!The following variable is used for SA-3D-TKE
+                      Atm(n)%flagstruct%sa3dtke_dyco,                           &
                       Atm(n)%pt  , Atm(n)%delp,  Atm(n)%q,  Atm(n)%ps,          &
                       Atm(n)%pe,   Atm(n)%pk,    Atm(n)%peln,                   &
                       Atm(n)%pkz,  Atm(n)%phis,  Atm(n)%q_con,                  &
                       Atm(n)%omga, Atm(n)%ua,    Atm(n)%va, Atm(n)%uc,          &
-                      Atm(n)%vc,   Atm(n)%ak,    Atm(n)%bk, Atm(n)%mfx,         &
+                      Atm(n)%vc,                                                &
+!The following three variables are used for SA-3D-TKE
+                      Atm(n)%deform_1,Atm(n)%deform_2,                          &
+                      Atm(n)%deform_3,Atm(n)%dku3d_h,Atm(n)%dku3d_e,            &
+                      Atm(n)%ak,    Atm(n)%bk, Atm(n)%mfx,                      &
                       Atm(n)%mfy , Atm(n)%cx,    Atm(n)%cy, Atm(n)%ze0,         &
                       Atm(n)%flagstruct%hybrid_z,                               &
                       Atm(n)%gridstruct,  Atm(n)%flagstruct,                    &
@@ -1894,9 +1902,14 @@ contains
                      Atm(mygrid)%ptop, Atm(mygrid)%ks, nq,  n_split_loc,                                       &
                      Atm(mygrid)%flagstruct%q_split, Atm(mygrid)%u, Atm(mygrid)%v, Atm(mygrid)%w,         &
                      Atm(mygrid)%delz, Atm(mygrid)%flagstruct%hydrostatic,                      &
+!The following variable is used for SA-3D-TKE
+                     Atm(mygrid)%flagstruct%sa3dtke_dyco,                      &
                      Atm(mygrid)%pt, Atm(mygrid)%delp, Atm(mygrid)%q, Atm(mygrid)%ps,                     &
                      Atm(mygrid)%pe, Atm(mygrid)%pk, Atm(mygrid)%peln, Atm(mygrid)%pkz, Atm(mygrid)%phis,      &
                      Atm(mygrid)%q_con, Atm(mygrid)%omga, Atm(mygrid)%ua, Atm(mygrid)%va, Atm(mygrid)%uc, Atm(mygrid)%vc, &
+!The following three variables are used for SA-3D-TKE
+                     Atm(mygrid)%deform_1,Atm(mygrid)%deform_2,                   &
+                     Atm(mygrid)%deform_3,Atm(mygrid)%dku3d_h,Atm(mygrid)%dku3d_e,  &
                      Atm(mygrid)%ak, Atm(mygrid)%bk, Atm(mygrid)%mfx, Atm(mygrid)%mfy,                    &
                      Atm(mygrid)%cx, Atm(mygrid)%cy, Atm(mygrid)%ze0, Atm(mygrid)%flagstruct%hybrid_z,    &
                      Atm(mygrid)%gridstruct, Atm(mygrid)%flagstruct,                            &
@@ -1909,9 +1922,14 @@ contains
                      Atm(mygrid)%ptop, Atm(mygrid)%ks, nq, n_split_loc,                                        &
                      Atm(mygrid)%flagstruct%q_split, Atm(mygrid)%u, Atm(mygrid)%v, Atm(mygrid)%w,         &
                      Atm(mygrid)%delz, Atm(mygrid)%flagstruct%hydrostatic,                      &
+!The following variable is used for SA-3D-TKE
+                     Atm(mygrid)%flagstruct%sa3dtke_dyco,                      &
                      Atm(mygrid)%pt, Atm(mygrid)%delp, Atm(mygrid)%q, Atm(mygrid)%ps,                     &
                      Atm(mygrid)%pe, Atm(mygrid)%pk, Atm(mygrid)%peln, Atm(mygrid)%pkz, Atm(mygrid)%phis,      &
                      Atm(mygrid)%q_con, Atm(mygrid)%omga, Atm(mygrid)%ua, Atm(mygrid)%va, Atm(mygrid)%uc, Atm(mygrid)%vc, &
+!The following three variables are used for SA-3D-TKE
+                     Atm(mygrid)%deform_1, Atm(mygrid)%deform_2,          &
+                     Atm(mygrid)%deform_3,Atm(mygrid)%dku3d_h,Atm(mygrid)%dku3d_e, &
                      Atm(mygrid)%ak, Atm(mygrid)%bk, Atm(mygrid)%mfx, Atm(mygrid)%mfy,                    &
                      Atm(mygrid)%cx, Atm(mygrid)%cy, Atm(mygrid)%ze0, Atm(mygrid)%flagstruct%hybrid_z,    &
                      Atm(mygrid)%gridstruct, Atm(mygrid)%flagstruct,                            &
@@ -1985,9 +2003,14 @@ contains
                      Atm(mygrid)%ptop, Atm(mygrid)%ks, nq, Atm(mygrid)%flagstruct%n_split,        &
                      Atm(mygrid)%flagstruct%q_split, Atm(mygrid)%u, Atm(mygrid)%v, Atm(mygrid)%w,         &
                      Atm(mygrid)%delz, Atm(mygrid)%flagstruct%hydrostatic,                      &
+!The following variable is used for SA-3D-TKE
+                     Atm(mygrid)%flagstruct%sa3dtke_dyco,                      &
                      Atm(mygrid)%pt, Atm(mygrid)%delp, Atm(mygrid)%q, Atm(mygrid)%ps,                     &
                      Atm(mygrid)%pe, Atm(mygrid)%pk, Atm(mygrid)%peln, Atm(mygrid)%pkz, Atm(mygrid)%phis,      &
                      Atm(mygrid)%q_con, Atm(mygrid)%omga, Atm(mygrid)%ua, Atm(mygrid)%va, Atm(mygrid)%uc, Atm(mygrid)%vc, &
+!The following three variables are used for SA-3D-TKE
+                     Atm(mygrid)%deform_1,Atm(mygrid)%deform_2,       &
+                     Atm(mygrid)%deform_3,Atm(mygrid)%dku3d_h,Atm(mygrid)%dku3d_e,  &
                      Atm(mygrid)%ak, Atm(mygrid)%bk, Atm(mygrid)%mfx, Atm(mygrid)%mfy,                    &
                      Atm(mygrid)%cx, Atm(mygrid)%cy, Atm(mygrid)%ze0, Atm(mygrid)%flagstruct%hybrid_z,    &
                      Atm(mygrid)%gridstruct, Atm(mygrid)%flagstruct,                            &
@@ -1999,9 +2022,14 @@ contains
                      Atm(mygrid)%ptop, Atm(mygrid)%ks, nq, Atm(mygrid)%flagstruct%n_split,        &
                      Atm(mygrid)%flagstruct%q_split, Atm(mygrid)%u, Atm(mygrid)%v, Atm(mygrid)%w,         &
                      Atm(mygrid)%delz, Atm(mygrid)%flagstruct%hydrostatic,                      &
+!The following variable is used for SA-3D-TKE
+                     Atm(mygrid)%flagstruct%sa3dtke_dyco,                      &
                      Atm(mygrid)%pt, Atm(mygrid)%delp, Atm(mygrid)%q, Atm(mygrid)%ps,                     &
                      Atm(mygrid)%pe, Atm(mygrid)%pk, Atm(mygrid)%peln, Atm(mygrid)%pkz, Atm(mygrid)%phis,      &
                      Atm(mygrid)%q_con, Atm(mygrid)%omga, Atm(mygrid)%ua, Atm(mygrid)%va, Atm(mygrid)%uc, Atm(mygrid)%vc, &
+!The following three variables are used for SA-3D-TKE
+                     Atm(mygrid)%deform_1,Atm(mygrid)%deform_2,       &
+                     Atm(mygrid)%deform_3,Atm(mygrid)%dku3d_h,Atm(mygrid)%dku3d_e,  &
                      Atm(mygrid)%ak, Atm(mygrid)%bk, Atm(mygrid)%mfx, Atm(mygrid)%mfy,                    &
                      Atm(mygrid)%cx, Atm(mygrid)%cy, Atm(mygrid)%ze0, Atm(mygrid)%flagstruct%hybrid_z,    &
                      Atm(mygrid)%gridstruct, Atm(mygrid)%flagstruct,                            &
@@ -2064,6 +2092,7 @@ contains
 !>@detail Performs a mass adjustment to be consistent with the
 !! GFS physics and if necessary, converts quantities to hydrostatic
 !! representation.
+!! SA-3D-TKE (added IPD_Tbd in the input) (kyf)
 #if defined(OVERLOAD_R4)
 #define _DBL_(X) DBLE(X)
 #define _RL_(X) REAL(X,KIND=4)
@@ -2071,9 +2100,11 @@ contains
 #define _DBL_(X) X
 #define _RL_(X) X
 #endif
- subroutine atmos_phys_driver_statein (IPD_Control, IPD_Statein, Atm_block,flip_vc)
+ subroutine atmos_phys_driver_statein (IPD_Control, IPD_Statein, IPD_Tbd, Atm_block,flip_vc)
    type (IPD_control_type),   intent(in)    :: IPD_Control
    type (GFS_statein_type),   intent(inout) :: IPD_Statein
+   ! SA-3D-TKE (added IPD_Tbd) (kyf)
+   type (GFS_tbd_type),       intent(inout) :: IPD_Tbd
    type (block_control_type), intent(in)    :: Atm_block
    logical,                   intent(in)    :: flip_vc
 !--------------------------------------
@@ -2113,8 +2144,10 @@ contains
 !---------------------------------------------------------------------
 ! use most up to date atmospheric properties when running serially
 !---------------------------------------------------------------------
+! SA-3D-TKE added IPD_Tbd (kyf)
 !$OMP parallel do default (none) &
 !$OMP             shared  (Atm_block, Atm, IPD_Control, IPD_Statein, npz, nq, ncnst, sphum, liq_wat, &
+!$OMP                      IPD_Tbd, &
 !$OMP                      ice_wat, rainwat, snowwat, graupel, pk0inv, ptop,   &
 !$OMP                      pktop, zvir, mygrid, dnats, nq_adv, flip_vc) &
 #ifdef MULTI_GASES
@@ -2130,6 +2163,27 @@ contains
 ! log(pe) <-- prsik
 
      blen = Atm_block%blksz(nb)
+!The following is for SA-3D-TKE
+       if(Atm(mygrid)%flagstruct%sa3dtke_dyco) then
+!The following is for SA-3D-TKE (pass dku to dyn_core)
+        do k = 1, npz
+          kz = npz+1-k
+          if(flip_vc) then
+            k1 = kz ! flipping the index
+          else
+            k1 = k
+          endif
+          do ix = 1, blen
+            i = Atm_block%index(nb)%ii(ix)
+            j = Atm_block%index(nb)%jj(ix)
+            ! SA-3D-TKE (added im) (kyf)
+            im = IPD_control%chunk_begin(nb)+ix-1
+            ! SA-3D-TKE (modified IPD_Tbd and ix into im) (kyf)
+            Atm(mygrid)%dku3d_h(i,j,k) = IPD_Tbd%dku3d_h(im,k1)
+            Atm(mygrid)%dku3d_e(i,j,k) = IPD_Tbd%dku3d_e(im,k1)
+          enddo
+        enddo
+       endif
 
      do k = 1, npz
        !Indices for FV's vertical coordinate, for which 1 = top
@@ -2154,6 +2208,13 @@ contains
          endif
          IPD_Statein%vvl(im,k) = _DBL_(_RL_(Atm(mygrid)%omga(i,j,k1)))
          IPD_Statein%prsl(im,k) = _DBL_(_RL_(Atm(mygrid)%delp(i,j,k1)))   ! Total mass
+!The following is for SA-3D-TKE
+         if(Atm(mygrid)%flagstruct%sa3dtke_dyco) then
+          IPD_Statein%def_1(ix,k) = _DBL_(_RL_(Atm(mygrid)%deform_1(i,j,k1)))
+          IPD_Statein%def_2(ix,k) = _DBL_(_RL_(Atm(mygrid)%deform_2(i,j,k1)))
+          IPD_Statein%def_3(ix,k) = _DBL_(_RL_(Atm(mygrid)%deform_3(i,j,k1)))
+         endif
+
          if (Atm(mygrid)%flagstruct%do_skeb) IPD_Statein%diss_est(im,k) = _DBL_(_RL_(Atm(mygrid)%diss_est(i,j,k1)))
 
          if(flip_vc) then

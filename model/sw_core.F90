@@ -521,6 +521,8 @@
 !! and other prognostic varaiables.
    subroutine d_sw(delpc, delp,  ptc,   pt, u,  v, w, uc,vc, &
                    ua, va, divg_d, xflux, yflux, cx, cy,              &
+!The following 5 variables are for SA-3D-TKE
+                   sa3dtke_dyco, dku3d_h,                    &
                    crx_adv, cry_adv,  xfx_adv, yfx_adv, q_con, z_rat, kgb, heat_source,diss_est,  &
                    zvir, sphum, nq, q, k, km, inline_q,  &
                    dt, hord_tr, hord_mt, hord_vt, hord_tm, hord_dp, nord,   &
@@ -537,6 +539,10 @@
       real   , intent(IN):: zvir
       real,    intent(in):: damp_v, damp_w, damp_t, kgb
       type(fv_grid_bounds_type), intent(IN) :: bd
+!The following 5 variables are for SA-3D-TKE
+      logical, intent(IN):: sa3dtke_dyco
+      real, intent(IN), dimension(bd%isd:bd%ied,  bd%jsd:bd%jed):: dku3d_h
+
       real, intent(inout):: divg_d(bd%isd:bd%ied+1,bd%jsd:bd%jed+1) !< divergence
       real, intent(IN), dimension(bd%isd:bd%ied,  bd%jsd:bd%jed):: z_rat
       real, intent(INOUT), dimension(bd%isd:bd%ied,  bd%jsd:bd%jed):: delp, pt, ua, va
@@ -1453,7 +1459,13 @@
 
      do j=js,je+1
         do i=is,ie+1
+!The following is for SA-3D-TKE
+          if(sa3dtke_dyco) then
+           damp2 = abs(dt)*dku3d_h(i,j)
+          else
            damp2 =  gridstruct%da_min_c*max(d2_bg, min(0.20, dddmp*vort(i,j)))  ! del-2
+          endif
+
            vort(i,j) = damp2*delpc(i,j) + dd8*divg_d(i,j)
              ke(i,j) = ke(i,j) + vort(i,j)
         enddo
