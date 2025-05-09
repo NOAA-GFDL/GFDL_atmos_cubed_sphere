@@ -263,7 +263,8 @@ contains
     real, dimension(bd%isd:bd%ied+1,bd%jsd:bd%jed,npz) :: vd_tend_int
     real, dimension(bd%is:bd%ie,npz+1) :: pe1, pe2
     real, dimension(bd%is:bd%ie+1,npz+1) :: pe3, pe4
-    real, dimension(bd%is:bd%ie+1) :: bc_int
+    ! real, dimension(bd%is:bd%ie+1) :: bc_int
+    real, dimension(bd%is:bd%ie) :: bc_int
 
 ! Auto 1D & 2D arrays:
     real, dimension(bd%isd:bd%ied,bd%jsd:bd%jed):: ws3, z_rat
@@ -546,14 +547,15 @@ contains
 
 
     if(pdc)then
-!$OMP parallel do default(none) shared(isd,ied,jsd,jed,npz,flagstruct,recip_k_split_n_split,pt_tend,delp_save,delp,pt)
+!$OMP parallel do default(none) shared(is,ie,js,je,npz,recip_k_split_n_split,pt_tend,delp_save,delp,pt)
       do k=1,npz
-        do j=jsd,jed
-          do i=isd,ied
+        do j=js,je
+          do i=is,ie
             pt(i,j,k) = pt(i,j,k) + recip_k_split_n_split*pt_tend(i,j,k)*delp_save(i,j,k)/delp(i,j,k)
           enddo
         enddo
       enddo
+      call start_group_halo_update(i_pack(1), pt,   domain, complete=.true.)
 
 !$OMP parallel do default(none) shared(is,ie,js,je,npz,ptop,delp_save,delp,u_tend,bc_int,ud_tend_int,&
 !$OMP                                  isd,ied,jsd,jed,v_tend,vd_tend_int,flagstruct) &
@@ -567,20 +569,22 @@ contains
             pe2(i,k) = pe2(i,k-1) + 0.5*(delp(i,j-1,k-1)+delp(i,j,k-1))
           enddo
         enddo
- 
-        call map1_ppm(npz, pe1, u_tend, bc_int(is:ie),npz, pe2, ud_tend_int, is, ie, j, isd, &
-                      ied, jsd, jed+1, -1, flagstruct%kord_mt)
-        do i=is,ie+1
-          pe3(i,1) = ptop
-          pe4(i,1) = ptop
-          do k=2,npz+1
-            pe3(i,k) = pe3(i,k-1) + 0.5*(delp_save(i-1,j,k-1)+delp_save(i,j,k-1))
-            pe4(i,k) = pe4(i,k-1) + 0.5*(delp(i-1,j,k-1)+delp(i,j,k-1))
+        call map1_ppm(npz, pe1(is:ie,:), u_tend, bc_int, &
+                      npz, pe2(is:ie,:), ud_tend_int,           &
+                      is, ie, j, isd, ied, jsd, jed+1, -1, flagstruct%kord_mt)
+        if (j < je+1) then        ! Added   
+          do i=is,ie+1
+            pe3(i,1) = ptop
+            pe4(i,1) = ptop
+            do k=2,npz+1
+              pe3(i,k) = pe3(i,k-1) + 0.5*(delp_save(i-1,j,k-1)+delp_save(i,j,k-1))
+              pe4(i,k) = pe4(i,k-1) + 0.5*(delp(i-1,j,k-1)+delp(i,j,k-1))
+            enddo
           enddo
-        enddo
-
-        call map1_ppm(npz, pe3, v_tend, bc_int(is:ie+1),npz, pe4, vd_tend_int, is, ie+1, j, isd, &
-                      ied+1, jsd, jed, -1, flagstruct%kord_mt)
+          call map1_ppm(npz, pe3, v_tend, bc_int, &
+                        npz, pe4, vd_tend_int,             &
+                        is, ie+1, j, isd, ied+1, jsd, jed, -1, flagstruct%kord_mt)
+        endif
       enddo
 
 !$OMP parallel do default(none) shared(is,ie,js,je,u,flagstruct,recip_k_split_n_split,ud_tend_int,npz,v,vd_tend_int)
@@ -596,6 +600,11 @@ contains
             enddo
           enddo
         enddo
+      call start_group_halo_update(i_pack(8), u, v, domain, gridtype=DGRID_NE)
+
+      call complete_group_halo_update(i_pack(1), domain)
+      call complete_group_halo_update(i_pack(8), domain)
+
     endif
 
                                                      call timing_on('c_sw')

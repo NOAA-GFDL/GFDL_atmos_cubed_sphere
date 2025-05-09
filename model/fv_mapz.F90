@@ -838,7 +838,7 @@ endif        ! end last_step check
 !!!  if ( is_master() ) write(*,*) 'dtmp=', dtmp, nwat
 
     if(present(pt_save))then
-      pt_save = 0.
+      ! pt_save = 0.
 !$OMP do
        do k=1,km
           do j=js,je
