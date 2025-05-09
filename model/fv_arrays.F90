@@ -929,6 +929,8 @@ module fv_arrays_mod
   logical :: regional_bcs_from_gsi = .false.    !< Default setting for writing restart files with boundary rows
   logical :: pass_full_omega_to_physics_in_non_hydrostatic_mode = .false.  !< Default to passing local omega to physics in non-hydrostatic 
 
+!This logical variable is used for SA-3D-TKE
+     logical :: sa3dtke_dyco = .false.
 
   !>Convenience pointers
   integer, pointer :: grid_number
@@ -1284,7 +1286,13 @@ module fv_arrays_mod
     real, _ALLOCATABLE :: va(:,:,:)     _NULL
     real, _ALLOCATABLE :: uc(:,:,:)     _NULL  !< (uc, vc) are mostly used as the C grid winds
     real, _ALLOCATABLE :: vc(:,:,:)     _NULL
-
+!3D-SA-TKE
+    real, _ALLOCATABLE :: deform_1(:,:,:)  _NULL !< horizontal deformation
+    real, _ALLOCATABLE :: deform_2(:,:,:)  _NULL !< vertical deformation
+    real, _ALLOCATABLE :: deform_3(:,:,:)  _NULL !< 3D TKE transport & pressure correlation
+    real, _ALLOCATABLE :: dku3d_h(:,:,:)   _NULL !< 3D Horizontal Eddy Diffusivity for Momentum
+    real, _ALLOCATABLE :: dku3d_e(:,:,:)   _NULL !< 3D Eddy Diffusivity for TKE
+!3D-SA-TKE-end
     real, _ALLOCATABLE :: ak(:)  _NULL
     real, _ALLOCATABLE :: bk(:)  _NULL
 
@@ -1517,6 +1525,14 @@ contains
     allocate (   Atm%va(isd:ied  ,jsd:jed  ,npz) )
     allocate (   Atm%uc(isd:ied+1,jsd:jed  ,npz) )
     allocate (   Atm%vc(isd:ied  ,jsd:jed+1,npz) )
+!3D-SA-TKE
+    allocate (   Atm%deform_1(isd:ied  ,jsd:jed  ,npz) )
+    allocate (   Atm%deform_2(isd:ied  ,jsd:jed  ,npz) )
+    allocate (   Atm%deform_3(isd:ied  ,jsd:jed  ,npz) )
+    allocate (   Atm%dku3d_h(isd:ied  ,jsd:jed, npz) )
+    allocate (   Atm%dku3d_e(isd:ied  ,jsd:jed, npz) )
+!3D-SA-TKE-end
+
     ! For tracer transport:
     allocate ( Atm%mfx(is:ie+1, js:je,  npz) )
     allocate ( Atm%mfy(is:ie  , js:je+1,npz) )
@@ -1569,6 +1585,13 @@ contains
                 Atm%va(i,j,k) = real_big
                 Atm%pt(i,j,k) = real_big
               Atm%delp(i,j,k) = real_big
+!3D-SA-TKE
+                Atm%deform_1(i,j,k) = 0.
+                Atm%deform_2(i,j,k) = 0.
+                Atm%deform_3(i,j,k) = 0.
+                Atm%dku3d_h(i,j,k) = 0.
+                Atm%dku3d_e(i,j,k) = 0.
+!3D-SA-TKE-end
 #ifdef USE_COND
              Atm%q_con(i,j,k) = 0.
 #endif

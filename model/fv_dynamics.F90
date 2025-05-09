@@ -187,8 +187,13 @@ contains
 
   subroutine fv_dynamics(npx, npy, npz, nq_tot,  ng, bdt, consv_te, fill,             &
                         reproduce_sum, kappa, cp_air, zvir, ptop, ks, ncnst, n_split, &
-                        q_split, u, v, w, delz, hydrostatic, pt, delp, q,             &
+                        q_split, u, v, w, delz, hydrostatic,                          &
+!The following variable is for SA-3D-TKE
+                        sa3dtke_dyco,                                                 &
+                        pt, delp, q,                                                  &
                         ps, pe, pk, peln, pkz, phis, q_con, omga, ua, va, uc, vc,     &
+!The following three variables are for SA-3D-TKE
+                        deform_1, deform_2, deform_3, dku3d_h, dku3d_e,               &
                         ak, bk, mfx, mfy, cx, cy, ze0, hybrid_z,                      &
                         gridstruct, flagstruct, neststruct, idiag, bd,                &
                         parent_grid, domain, diss_est, inline_mp)
@@ -255,6 +260,14 @@ contains
     real, intent(inout) :: vc(bd%isd:bd%ied  ,bd%jsd:bd%jed+1,npz)
 
     real, intent(inout), dimension(bd%isd:bd%ied ,bd%jsd:bd%jed ,npz):: ua, va
+    !The following 4 variables are for SA-3D-TKE
+    logical, intent(in) :: sa3dtke_dyco
+    real, intent(out), dimension(bd%isd:bd%ied ,bd%jsd:bd%jed ,npz):: deform_1
+    real, intent(out), dimension(bd%isd:bd%ied ,bd%jsd:bd%jed ,npz):: deform_2
+    real, intent(out), dimension(bd%isd:bd%ied, bd%jsd:bd%jed, npz):: deform_3
+    real, intent(inout), dimension(bd%isd:bd%ied,bd%jsd:bd%jed,npz):: dku3d_h
+    real, intent(inout), dimension(bd%isd:bd%ied,bd%jsd:bd%jed,npz):: dku3d_e
+
     real, intent(in),    dimension(npz+1):: ak, bk
 
     type(inline_mp_type), intent(inout) :: inline_mp
@@ -666,7 +679,11 @@ contains
 #endif
                     grav, hydrostatic, &
                     u, v, w, delz, pt, q, delp, pe, pk, phis, ws, omga, ptop, pfull, ua, va,           &
-                    uc, vc, mfx, mfy, cx, cy, pkz, peln, q_con, ak, bk, ks, &
+                    uc, vc,            &
+!The following 6 variables are for SA-3D-TKE
+                    sa3dtke_dyco, deform_1, deform_2,        &
+                    deform_3, dku3d_h, dku3d_e,              &
+                    mfx, mfy, cx, cy, pkz, peln, q_con, ak, bk, ks, &
                     gridstruct, flagstruct, neststruct, idiag, bd, &
                     domain, n_map==1, i_pack, GFDL_interstitial%last_step, diss_est,time_total)
                                            call timing_off('DYN_CORE')
