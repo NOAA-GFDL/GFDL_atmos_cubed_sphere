@@ -201,11 +201,9 @@ character(len=20)   :: mod_name = 'SHiELD/atmosphere_mod'
 contains
 
 #if defined(OVERLOAD_R4)
-#define _DBL_(X) DBLE(X)
-#define _RL_(X) REAL(X,KIND=4)
+#define _DBL_ DBLE
 #else
-#define _DBL_(X) X
-#define _RL_(X) X
+#define _DBL_ 
 #endif
 
 
@@ -1682,13 +1680,6 @@ if ( is_master() ) write(*,*) 'CALL atmos_global_diag_init'
 
 
 
-#if defined(OVERLOAD_R4)
-#define _DBL_(X) DBLE(X)
-#define _RL_(X) REAL(X,KIND=4)
-#else
-#define _DBL_(X) X
-#define _RL_(X) X
-#endif
  subroutine atmos_phys_driver_statein (IPD_Data, Atm_block)
    type (IPD_data_type),      intent(inout) :: IPD_Data(:)
    type (block_control_type), intent(in)    :: Atm_block
@@ -1706,7 +1697,7 @@ if ( is_master() ) write(*,*) 'CALL atmos_global_diag_init'
 !!! - "Layer" means "layer mean", ie. the average value in a layer
 !!! - "Level" means "level interface", ie the point values at the top or bottom of a layer
 
-   ptop =  _DBL_(_RL_(Atm(mygrid)%ak(1)))
+   ptop =  _DBL_(Atm(mygrid)%ak(1))
    pktop  = (ptop/p00)**kappa
    pk0inv = (1.0_kind_phys/p00)**kappa
 
@@ -1743,19 +1734,19 @@ if ( is_master() ) write(*,*) 'CALL atmos_global_diag_init'
          do ix = 1, blen
            i = Atm_block%index(nb)%ii(ix)
            j = Atm_block%index(nb)%jj(ix)
-           IPD_Data(nb)%Statein%prew(ix) = _DBL_(_RL_(Atm(mygrid)%inline_mp%prew(i,j)))
-           IPD_Data(nb)%Statein%prer(ix) = _DBL_(_RL_(Atm(mygrid)%inline_mp%prer(i,j)))
-           IPD_Data(nb)%Statein%prei(ix) = _DBL_(_RL_(Atm(mygrid)%inline_mp%prei(i,j)))
-           IPD_Data(nb)%Statein%pres(ix) = _DBL_(_RL_(Atm(mygrid)%inline_mp%pres(i,j)))
-           IPD_Data(nb)%Statein%preg(ix) = _DBL_(_RL_(Atm(mygrid)%inline_mp%preg(i,j)))
+           IPD_Data(nb)%Statein%prew(ix) = _DBL_(Atm(mygrid)%inline_mp%prew(i,j))
+           IPD_Data(nb)%Statein%prer(ix) = _DBL_(Atm(mygrid)%inline_mp%prer(i,j))
+           IPD_Data(nb)%Statein%prei(ix) = _DBL_(Atm(mygrid)%inline_mp%prei(i,j))
+           IPD_Data(nb)%Statein%pres(ix) = _DBL_(Atm(mygrid)%inline_mp%pres(i,j))
+           IPD_Data(nb)%Statein%preg(ix) = _DBL_(Atm(mygrid)%inline_mp%preg(i,j))
            if (Atm(mygrid)%flagstruct%do_cosp) then
              do k = 1, npz
                k1 = npz+1-k ! flipping the index
-               IPD_Data(nb)%Statein%prefluxw(ix,k) = _DBL_(_RL_(Atm(mygrid)%inline_mp%prefluxw(i,j,k1)))
-               IPD_Data(nb)%Statein%prefluxr(ix,k) = _DBL_(_RL_(Atm(mygrid)%inline_mp%prefluxr(i,j,k1)))
-               IPD_Data(nb)%Statein%prefluxi(ix,k) = _DBL_(_RL_(Atm(mygrid)%inline_mp%prefluxi(i,j,k1)))
-               IPD_Data(nb)%Statein%prefluxs(ix,k) = _DBL_(_RL_(Atm(mygrid)%inline_mp%prefluxs(i,j,k1)))
-               IPD_Data(nb)%Statein%prefluxg(ix,k) = _DBL_(_RL_(Atm(mygrid)%inline_mp%prefluxg(i,j,k1)))
+               IPD_Data(nb)%Statein%prefluxw(ix,k) = _DBL_(Atm(mygrid)%inline_mp%prefluxw(i,j,k1))
+               IPD_Data(nb)%Statein%prefluxr(ix,k) = _DBL_(Atm(mygrid)%inline_mp%prefluxr(i,j,k1))
+               IPD_Data(nb)%Statein%prefluxi(ix,k) = _DBL_(Atm(mygrid)%inline_mp%prefluxi(i,j,k1))
+               IPD_Data(nb)%Statein%prefluxs(ix,k) = _DBL_(Atm(mygrid)%inline_mp%prefluxs(i,j,k1))
+               IPD_Data(nb)%Statein%prefluxg(ix,k) = _DBL_(Atm(mygrid)%inline_mp%prefluxg(i,j,k1))
              enddo
            endif
          enddo
@@ -1819,26 +1810,26 @@ if ( is_master() ) write(*,*) 'CALL atmos_global_diag_init'
             !Indices for FV's vertical coordinate, for which 1 = top
             !here, k is the index for GFS's vertical coordinate, for which 1 = bottom
          k1 = npz+1-k ! flipping the index
-         IPD_Data(nb)%Statein%tgrs(ix,k) = _DBL_(_RL_(Atm(mygrid)%pt(i,j,k1)))
-         IPD_Data(nb)%Statein%ugrs(ix,k) = _DBL_(_RL_(Atm(mygrid)%ua(i,j,k1)))
-         IPD_Data(nb)%Statein%vgrs(ix,k) = _DBL_(_RL_(Atm(mygrid)%va(i,j,k1)))
-          IPD_Data(nb)%Statein%vvl(ix,k) = _DBL_(_RL_(omega_for_physics(i,j,k1)))
-         IPD_Data(nb)%Statein%prsl(ix,k) = _DBL_(_RL_(Atm(mygrid)%delp(i,j,k1)))   ! Total mass
-         if (Atm(mygrid)%flagstruct%do_diss_est)IPD_Data(nb)%Statein%diss_est(ix,k) = _DBL_(_RL_(Atm(mygrid)%diss_est(i,j,k1)))
+         IPD_Data(nb)%Statein%tgrs(ix,k) = _DBL_(Atm(mygrid)%pt(i,j,k1))
+         IPD_Data(nb)%Statein%ugrs(ix,k) = _DBL_(Atm(mygrid)%ua(i,j,k1))
+         IPD_Data(nb)%Statein%vgrs(ix,k) = _DBL_(Atm(mygrid)%va(i,j,k1))
+          IPD_Data(nb)%Statein%vvl(ix,k) = _DBL_(omega_for_physics(i,j,k1))
+         IPD_Data(nb)%Statein%prsl(ix,k) = _DBL_(Atm(mygrid)%delp(i,j,k1))   ! Total mass
+         if (Atm(mygrid)%flagstruct%do_diss_est)IPD_Data(nb)%Statein%diss_est(ix,k) = _DBL_(Atm(mygrid)%diss_est(i,j,k1))
 
          if (.not.Atm(mygrid)%flagstruct%hydrostatic .and. (.not.Atm(mygrid)%flagstruct%use_hydro_pressure))  &
-           IPD_Data(nb)%Statein%phii(ix,k+1) = IPD_Data(nb)%Statein%phii(ix,k) - _DBL_(_RL_(Atm(mygrid)%delz(i,j,k1)*grav))
+           IPD_Data(nb)%Statein%phii(ix,k+1) = IPD_Data(nb)%Statein%phii(ix,k) - _DBL_(Atm(mygrid)%delz(i,j,k1)*grav)
 
 ! Convert to tracer mass:
-         IPD_Data(nb)%Statein%qgrs(ix,k,1:nq_adv) =  _DBL_(_RL_(Atm(mygrid)%q(i,j,k1,1:nq_adv))) &
+         IPD_Data(nb)%Statein%qgrs(ix,k,1:nq_adv) =  _DBL_(Atm(mygrid)%q(i,j,k1,1:nq_adv)) &
                                                           * IPD_Data(nb)%Statein%prsl(ix,k)
 
          if (dnats .gt. 0) &
-             IPD_Data(nb)%Statein%qgrs(ix,k,nq_adv+1:nq) =  _DBL_(_RL_(Atm(mygrid)%q(i,j,k1,nq_adv+1:nq)))
+             IPD_Data(nb)%Statein%qgrs(ix,k,nq_adv+1:nq) =  _DBL_(Atm(mygrid)%q(i,j,k1,nq_adv+1:nq))
          !--- SHOULD THESE BE CONVERTED TO MASS SINCE THE DYCORE DOES NOT TOUCH THEM IN ANY WAY???
          !--- See Note in state update...
          if ( ncnst > nq) &
-             IPD_Data(nb)%Statein%qgrs(ix,k,nq+1:ncnst) = _DBL_(_RL_(Atm(mygrid)%qdiag(i,j,k1,nq+1:ncnst)))
+             IPD_Data(nb)%Statein%qgrs(ix,k,nq+1:ncnst) = _DBL_(Atm(mygrid)%qdiag(i,j,k1,nq+1:ncnst))
 ! Remove the contribution of condensates to delp (mass):
          if ( Atm(mygrid)%flagstruct%nwat .eq. 6 ) then
             IPD_Data(nb)%Statein%prsl(ix,k) = IPD_Data(nb)%Statein%prsl(ix,k) &
