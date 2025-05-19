@@ -913,7 +913,7 @@ module fv_control_mod
        tau_w                         => Atm%flagstruct%tau_w
        fast_tau_w_sec                => Atm%flagstruct%fast_tau_w_sec
        rf_cutoff                     => Atm%flagstruct%rf_cutoff
-       rf_cutoff_w                => Atm%flagstruct%rf_cutoff_w
+       rf_cutoff_w                   => Atm%flagstruct%rf_cutoff_w
        filter_phys                   => Atm%flagstruct%filter_phys
        dwind_2d                      => Atm%flagstruct%dwind_2d
        breed_vortex_inline           => Atm%flagstruct%breed_vortex_inline
