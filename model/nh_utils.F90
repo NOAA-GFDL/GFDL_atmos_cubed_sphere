@@ -353,11 +353,11 @@ CONTAINS
 #endif
                            ptop, hs, w3,  pt, q_con, &
                            delp, gz,  pef,  ws, p_fac, a_imp, scale_m, &
-                           pfull, fast_tau_w_sec, rf_cutoff)
+                           pfull, fast_tau_w_sec, rf_cutoff_w)
 
    integer, intent(in):: is, ie, js, je, ng, km
    integer, intent(in):: ms
-   real, intent(in):: dt,  akap, cp, ptop, p_fac, a_imp, scale_m, fast_tau_w_sec, rf_cutoff
+   real, intent(in):: dt,  akap, cp, ptop, p_fac, a_imp, scale_m, fast_tau_w_sec, rf_cutoff_w
    real, intent(in):: ws(is-ng:ie+ng,js-ng:je+ng)
    real, intent(in), dimension(is-ng:ie+ng,js-ng:je+ng,km):: pt, delp
    real, intent(in), dimension(is-ng:,js-ng:,1:):: q_con, cappa
@@ -392,10 +392,10 @@ CONTAINS
       allocate(rff(km))
       RFw_initialized = .true.
       do k=1,km
-         if (pfull(k) > rf_cutoff) exit
+         if (pfull(k) > rf_cutoff_w) exit
          k_rf = k
          rff_temp = real(dt/fast_tau_w_sec,kind=8) &
-                  * sin(0.5d0*pi_8*log(real(rf_cutoff/pfull(k),kind=8))/log(real(rf_cutoff/ptop, kind=8)))**2
+                  * sin(0.5d0*pi_8*log(real(rf_cutoff_w/pfull(k),kind=8))/log(real(rf_cutoff_w/ptop, kind=8)))**2
          rff(k) = 1.0d0 / ( 1.0d0+rff_temp )
       enddo
    endif

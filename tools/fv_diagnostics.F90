@@ -355,8 +355,8 @@ contains
     trange = (/    5.,  350. /)  ! temperature
     trange_bad = (/   130.,  350. /)  ! temperature
 #else
-    trange = (/  100.,  350. /)  ! temperature
-    trange_bad = (/  150.,  350. /)  ! temperature
+    trange = (/  50.,  350. /)  ! temperature
+    trange_bad = (/  50.,  350. /)  ! temperature
 #endif
     endif
     rhrange = (/  -10.,  150. /)  ! RH
