@@ -156,6 +156,7 @@ module fv_dynamics_mod
    use fv_regional_mod,     only: current_time_in_seconds
    use boundary_mod,        only: nested_grid_BC_apply_intT
    use fv_arrays_mod,       only: fv_grid_type, fv_flags_type, fv_atmos_type, fv_nest_type, fv_diag_type, fv_grid_bounds_type, inline_mp_type
+   use fv_arrays_mod,       only: sa3dtke_type ! for SA-3D-TKE (kyf) (modify for data structure)
    use fv_nwp_nudge_mod,    only: do_adiabatic_init
    use time_manager_mod,    only: get_time
 
@@ -192,8 +193,8 @@ contains
                         sa3dtke_dyco,                                                 &
                         pt, delp, q,                                                  &
                         ps, pe, pk, peln, pkz, phis, q_con, omga, ua, va, uc, vc,     &
-!The following three variables are for SA-3D-TKE
-                        deform_1, deform_2, deform_3, dku3d_h, dku3d_e,               &
+!The following variable is for SA-3D-TKE (kyf) (modify for data structure)
+                        sa3dtke_var,                                                  &
                         ak, bk, mfx, mfy, cx, cy, ze0, hybrid_z,                      &
                         gridstruct, flagstruct, neststruct, idiag, bd,                &
                         parent_grid, domain, diss_est, inline_mp)
@@ -260,16 +261,12 @@ contains
     real, intent(inout) :: vc(bd%isd:bd%ied  ,bd%jsd:bd%jed+1,npz)
 
     real, intent(inout), dimension(bd%isd:bd%ied ,bd%jsd:bd%jed ,npz):: ua, va
-    !The following 4 variables are for SA-3D-TKE
+    !The following variable is for SA-3D-TKE (kyf) (modify for data structure)
     logical, intent(in) :: sa3dtke_dyco
-    real, intent(out), dimension(bd%isd:bd%ied ,bd%jsd:bd%jed ,npz):: deform_1
-    real, intent(out), dimension(bd%isd:bd%ied ,bd%jsd:bd%jed ,npz):: deform_2
-    real, intent(out), dimension(bd%isd:bd%ied, bd%jsd:bd%jed, npz):: deform_3
-    real, intent(inout), dimension(bd%isd:bd%ied,bd%jsd:bd%jed,npz):: dku3d_h
-    real, intent(inout), dimension(bd%isd:bd%ied,bd%jsd:bd%jed,npz):: dku3d_e
 
     real, intent(in),    dimension(npz+1):: ak, bk
-
+    ! For SA-3D-TKE (kyf) (modify for data structure)
+    type(sa3dtke_type), intent(inout) :: sa3dtke_var
     type(inline_mp_type), intent(inout) :: inline_mp
 
 ! Accumulated Mass flux arrays: the "Flux Capacitor"
@@ -680,9 +677,8 @@ contains
                     grav, hydrostatic, &
                     u, v, w, delz, pt, q, delp, pe, pk, phis, ws, omga, ptop, pfull, ua, va,           &
                     uc, vc,            &
-!The following 6 variables are for SA-3D-TKE
-                    sa3dtke_dyco, deform_1, deform_2,        &
-                    deform_3, dku3d_h, dku3d_e,              &
+!The following 2 variables are for SA-3D-TKE (kyf) (modify for data structure)
+                    sa3dtke_dyco, sa3dtke_var,        &
                     mfx, mfy, cx, cy, pkz, peln, q_con, ak, bk, ks, &
                     gridstruct, flagstruct, neststruct, idiag, bd, &
                     domain, n_map==1, i_pack, GFDL_interstitial%last_step, diss_est,time_total)

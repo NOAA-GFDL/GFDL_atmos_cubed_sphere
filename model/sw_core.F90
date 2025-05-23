@@ -50,6 +50,7 @@
                               deln_flux_explm, deln_flux_explm_udvd
  use fv_mp_mod, only: is_master, fill_corners, XDir, YDir
  use fv_arrays_mod, only: fv_grid_type, fv_grid_bounds_type, fv_flags_type
+ !use fv_arrays_mod, only: sa3dtke_type ! for SA-3D-TKE (kyf) (modify for data structure) 
  use a2b_edge_mod, only: a2b_ord4
 
 #ifdef SW_DYNAMICS
@@ -521,7 +522,7 @@
 !! and other prognostic varaiables.
    subroutine d_sw(delpc, delp,  ptc,   pt, u,  v, w, uc,vc, &
                    ua, va, divg_d, xflux, yflux, cx, cy,              &
-!The following 5 variables are for SA-3D-TKE
+!The following 2 variables are for SA-3D-TKE (kyf) (modify for data structure)
                    sa3dtke_dyco, dku3d_h,                    &
                    crx_adv, cry_adv,  xfx_adv, yfx_adv, q_con, z_rat, kgb, heat_source,diss_est,  &
                    zvir, sphum, nq, q, k, km, inline_q,  &
@@ -539,9 +540,10 @@
       real   , intent(IN):: zvir
       real,    intent(in):: damp_v, damp_w, damp_t, kgb
       type(fv_grid_bounds_type), intent(IN) :: bd
-!The following 5 variables are for SA-3D-TKE
+!The following 2 variables are for SA-3D-TKE (kyf) (modify for data structure)
       logical, intent(IN):: sa3dtke_dyco
-      real, intent(IN), dimension(bd%isd:bd%ied,  bd%jsd:bd%jed):: dku3d_h
+      !type(sa3dtke_type), intent(in) :: sa3dtke_var
+      real, intent(IN), dimension(bd%isd:bd%ied,  bd%jsd:bd%jed):: dku3d_h 
 
       real, intent(inout):: divg_d(bd%isd:bd%ied+1,bd%jsd:bd%jed+1) !< divergence
       real, intent(IN), dimension(bd%isd:bd%ied,  bd%jsd:bd%jed):: z_rat
@@ -1461,7 +1463,7 @@
         do i=is,ie+1
 !The following is for SA-3D-TKE
           if(sa3dtke_dyco) then
-           damp2 = abs(dt)*dku3d_h(i,j)
+           damp2 = abs(dt)*dku3d_h(i,j) 
           else
            damp2 =  gridstruct%da_min_c*max(d2_bg, min(0.20, dddmp*vort(i,j)))  ! del-2
           endif

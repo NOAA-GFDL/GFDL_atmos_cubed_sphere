@@ -1062,6 +1062,16 @@ module fv_arrays_mod
      logical :: BCfile_ne_is_open=.false.
      logical :: BCfile_sw_is_open=.false.
   end type fv_nest_type
+  
+  !3D-SA-TKE (kyf) (modify for data structure)
+  type sa3dtke_type
+    real, _ALLOCATABLE :: deform_1(:,:,:)  _NULL !< horizontal deformation
+    real, _ALLOCATABLE :: deform_2(:,:,:)  _NULL !< vertical deformation
+    real, _ALLOCATABLE :: deform_3(:,:,:)  _NULL !< 3D TKE transport & pressure correlation
+    real, _ALLOCATABLE :: dku3d_h(:,:,:)   _NULL !< 3D Horizontal Eddy Diffusivity for Momentum
+    real, _ALLOCATABLE :: dku3d_e(:,:,:)   _NULL !< 3D Eddy Diffusivity for TKE
+  end type sa3dtke_type
+  !3D-SA-TKE-end
 
   type inline_mp_type
     real, _ALLOCATABLE :: prer(:,:)     _NULL
@@ -1286,13 +1296,6 @@ module fv_arrays_mod
     real, _ALLOCATABLE :: va(:,:,:)     _NULL
     real, _ALLOCATABLE :: uc(:,:,:)     _NULL  !< (uc, vc) are mostly used as the C grid winds
     real, _ALLOCATABLE :: vc(:,:,:)     _NULL
-!3D-SA-TKE
-    real, _ALLOCATABLE :: deform_1(:,:,:)  _NULL !< horizontal deformation
-    real, _ALLOCATABLE :: deform_2(:,:,:)  _NULL !< vertical deformation
-    real, _ALLOCATABLE :: deform_3(:,:,:)  _NULL !< 3D TKE transport & pressure correlation
-    real, _ALLOCATABLE :: dku3d_h(:,:,:)   _NULL !< 3D Horizontal Eddy Diffusivity for Momentum
-    real, _ALLOCATABLE :: dku3d_e(:,:,:)   _NULL !< 3D Eddy Diffusivity for TKE
-!3D-SA-TKE-end
     real, _ALLOCATABLE :: ak(:)  _NULL
     real, _ALLOCATABLE :: bk(:)  _NULL
 
@@ -1379,6 +1382,7 @@ module fv_arrays_mod
 
   integer :: atmos_axes(4)
 
+     type(sa3dtke_type) :: sa3dtke_var ! SA-3D TKE (kyf) (modify for data structure)
      type(inline_mp_type) :: inline_mp
      type(phys_diag_type) :: phys_diag
      type(nudge_diag_type) :: nudge_diag
@@ -1525,13 +1529,16 @@ contains
     allocate (   Atm%va(isd:ied  ,jsd:jed  ,npz) )
     allocate (   Atm%uc(isd:ied+1,jsd:jed  ,npz) )
     allocate (   Atm%vc(isd:ied  ,jsd:jed+1,npz) )
-!3D-SA-TKE
-    allocate (   Atm%deform_1(isd:ied  ,jsd:jed  ,npz) )
-    allocate (   Atm%deform_2(isd:ied  ,jsd:jed  ,npz) )
-    allocate (   Atm%deform_3(isd:ied  ,jsd:jed  ,npz) )
-    allocate (   Atm%dku3d_h(isd:ied  ,jsd:jed, npz) )
-    allocate (   Atm%dku3d_e(isd:ied  ,jsd:jed, npz) )
-!3D-SA-TKE-end
+    
+    !3D-SA-TKE (kyf) (modify for data structure)
+    if ( Atm%flagstruct%sa3dtke_dyco ) then
+       allocate (   Atm%sa3dtke_var%deform_1(isd:ied  ,jsd:jed  ,npz) )
+       allocate (   Atm%sa3dtke_var%deform_2(isd:ied  ,jsd:jed  ,npz) )
+       allocate (   Atm%sa3dtke_var%deform_3(isd:ied  ,jsd:jed  ,npz) )
+       allocate (   Atm%sa3dtke_var%dku3d_h(isd:ied  ,jsd:jed, npz) )
+       allocate (   Atm%sa3dtke_var%dku3d_e(isd:ied  ,jsd:jed, npz) )
+    endif
+    !3D-SA-TKE-end
 
     ! For tracer transport:
     allocate ( Atm%mfx(is:ie+1, js:je,  npz) )
@@ -1585,13 +1592,16 @@ contains
                 Atm%va(i,j,k) = real_big
                 Atm%pt(i,j,k) = real_big
               Atm%delp(i,j,k) = real_big
-!3D-SA-TKE
-                Atm%deform_1(i,j,k) = 0.
-                Atm%deform_2(i,j,k) = 0.
-                Atm%deform_3(i,j,k) = 0.
-                Atm%dku3d_h(i,j,k) = 0.
-                Atm%dku3d_e(i,j,k) = 0.
-!3D-SA-TKE-end
+              
+              !3D-SA-TKE (kyf) (modify for data structure)
+              if ( Atm%flagstruct%sa3dtke_dyco ) then
+                 Atm%sa3dtke_var%deform_1(i,j,k) = 0.
+                 Atm%sa3dtke_var%deform_2(i,j,k) = 0.
+                 Atm%sa3dtke_var%deform_3(i,j,k) = 0.
+                 Atm%sa3dtke_var%dku3d_h(i,j,k) = 0.
+                 Atm%sa3dtke_var%dku3d_e(i,j,k) = 0.
+              endif
+              !3D-SA-TKE-end
 #ifdef USE_COND
              Atm%q_con(i,j,k) = 0.
 #endif

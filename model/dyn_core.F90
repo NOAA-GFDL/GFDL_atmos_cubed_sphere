@@ -132,6 +132,7 @@ module dyn_core_mod
   use diag_manager_mod,   only: send_data
   use fv_arrays_mod,      only: fv_grid_type, fv_flags_type, fv_nest_type, fv_diag_type, &
                                 fv_grid_bounds_type, R_GRID, fv_nest_BC_type_3d
+  use fv_arrays_mod,       only: sa3dtke_type ! for SA-3D-TKE (kyf) (modify for data structure)
 
   use boundary_mod,         only: extrapolation_BC,  nested_grid_BC_apply_intT
   use fv_regional_mod,      only: regional_boundary_update
@@ -183,9 +184,8 @@ contains
                      grav, hydrostatic,  &
                      u,  v,  w, delz, pt, q, delp, pe, pk, phis, ws, omga, ptop, pfull, ua, va, &
                      uc, vc,                                     &
-!The following 6 variables are for SA-3D-TKE
-                     sa3dtke_dyco, deform_1, deform_2,    &
-                     deform_3, dku3d_h, dku3d_e,              &
+!The following 2 variables are for SA-3D-TKE (kyf) (modify for data structure)
+                     sa3dtke_dyco, sa3dtke_var,    &
                      mfx, mfy, cx, cy, pkz, peln, q_con, ak, bk, &
                      ks, gridstruct, flagstruct, neststruct, idiag, bd, domain, &
                      init_step, i_pack, end_step, diss_est,time_total)
@@ -243,13 +243,9 @@ contains
     real, intent(inout):: uc(bd%isd:bd%ied+1,bd%jsd:bd%jed  ,npz)  !< (uc, vc) are mostly used as the C grid winds
     real, intent(inout):: vc(bd%isd:bd%ied  ,bd%jsd:bd%jed+1,npz)
     real, intent(inout), dimension(bd%isd:bd%ied,bd%jsd:bd%jed,npz):: ua, va
-!The following 6 variables are for SA-3D-TKE
+!The following 2 variables are for SA-3D-TKE (kyf) (modify for data structure)
     logical, intent(IN) :: sa3dtke_dyco
-    real, intent(out), dimension(bd%isd:bd%ied,bd%jsd:bd%jed,npz):: deform_1
-    real, intent(out), dimension(bd%isd:bd%ied,bd%jsd:bd%jed,npz):: deform_2
-    real, intent(out), dimension(bd%isd:bd%ied,bd%jsd:bd%jed,npz):: deform_3
-    real, intent(inout), dimension(bd%isd:bd%ied,bd%jsd:bd%jed,npz):: dku3d_h
-    real, intent(inout), dimension(bd%isd:bd%ied,bd%jsd:bd%jed,npz):: dku3d_e
+    type(sa3dtke_type), intent(inout) :: sa3dtke_var
 
     real, intent(inout):: q_con(bd%isd:, bd%jsd:, 1:)
 
@@ -787,12 +783,13 @@ contains
 
 !The following is modified for SA-3D-TKE
 !-- add sa3dtke_dyco and dku3d_h in parallel calculation
+! replce dku3d_h by sa3dtke_var (kyf) (modify for data structure)
 
                                                      call timing_on('d_sw')
 !$OMP parallel do default(none) shared(npz,flagstruct,nord_v,pfull,damp_vt,hydrostatic,last_step, &
 !$OMP                                  is,ie,js,je,isd,ied,jsd,jed,omga,delp,gridstruct,npx,npy,  &
 !$OMP                                  ng,zh,vt,ptc,pt,u,v,w,uc,vc,ua,va,divgd,mfx,mfy,cx,cy,     &
-!$OMP                                  sa3dtke_dyco, dku3d_h,                   &
+!$OMP                                  sa3dtke_dyco, sa3dtke_var,                   &
 !$OMP                                  crx,cry,xfx,yfx,q_con,zvir,sphum,nq,q,dt,bd,rdt,iep1,jep1, &
 !$OMP                                  heat_source,diss_est,ptop,first_call)                      &
 !$OMP                          private(nord_k, nord_w, nord_t, damp_w, damp_t, d2_divg,   &
@@ -906,8 +903,8 @@ contains
                   u(isd,jsd,k),    v(isd,jsd,k),   w(isd:,jsd:,k),  uc(isd,jsd,k),      &
                   vc(isd,jsd,k),   ua(isd,jsd,k),  va(isd,jsd,k), divgd(isd,jsd,k),   &
                   mfx(is, js, k),  mfy(is, js, k),  cx(is, jsd,k),  cy(isd,js, k),    &
-!The following 2 variables are for SA-3D-TKE
-                  sa3dtke_dyco, dku3d_h(isd, jsd, k), &
+!The following 2 variables are for SA-3D-TKE (kyf) (modify for data structure)
+                  sa3dtke_dyco, sa3dtke_var%dku3d_h(isd, jsd, k), &
                   crx(is, jsd,k),  cry(isd,js, k), xfx(is, jsd,k), yfx(isd,js, k),    &
 #ifdef USE_COND
                   q_con(isd:,jsd:,k),  z_rat(isd,jsd),  &
@@ -1395,20 +1392,21 @@ contains
   enddo   ! time split loop
   first_call=.false.
 !-----------------------------------------------------
-!The following is for SA-3D-TKE
+!The following is for SA-3D-TKE (kyf) (modify for data structure)
 !--calculating shear deformation and TKE transport for 3d TKE scheme
     if(sa3dtke_dyco) then
      if ( end_step ) then
        ntke = get_tracer_index(MODEL_ATMOS, 'sgs_tke')
        call mpp_update_domains(q(:,:,:,ntke), domain)
-       call mpp_update_domains(dku3d_e(:,:,:), domain) ! update dku3d_e at halo
+       call mpp_update_domains(sa3dtke_var%dku3d_e(:,:,:), domain) ! update dku3d_e at halo
 
        call diff3d(npx, npy, npz, nq, ua, va, w,        &
-                  q, deform_1, deform_2, deform_3,  dku3d_e,    &
+                  q, sa3dtke_var%deform_1, sa3dtke_var%deform_2, &
+                  sa3dtke_var%deform_3, sa3dtke_var%dku3d_e,  &
                   zh, dp_ref, gridstruct, bd)
-       call mpp_update_domains(deform_1, domain)
-       call mpp_update_domains(deform_2, domain)
-       call mpp_update_domains(deform_3, domain)
+       call mpp_update_domains(sa3dtke_var%deform_1, domain)
+       call mpp_update_domains(sa3dtke_var%deform_2, domain)
+       call mpp_update_domains(sa3dtke_var%deform_3, domain)
      endif
     endif
 
@@ -2177,7 +2175,6 @@ subroutine diff3d(npx, npy, npz, nq, ua, va, w, q,       &
     real, intent(out) ::    deform_1(bd%isd:bd%ied, bd%jsd:bd%jed, npz)
     real, intent(out) ::    deform_2(bd%isd:bd%ied, bd%jsd:bd%jed, npz)
     real, intent(out) ::    deform_3(bd%isd:bd%ied, bd%jsd:bd%jed, npz)
-
     type(fv_grid_type), intent(IN), target :: gridstruct
 
 ! local
@@ -2214,7 +2211,7 @@ subroutine diff3d(npx, npy, npz, nq, ua, va, w, q,       &
     real :: tmp
 
     real :: dz
-
+    
     dx  => gridstruct%dx
     dy  => gridstruct%dy
     rarea   => gridstruct%rarea
