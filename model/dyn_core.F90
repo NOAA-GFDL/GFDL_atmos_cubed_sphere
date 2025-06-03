@@ -184,8 +184,8 @@ contains
                      grav, hydrostatic,  &
                      u,  v,  w, delz, pt, q, delp, pe, pk, phis, ws, omga, ptop, pfull, ua, va, &
                      uc, vc,                                     &
-!The following 2 variables are for SA-3D-TKE (kyf) (modify for data structure)
-                     sa3dtke_dyco, sa3dtke_var,    &
+!The following variable is for SA-3D-TKE (kyf) (modify for data structure)
+                     sa3dtke_var,    &
                      mfx, mfy, cx, cy, pkz, peln, q_con, ak, bk, &
                      ks, gridstruct, flagstruct, neststruct, idiag, bd, domain, &
                      init_step, i_pack, end_step, diss_est,time_total)
@@ -244,7 +244,6 @@ contains
     real, intent(inout):: vc(bd%isd:bd%ied  ,bd%jsd:bd%jed+1,npz)
     real, intent(inout), dimension(bd%isd:bd%ied,bd%jsd:bd%jed,npz):: ua, va
 !The following 2 variables are for SA-3D-TKE (kyf) (modify for data structure)
-    logical, intent(IN) :: sa3dtke_dyco
     type(sa3dtke_type), intent(inout) :: sa3dtke_var
 
     real, intent(inout):: q_con(bd%isd:, bd%jsd:, 1:)
@@ -301,8 +300,7 @@ contains
     real :: split_timestep_bc
 
 !The following is for SA-3D-TKE
-    real:: tke(bd%isd:bd%ied,bd%jsd:bd%jed,npz)
-    integer :: ntke
+    integer :: sgs_tke
 
     integer :: is,  ie,  js,  je
     integer :: isd, ied, jsd, jed
@@ -782,14 +780,14 @@ contains
     endif
 
 !The following is modified for SA-3D-TKE
-!-- add sa3dtke_dyco and dku3d_h in parallel calculation
+!-- add sa3dtke_var in parallel calculation
 ! replce dku3d_h by sa3dtke_var (kyf) (modify for data structure)
 
                                                      call timing_on('d_sw')
 !$OMP parallel do default(none) shared(npz,flagstruct,nord_v,pfull,damp_vt,hydrostatic,last_step, &
 !$OMP                                  is,ie,js,je,isd,ied,jsd,jed,omga,delp,gridstruct,npx,npy,  &
 !$OMP                                  ng,zh,vt,ptc,pt,u,v,w,uc,vc,ua,va,divgd,mfx,mfy,cx,cy,     &
-!$OMP                                  sa3dtke_dyco, sa3dtke_var,                   &
+!$OMP                                  sa3dtke_var,                                               &
 !$OMP                                  crx,cry,xfx,yfx,q_con,zvir,sphum,nq,q,dt,bd,rdt,iep1,jep1, &
 !$OMP                                  heat_source,diss_est,ptop,first_call)                      &
 !$OMP                          private(nord_k, nord_w, nord_t, damp_w, damp_t, d2_divg,   &
@@ -903,8 +901,8 @@ contains
                   u(isd,jsd,k),    v(isd,jsd,k),   w(isd:,jsd:,k),  uc(isd,jsd,k),      &
                   vc(isd,jsd,k),   ua(isd,jsd,k),  va(isd,jsd,k), divgd(isd,jsd,k),   &
                   mfx(is, js, k),  mfy(is, js, k),  cx(is, jsd,k),  cy(isd,js, k),    &
-!The following 2 variables are for SA-3D-TKE (kyf) (modify for data structure)
-                  sa3dtke_dyco, sa3dtke_var%dku3d_h(isd, jsd, k), &
+!The following variable is for SA-3D-TKE (kyf) (modify for data structure)
+                  sa3dtke_var%dku3d_h(isd, jsd, k), &
                   crx(is, jsd,k),  cry(isd,js, k), xfx(is, jsd,k), yfx(isd,js, k),    &
 #ifdef USE_COND
                   q_con(isd:,jsd:,k),  z_rat(isd,jsd),  &
@@ -1392,21 +1390,21 @@ contains
   enddo   ! time split loop
   first_call=.false.
 !-----------------------------------------------------
-!The following is for SA-3D-TKE (kyf) (modify for data structure)
+!The following is for SA-3D-TKE (kyf) (modify for data structure)(update mpi use)
 !--calculating shear deformation and TKE transport for 3d TKE scheme
-    if(sa3dtke_dyco) then
+    if(flagstruct%sa3dtke_dyco) then
      if ( end_step ) then
-       ntke = get_tracer_index(MODEL_ATMOS, 'sgs_tke')
-       call mpp_update_domains(q(:,:,:,ntke), domain)
-       call mpp_update_domains(sa3dtke_var%dku3d_e(:,:,:), domain) ! update dku3d_e at halo
+       sgs_tke = get_tracer_index(MODEL_ATMOS, 'sgs_tke')
+       call mpp_update_domains(q(:,:,:,sgs_tke), domain, complete=.false.)
+       call mpp_update_domains(sa3dtke_var%dku3d_e(:,:,:), domain, complete=.true.) ! update dku3d_e at halo
 
        call diff3d(npx, npy, npz, nq, ua, va, w,        &
                   q, sa3dtke_var%deform_1, sa3dtke_var%deform_2, &
                   sa3dtke_var%deform_3, sa3dtke_var%dku3d_e,  &
                   zh, dp_ref, gridstruct, bd)
-       call mpp_update_domains(sa3dtke_var%deform_1, domain)
-       call mpp_update_domains(sa3dtke_var%deform_2, domain)
-       call mpp_update_domains(sa3dtke_var%deform_3, domain)
+       call mpp_update_domains(sa3dtke_var%deform_1, domain, complete=.false.)
+       call mpp_update_domains(sa3dtke_var%deform_2, domain, complete=.false.)
+       call mpp_update_domains(sa3dtke_var%deform_3, domain, complete=.true.)
      endif
     endif
 
@@ -2199,7 +2197,7 @@ subroutine diff3d(npx, npy, npz, nq, ua, va, w, q,       &
     real:: dkdx(bd%isd:bd%ied,bd%jsd:bd%jed,npz)
     real:: dkdy(bd%isd:bd%ied,bd%jsd:bd%jed,npz)
 
-    integer :: ntke
+    integer :: sgs_tke
     real :: tke_1(bd%isd:bd%ied+2,  bd%jsd:bd%jed+2)
     real :: dedy_1(bd%isd:bd%ied+1, bd%jsd:bd%jed+1, npz)
     real :: dedy_2(bd%isd:bd%ied,   bd%jsd:bd%jed,   npz)
@@ -2342,18 +2340,18 @@ subroutine diff3d(npx, npy, npz, nq, ua, va, w, q,       &
 ! where e is tke
 !===========================================================
 
-   ntke = get_tracer_index(MODEL_ATMOS, 'sgs_tke')
+   sgs_tke = get_tracer_index(MODEL_ATMOS, 'sgs_tke')
 
 ! KGao: make the 2d temporay arrays private - as suggested by Lucas
 
 !$OMP parallel do default(none) shared(npz,is,ie,js,je,ua,va,w,q,dx,dy,rarea, &
-!$OMP                 dku3d_e,dkdx,dkdy,dedx_1,dedy_1,ntke,dedy_2,dedx_2)      &
+!$OMP                 dku3d_e,dkdx,dkdy,dedx_1,dedy_1,sgs_tke,dedy_2,dedx_2)  &
 !$OMP                           private(ut,vt,tke_1)
    do k=1,npz
 !-------------------------------------
        do j=js,je+2
           do i=is,ie+2
-             tke_1(i,j)=q(i,j,k,ntke)
+             tke_1(i,j)=q(i,j,k,sgs_tke)
           enddo
        enddo
        do j=js,je+2
@@ -2422,7 +2420,7 @@ subroutine diff3d(npx, npy, npz, nq, ua, va, w, q,       &
 ! get deform_3 based on all terms
 
 !$OMP parallel do default(none) shared(npz,is,ie,js,je,deform_3, &
-!$OMP                   dku3d_e,dkdx,dkdy,dedx_1,dedy_1,ntke,dedx_2,dedy_2)
+!$OMP                   dku3d_e,dkdx,dkdy,dedx_1,dedy_1,sgs_tke,dedx_2,dedy_2)
    do k=1,npz
        do j=js,je
           do i=is,ie

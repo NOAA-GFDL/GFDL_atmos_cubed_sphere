@@ -695,8 +695,6 @@ contains
 !                     Atm(n)%flagstruct%n_split, Atm(n)%flagstruct%q_split,     &
                       Atm(n)%u,    Atm(n)%v,     Atm(n)%w,  Atm(n)%delz,        &
                       Atm(n)%flagstruct%hydrostatic,                            &
-!The following variable is used for SA-3D-TKE
-                      Atm(n)%flagstruct%sa3dtke_dyco,                           &
                       Atm(n)%pt  , Atm(n)%delp,  Atm(n)%q,  Atm(n)%ps,          &
                       Atm(n)%pe,   Atm(n)%pk,    Atm(n)%peln,                   &
                       Atm(n)%pkz,  Atm(n)%phis,  Atm(n)%q_con,                  &
@@ -1901,8 +1899,6 @@ contains
                      Atm(mygrid)%ptop, Atm(mygrid)%ks, nq,  n_split_loc,                                       &
                      Atm(mygrid)%flagstruct%q_split, Atm(mygrid)%u, Atm(mygrid)%v, Atm(mygrid)%w,         &
                      Atm(mygrid)%delz, Atm(mygrid)%flagstruct%hydrostatic,                      &
-!The following variable is used for SA-3D-TKE
-                     Atm(mygrid)%flagstruct%sa3dtke_dyco,                      &
                      Atm(mygrid)%pt, Atm(mygrid)%delp, Atm(mygrid)%q, Atm(mygrid)%ps,                     &
                      Atm(mygrid)%pe, Atm(mygrid)%pk, Atm(mygrid)%peln, Atm(mygrid)%pkz, Atm(mygrid)%phis,      &
                      Atm(mygrid)%q_con, Atm(mygrid)%omga, Atm(mygrid)%ua, Atm(mygrid)%va, Atm(mygrid)%uc, Atm(mygrid)%vc, &
@@ -1920,8 +1916,6 @@ contains
                      Atm(mygrid)%ptop, Atm(mygrid)%ks, nq, n_split_loc,                                        &
                      Atm(mygrid)%flagstruct%q_split, Atm(mygrid)%u, Atm(mygrid)%v, Atm(mygrid)%w,         &
                      Atm(mygrid)%delz, Atm(mygrid)%flagstruct%hydrostatic,                      &
-!The following variable is used for SA-3D-TKE
-                     Atm(mygrid)%flagstruct%sa3dtke_dyco,                      &
                      Atm(mygrid)%pt, Atm(mygrid)%delp, Atm(mygrid)%q, Atm(mygrid)%ps,                     &
                      Atm(mygrid)%pe, Atm(mygrid)%pk, Atm(mygrid)%peln, Atm(mygrid)%pkz, Atm(mygrid)%phis,      &
                      Atm(mygrid)%q_con, Atm(mygrid)%omga, Atm(mygrid)%ua, Atm(mygrid)%va, Atm(mygrid)%uc, Atm(mygrid)%vc, &
@@ -2000,8 +1994,6 @@ contains
                      Atm(mygrid)%ptop, Atm(mygrid)%ks, nq, Atm(mygrid)%flagstruct%n_split,        &
                      Atm(mygrid)%flagstruct%q_split, Atm(mygrid)%u, Atm(mygrid)%v, Atm(mygrid)%w,         &
                      Atm(mygrid)%delz, Atm(mygrid)%flagstruct%hydrostatic,                      &
-!The following variable is used for SA-3D-TKE
-                     Atm(mygrid)%flagstruct%sa3dtke_dyco,                      &
                      Atm(mygrid)%pt, Atm(mygrid)%delp, Atm(mygrid)%q, Atm(mygrid)%ps,                     &
                      Atm(mygrid)%pe, Atm(mygrid)%pk, Atm(mygrid)%peln, Atm(mygrid)%pkz, Atm(mygrid)%phis,      &
                      Atm(mygrid)%q_con, Atm(mygrid)%omga, Atm(mygrid)%ua, Atm(mygrid)%va, Atm(mygrid)%uc, Atm(mygrid)%vc, &
@@ -2018,8 +2010,6 @@ contains
                      Atm(mygrid)%ptop, Atm(mygrid)%ks, nq, Atm(mygrid)%flagstruct%n_split,        &
                      Atm(mygrid)%flagstruct%q_split, Atm(mygrid)%u, Atm(mygrid)%v, Atm(mygrid)%w,         &
                      Atm(mygrid)%delz, Atm(mygrid)%flagstruct%hydrostatic,                      &
-!The following variable is used for SA-3D-TKE
-                     Atm(mygrid)%flagstruct%sa3dtke_dyco,                      &
                      Atm(mygrid)%pt, Atm(mygrid)%delp, Atm(mygrid)%q, Atm(mygrid)%ps,                     &
                      Atm(mygrid)%pe, Atm(mygrid)%pk, Atm(mygrid)%peln, Atm(mygrid)%pkz, Atm(mygrid)%phis,      &
                      Atm(mygrid)%q_con, Atm(mygrid)%omga, Atm(mygrid)%ua, Atm(mygrid)%va, Atm(mygrid)%uc, Atm(mygrid)%vc, &

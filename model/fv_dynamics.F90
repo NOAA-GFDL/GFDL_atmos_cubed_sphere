@@ -189,8 +189,6 @@ contains
   subroutine fv_dynamics(npx, npy, npz, nq_tot,  ng, bdt, consv_te, fill,             &
                         reproduce_sum, kappa, cp_air, zvir, ptop, ks, ncnst, n_split, &
                         q_split, u, v, w, delz, hydrostatic,                          &
-!The following variable is for SA-3D-TKE
-                        sa3dtke_dyco,                                                 &
                         pt, delp, q,                                                  &
                         ps, pe, pk, peln, pkz, phis, q_con, omga, ua, va, uc, vc,     &
 !The following variable is for SA-3D-TKE (kyf) (modify for data structure)
@@ -262,7 +260,6 @@ contains
 
     real, intent(inout), dimension(bd%isd:bd%ied ,bd%jsd:bd%jed ,npz):: ua, va
     !The following variable is for SA-3D-TKE (kyf) (modify for data structure)
-    logical, intent(in) :: sa3dtke_dyco
 
     real, intent(in),    dimension(npz+1):: ak, bk
     ! For SA-3D-TKE (kyf) (modify for data structure)
@@ -677,8 +674,8 @@ contains
                     grav, hydrostatic, &
                     u, v, w, delz, pt, q, delp, pe, pk, phis, ws, omga, ptop, pfull, ua, va,           &
                     uc, vc,            &
-!The following 2 variables are for SA-3D-TKE (kyf) (modify for data structure)
-                    sa3dtke_dyco, sa3dtke_var,        &
+!The following variable is for SA-3D-TKE (kyf) (modify for data structure)
+                    sa3dtke_var,        &
                     mfx, mfy, cx, cy, pkz, peln, q_con, ak, bk, ks, &
                     gridstruct, flagstruct, neststruct, idiag, bd, &
                     domain, n_map==1, i_pack, GFDL_interstitial%last_step, diss_est,time_total)

@@ -523,7 +523,7 @@
    subroutine d_sw(delpc, delp,  ptc,   pt, u,  v, w, uc,vc, &
                    ua, va, divg_d, xflux, yflux, cx, cy,              &
 !The following 2 variables are for SA-3D-TKE (kyf) (modify for data structure)
-                   sa3dtke_dyco, dku3d_h,                    &
+                   dku3d_h,                    &
                    crx_adv, cry_adv,  xfx_adv, yfx_adv, q_con, z_rat, kgb, heat_source,diss_est,  &
                    zvir, sphum, nq, q, k, km, inline_q,  &
                    dt, hord_tr, hord_mt, hord_vt, hord_tm, hord_dp, nord,   &
@@ -541,7 +541,6 @@
       real,    intent(in):: damp_v, damp_w, damp_t, kgb
       type(fv_grid_bounds_type), intent(IN) :: bd
 !The following 2 variables are for SA-3D-TKE (kyf) (modify for data structure)
-      logical, intent(IN):: sa3dtke_dyco
       !type(sa3dtke_type), intent(in) :: sa3dtke_var
       real, intent(IN), dimension(bd%isd:bd%ied,  bd%jsd:bd%jed):: dku3d_h 
 
@@ -1462,7 +1461,7 @@
      do j=js,je+1
         do i=is,ie+1
 !The following is for SA-3D-TKE
-          if(sa3dtke_dyco) then
+          if(flagstruct%sa3dtke_dyco) then
            damp2 = abs(dt)*dku3d_h(i,j) 
           else
            damp2 =  gridstruct%da_min_c*max(d2_bg, min(0.20, dddmp*vort(i,j)))  ! del-2
