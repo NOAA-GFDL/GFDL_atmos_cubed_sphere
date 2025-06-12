@@ -126,7 +126,6 @@
    select case (index)
 
    case (1)
-#endif
 
 !----------------------
 ! Perform vertical sum:
