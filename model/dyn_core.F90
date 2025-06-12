@@ -633,7 +633,7 @@ contains
                                ptop, phis, omga, ptc,  &
                                q_con,  delpc, gz,  pkc, ws3, flagstruct%p_fac, &
                                flagstruct%a_imp, flagstruct%scale_z, pfull, &
-                               flagstruct%fast_tau_w_sec, flagstruct%rf_cutoff )
+                               flagstruct%fast_tau_w_sec, flagstruct%rf_cutoff_w )
                                                call timing_off('Riem_Solver')
 
            if (gridstruct%nested) then
