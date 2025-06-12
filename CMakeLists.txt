@@ -114,7 +114,8 @@ list(APPEND driver_srcs
   driver/UFS/DYCORE_typedefs.F90
   driver/UFS/fv_nggps_diag.F90
   driver/UFS/fv_ufs_restart_io.F90
-  driver/UFS/atmosphere.F90)
+  driver/UFS/atmosphere.F90
+  driver/UFS/fv_processmodel.F90)
 
 list(APPEND fv3_srcs ${model_srcs}
                      ${tools_srcs})

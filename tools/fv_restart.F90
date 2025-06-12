@@ -173,6 +173,9 @@ module fv_restart_mod
 #ifdef MULTI_GASES
   use multi_gases_mod,  only:  virq
 #endif
+#ifdef GFS_PHYS
+  use fv_processmodel_mod, only: fv_init_processmodel
+#endif
 
   implicit none
   private
@@ -430,6 +433,22 @@ contains
                         Atm(n)%ptop, Atm(n)%domain, Atm(n)%tile_of_mosaic, Atm(n)%bd)
                 endif
              elseif (grid_type == 4) then
+#ifdef GFS_PHYS
+                print*, "CALLING fv_init_processmodel"
+                 call fv_init_processmodel(Atm(n)%u,Atm(n)%v,Atm(n)%w,Atm(n)%pt, &
+                     Atm(n)%delp,Atm(n)%q,Atm(n)%phis, Atm(n)%ps,Atm(n)%pe, &
+                     Atm(n)%peln,Atm(n)%pk,Atm(n)%pkz, &
+                     Atm(n)%uc,Atm(n)%vc, Atm(n)%ua,Atm(n)%va,        &
+                     Atm(n)%ak, Atm(n)%bk, &
+                     Atm(n)%gridstruct, Atm(n)%flagstruct, &
+                     Atm(n)%npx, Atm(n)%npy, npz, Atm(n)%ng, &
+                     ncnst, Atm(n)%flagstruct%nwat,  &
+                     Atm(n)%flagstruct%ndims, Atm(n)%flagstruct%ntiles, &
+                     Atm(n)%flagstruct%dry_mass, Atm(n)%flagstruct%mountain, &
+                     Atm(n)%flagstruct%moist_phys, Atm(n)%flagstruct%hydrostatic, &
+                     hybrid, Atm(n)%delz, Atm(n)%ze0, Atm(n)%ks, Atm(n)%ptop, &
+                     Atm(n)%domain, Atm(n)%tile_of_mosaic, Atm(n)%bd)
+#else
                 call init_double_periodic(Atm(n)%u,Atm(n)%v,Atm(n)%w,Atm(n)%pt, &
                      Atm(n)%delp,Atm(n)%q,Atm(n)%phis, Atm(n)%ps,Atm(n)%pe, &
                      Atm(n)%peln,Atm(n)%pk,Atm(n)%pkz, &
@@ -443,6 +462,7 @@ contains
                      Atm(n)%flagstruct%moist_phys, Atm(n)%flagstruct%hydrostatic, &
                      hybrid, Atm(n)%delz, Atm(n)%ze0, Atm(n)%ks, Atm(n)%ptop, &
                      Atm(n)%domain, Atm(n)%tile_of_mosaic, Atm(n)%bd)
+#endif
                 if( is_master() ) write(*,*) 'Doubly Periodic IC generated'
              elseif (grid_type == 5 .or. grid_type == 6) then
                 call mpp_error(FATAL, "Idealized test cases for grid_type == 5,6 (global lat-lon) grid not supported")
@@ -645,6 +665,7 @@ contains
                         sin(Atm(n)%gridstruct%agrid(i,j,2))*cos(alpha) )
                 enddo
              enddo
+#ifndef GFS_PHYS
           else
              f00 = 2.*omega*sin(Atm(n)%flagstruct%deglat/180.*pi)
              do j=jsd,jed+1
@@ -657,11 +678,13 @@ contains
                    Atm(n)%gridstruct%f0(i,j) = f00
                 enddo
              enddo
+#endif
           endif
           call mpp_update_domains( Atm(n)%gridstruct%f0, Atm(n)%domain )
           if ( Atm(n)%gridstruct%cubed_sphere .and. (.not. Atm(n)%gridstruct%bounded_domain))then
              call fill_corners(Atm(n)%gridstruct%f0, Atm(n)%npx, Atm(n)%npy, Corners_YDir)
           endif
+
        endif
 
 
