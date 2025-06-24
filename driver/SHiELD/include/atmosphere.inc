@@ -120,21 +120,12 @@
  subroutine GET_STOCK_PE_(index, value)
    integer, intent(in) :: index
    real(ATMOSPHERE_KIND_),   intent(out) :: value
-
-#ifdef USE_STOCK
-   include 'stock.inc'
-#endif
-
    real(ATMOSPHERE_KIND_) wm(isc:iec,jsc:jec)
    integer i,j,k
 
    select case (index)
 
-#ifdef USE_STOCK
-   case (ISTOCK_WATER)
-#else
    case (1)
-#endif
 
 !----------------------
 ! Perform vertical sum:
