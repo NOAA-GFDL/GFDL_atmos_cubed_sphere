@@ -1609,6 +1609,10 @@ if ( is_master() ) write(*,*) 'CALL atmos_global_diag_init'
 
      enddo
 
+     call p_adi(Atm(mygrid)%npz, Atm(mygrid)%ng, isc, iec, jsc, jec, Atm(mygrid)%ptop,  &
+                Atm(mygrid)%delp, Atm(mygrid)%pt, Atm(mygrid)%ps, Atm(mygrid)%pe,     &
+                Atm(mygrid)%peln, Atm(mygrid)%pk, Atm(mygrid)%pkz, Atm(mygrid)%flagstruct%hydrostatic)
+
      deallocate ( u0 )
      deallocate ( v0 )
      deallocate (dp0 )
