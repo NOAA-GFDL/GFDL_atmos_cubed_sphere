@@ -1421,10 +1421,6 @@ if ( is_master() ) write(*,*) 'CALL atmos_global_diag_init'
      allocate ( v0(isc:iec+1,jsc:jec,   npz) )
      allocate (dp0(isc:iec,jsc:jec, npz) )
 
-     call p_adi(Atm(mygrid)%npz, Atm(mygrid)%ng, isc, iec, jsc, jec, Atm(mygrid)%ptop,  &
-                Atm(mygrid)%delp, Atm(mygrid)%pt, Atm(mygrid)%ps, Atm(mygrid)%pe,     &
-                Atm(mygrid)%peln, Atm(mygrid)%pk, Atm(mygrid)%pkz, Atm(mygrid)%flagstruct%hydrostatic)
-
      if ( Atm(mygrid)%flagstruct%hydrostatic ) nudge_dz = .false.
 
      if ( nudge_dz ) then
@@ -1551,10 +1547,6 @@ if ( is_master() ) write(*,*) 'CALL atmos_global_diag_init'
 
        enddo
 
-     call p_adi(Atm(mygrid)%npz, Atm(mygrid)%ng, isc, iec, jsc, jec, Atm(mygrid)%ptop,  &
-                Atm(mygrid)%delp, Atm(mygrid)%pt, Atm(mygrid)%ps, Atm(mygrid)%pe,     &
-                Atm(mygrid)%peln, Atm(mygrid)%pk, Atm(mygrid)%pkz, Atm(mygrid)%flagstruct%hydrostatic)
-
 ! Backward
     call fv_dynamics(Atm(mygrid)%npx, Atm(mygrid)%npy, npz,  nq, Atm(mygrid)%ng, -dt_atmos, 0.,      &
                      Atm(mygrid)%flagstruct%fill, Atm(mygrid)%flagstruct%reproduce_sum, kappa, cp_air, zvir,  &
@@ -1616,10 +1608,6 @@ if ( is_master() ) write(*,*) 'CALL atmos_global_diag_init'
        enddo
 
      enddo
-
-     call p_adi(Atm(mygrid)%npz, Atm(mygrid)%ng, isc, iec, jsc, jec, Atm(mygrid)%ptop,  &
-                Atm(mygrid)%delp, Atm(mygrid)%pt, Atm(mygrid)%ps, Atm(mygrid)%pe,     &
-                Atm(mygrid)%peln, Atm(mygrid)%pk, Atm(mygrid)%pkz, Atm(mygrid)%flagstruct%hydrostatic)
 
      deallocate ( u0 )
      deallocate ( v0 )
