@@ -31,8 +31,13 @@ module atmosphere_mod
 !-----------------
 ! FMS modules:
 !-----------------
+use platform_mod, only: r8_kind, r4_kind
 use block_control_mod,      only: block_control_type
-use constants_mod,          only: cp_air, rdgas, grav, rvgas, kappa, pstd_mks, pi
+#ifdef OVERLOAD_R4
+use constantsR4_mod,       only: cp_air, rdgas, grav, rvgas, kappa, pstd_mks, pi
+#else
+use constants_mod,         only: cp_air, rdgas, grav, rvgas, kappa, pstd_mks, pi
+#endif
 use time_manager_mod,       only: time_type, get_time, set_time, operator(+), &
                                   operator(-), operator(/), time_type_to_real
 use fms_mod,                only: error_mesg, FATAL,                 &
@@ -56,7 +61,9 @@ use tracer_manager_mod,     only: get_tracer_index, get_number_tracers, &
 use IPD_typedefs,           only: IPD_data_type, kind_phys
 use data_override_mod,      only: data_override_init
 use fv_iau_mod,             only: IAU_external_data_type
-
+use atmos_cmip_diag_mod,   only: atmos_cmip_diag_init
+use atmos_global_diag_mod, only: atmos_global_diag_init, &
+                                 atmos_global_diag_end
 !-----------------
 ! FV core modules:
 !-----------------
@@ -91,6 +98,38 @@ use coarse_grained_restart_files_mod, only: fv_coarse_restart_init
 
 implicit none
 private
+
+interface atmosphere_grid_bdry
+  module procedure :: atmosphere_grid_bdry_r4
+  module procedure :: atmosphere_grid_bdry_r8
+end interface atmosphere_grid_bdry
+
+interface atmosphere_pref
+  module procedure :: atmosphere_pref_r4
+  module procedure :: atmosphere_pref_r8
+end interface atmosphere_pref
+
+interface atmosphere_cell_area
+  module procedure :: atmosphere_cell_area_r4
+  module procedure :: atmosphere_cell_area_r8
+end interface atmosphere_cell_area
+
+interface get_bottom_mass
+  module procedure :: get_bottom_mass_r4
+  module procedure :: get_bottom_mass_r8
+end interface get_bottom_mass
+
+interface get_bottom_wind
+  module procedure :: get_bottom_wind_r4
+  module procedure :: get_bottom_wind_r8
+end interface get_bottom_wind
+
+interface get_stock_pe
+  module procedure :: get_stock_pe_r4
+  module procedure :: get_stock_pe_r8
+end interface get_stock_pe
+
+
 
 !--- driver routines
 public :: atmosphere_init, atmosphere_end, atmosphere_restart, &
@@ -156,6 +195,11 @@ character(len=20)   :: mod_name = 'SHiELD/atmosphere_mod'
 
 contains
 
+#if defined(OVERLOAD_R4)
+#define _DBL_ DBLE
+#else
+#define _DBL_ 
+#endif
 
 
  subroutine atmosphere_init (Time_init, Time, Time_step, Grid_box, area, IAU_Data)
@@ -333,6 +377,11 @@ contains
    id_fv_diag = mpp_clock_id ('---FV Diag',  flags = clock_flag_default, grain=CLOCK_SUBCOMPONENT )
    id_dynam   = mpp_clock_id ('----FV Dynamics',flags = clock_flag_default, grain=CLOCK_SUBCOMPONENT )
    id_subgrid = mpp_clock_id ('----FV Subgrid_z',flags = clock_flag_default, grain=CLOCK_SUBCOMPONENT )
+
+!---- initialize cmip diagnostic output ----
+   call atmos_cmip_diag_init   ( Atm(mygrid)%ak, Atm(mygrid)%bk, pref(1,1), Atm(mygrid)%atmos_axes, Time )
+if ( is_master() ) write(*,*) 'CALL atmos_global_diag_init'
+   call atmos_global_diag_init ( Atm(mygrid)%atmos_axes, Atm(mygrid)%gridstruct%area(isc:iec,jsc:jec) )
 
 !  --- initiate the start for a restarted regional forecast
    if ( Atm(mygrid)%gridstruct%regional .and. Atm(mygrid)%flagstruct%warm_start ) then
@@ -672,15 +721,6 @@ contains
 
  end subroutine atmosphere_resolution
 
-
- subroutine atmosphere_pref (p_ref)
-   real, dimension(:,:), intent(inout) :: p_ref
-
-   p_ref = pref
-
- end subroutine atmosphere_pref
-
-
  subroutine atmosphere_control_data (i1, i2, j1, j2, kt, p_hydro, hydro, tile_num, &
                                      do_inline_mp, do_cosp)
    integer, intent(out)           :: i1, i2, j1, j2, kt
@@ -718,32 +758,6 @@ contains
     end do
 
  end subroutine atmosphere_grid_ctr
-
-
- subroutine atmosphere_grid_bdry (blon, blat, global)
-!---------------------------------------------------------------
-!    returns the longitude and latitude grid box edges
-!    for either the local PEs grid (default) or the global grid
-!---------------------------------------------------------------
-    real,    intent(out) :: blon(:,:), blat(:,:)   ! Unit: radian
-    logical, intent(in), optional :: global
-! Local data:
-    integer i,j
-
-    if( PRESENT(global) ) then
-      if (global) call mpp_error(FATAL, '==> global grid is no longer available &
-                               & in the Cubed Sphere')
-    endif
-
-    do j=jsc,jec+1
-       do i=isc,iec+1
-          blon(i-isc+1,j-jsc+1) = Atm(mygrid)%gridstruct%grid(i,j,1)
-          blat(i-isc+1,j-jsc+1) = Atm(mygrid)%gridstruct%grid(i,j,2)
-       enddo
-    end do
-
- end subroutine atmosphere_grid_bdry
-
 
  subroutine set_atmosphere_pelist ()
    call mpp_set_current_pelist(Atm(mygrid)%pelist, no_sync=.TRUE.)
@@ -1047,138 +1061,6 @@ contains
 !rab
 !rab   return
 !rab end subroutine atmosphere_tracer_postinit
-
-
- subroutine get_bottom_mass ( t_bot, tr_bot, p_bot, z_bot, p_surf, slp )
-!--------------------------------------------------------------
-! returns temp, sphum, pres, height at the lowest model level
-! and surface pressure
-!--------------------------------------------------------------
-   real, intent(out), dimension(isc:iec,jsc:jec):: t_bot, p_bot, z_bot, p_surf
-   real, intent(out), optional, dimension(isc:iec,jsc:jec):: slp
-   real, intent(out), dimension(isc:iec,jsc:jec,nq):: tr_bot
-   integer :: i, j, m, k, kr
-   real    :: rrg, sigtop, sigbot
-   real, dimension(isc:iec,jsc:jec) :: tref
-   real, parameter :: tlaps = 6.5e-3
-
-   rrg  = rdgas / grav
-
-   do j=jsc,jec
-      do i=isc,iec
-         p_surf(i,j) = Atm(mygrid)%ps(i,j)
-         t_bot(i,j) = Atm(mygrid)%pt(i,j,npz)
-         p_bot(i,j) = Atm(mygrid)%delp(i,j,npz)/(Atm(mygrid)%peln(i,npz+1,j)-Atm(mygrid)%peln(i,npz,j))
-         z_bot(i,j) = rrg*t_bot(i,j)*(1.+zvir*Atm(mygrid)%q(i,j,npz,1)) *  &
-                      (1. - Atm(mygrid)%pe(i,npz,j)/p_bot(i,j))
-      enddo
-   enddo
-
-   if ( present(slp) ) then
-     ! determine 0.8 sigma reference level
-     sigtop = Atm(mygrid)%ak(1)/pstd_mks+Atm(mygrid)%bk(1)
-     do k = 1, npz
-        sigbot = Atm(mygrid)%ak(k+1)/pstd_mks+Atm(mygrid)%bk(k+1)
-        if (sigbot+sigtop > 1.6) then
-           kr = k
-           exit
-        endif
-        sigtop = sigbot
-     enddo
-     do j=jsc,jec
-        do i=isc,iec
-           ! sea level pressure
-           tref(i,j) = Atm(mygrid)%pt(i,j,kr) * (Atm(mygrid)%delp(i,j,kr)/ &
-                            ((Atm(mygrid)%peln(i,kr+1,j)-Atm(mygrid)%peln(i,kr,j))*Atm(mygrid)%ps(i,j)))**(-rrg*tlaps)
-           slp(i,j) = Atm(mygrid)%ps(i,j)*(1.+tlaps*Atm(mygrid)%phis(i,j)/(tref(i,j)*grav))**(1./(rrg*tlaps))
-        enddo
-     enddo
-   endif
-
-! Copy tracers
-   do m=1,nq
-      do j=jsc,jec
-         do i=isc,iec
-            tr_bot(i,j,m) = Atm(mygrid)%q(i,j,npz,m)
-         enddo
-      enddo
-   enddo
-
- end subroutine get_bottom_mass
-
-
- subroutine get_bottom_wind ( u_bot, v_bot )
-!-----------------------------------------------------------
-! returns u and v on the mass grid at the lowest model level
-!-----------------------------------------------------------
-   real, intent(out), dimension(isc:iec,jsc:jec):: u_bot, v_bot
-   integer i, j
-
-   do j=jsc,jec
-      do i=isc,iec
-         u_bot(i,j) = Atm(mygrid)%u_srf(i,j)
-         v_bot(i,j) = Atm(mygrid)%v_srf(i,j)
-      enddo
-   enddo
-
- end subroutine get_bottom_wind
-
-
-
- subroutine get_stock_pe(index, value)
-   integer, intent(in) :: index
-   real,   intent(out) :: value
-
-#ifdef USE_STOCK
-   include 'stock.inc'
-#endif
-
-   real wm(isc:iec,jsc:jec)
-   integer i,j,k
-   real, pointer :: area(:,:)
-
-   area => Atm(mygrid)%gridstruct%area
-
-   select case (index)
-
-#ifdef USE_STOCK
-   case (ISTOCK_WATER)
-#else
-   case (1)
-#endif
-
-!----------------------
-! Perform vertical sum:
-!----------------------
-     wm = 0.
-     do j=jsc,jec
-        do k=1,npz
-           do i=isc,iec
-! Warning: the following works only with AM2 physics: water vapor; cloud water, cloud ice.
-              wm(i,j) = wm(i,j) + Atm(mygrid)%delp(i,j,k) * ( Atm(mygrid)%q(i,j,k,1) +    &
-                                                         Atm(mygrid)%q(i,j,k,2) +    &
-                                                         Atm(mygrid)%q(i,j,k,3) )
-           enddo
-        enddo
-     enddo
-
-!----------------------
-! Horizontal sum:
-!----------------------
-     value = 0.
-     do j=jsc,jec
-        do i=isc,iec
-           value = value + wm(i,j)*area(i,j)
-        enddo
-     enddo
-     value = value/grav
-
-   case default
-     value = 0.0
-   end select
-
- end subroutine get_stock_pe
-
 
  subroutine atmosphere_state_update (Time, IPD_Data, IAU_Data, Atm_block)
    !--- interface variables ---
@@ -1751,13 +1633,6 @@ contains
 
 
 
-#if defined(OVERLOAD_R4)
-#define _DBL_(X) DBLE(X)
-#define _RL_(X) REAL(X,KIND=4)
-#else
-#define _DBL_(X) X
-#define _RL_(X) X
-#endif
  subroutine atmos_phys_driver_statein (IPD_Data, Atm_block)
    type (IPD_data_type),      intent(inout) :: IPD_Data(:)
    type (block_control_type), intent(in)    :: Atm_block
@@ -1775,7 +1650,7 @@ contains
 !!! - "Layer" means "layer mean", ie. the average value in a layer
 !!! - "Level" means "level interface", ie the point values at the top or bottom of a layer
 
-   ptop =  _DBL_(_RL_(Atm(mygrid)%ak(1)))
+   ptop =  _DBL_(Atm(mygrid)%ak(1))
    pktop  = (ptop/p00)**kappa
    pk0inv = (1.0_kind_phys/p00)**kappa
 
@@ -1812,19 +1687,19 @@ contains
          do ix = 1, blen
            i = Atm_block%index(nb)%ii(ix)
            j = Atm_block%index(nb)%jj(ix)
-           IPD_Data(nb)%Statein%prew(ix) = _DBL_(_RL_(Atm(mygrid)%inline_mp%prew(i,j)))
-           IPD_Data(nb)%Statein%prer(ix) = _DBL_(_RL_(Atm(mygrid)%inline_mp%prer(i,j)))
-           IPD_Data(nb)%Statein%prei(ix) = _DBL_(_RL_(Atm(mygrid)%inline_mp%prei(i,j)))
-           IPD_Data(nb)%Statein%pres(ix) = _DBL_(_RL_(Atm(mygrid)%inline_mp%pres(i,j)))
-           IPD_Data(nb)%Statein%preg(ix) = _DBL_(_RL_(Atm(mygrid)%inline_mp%preg(i,j)))
+           IPD_Data(nb)%Statein%prew(ix) = _DBL_(Atm(mygrid)%inline_mp%prew(i,j))
+           IPD_Data(nb)%Statein%prer(ix) = _DBL_(Atm(mygrid)%inline_mp%prer(i,j))
+           IPD_Data(nb)%Statein%prei(ix) = _DBL_(Atm(mygrid)%inline_mp%prei(i,j))
+           IPD_Data(nb)%Statein%pres(ix) = _DBL_(Atm(mygrid)%inline_mp%pres(i,j))
+           IPD_Data(nb)%Statein%preg(ix) = _DBL_(Atm(mygrid)%inline_mp%preg(i,j))
            if (Atm(mygrid)%flagstruct%do_cosp) then
              do k = 1, npz
                k1 = npz+1-k ! flipping the index
-               IPD_Data(nb)%Statein%prefluxw(ix,k) = _DBL_(_RL_(Atm(mygrid)%inline_mp%prefluxw(i,j,k1)))
-               IPD_Data(nb)%Statein%prefluxr(ix,k) = _DBL_(_RL_(Atm(mygrid)%inline_mp%prefluxr(i,j,k1)))
-               IPD_Data(nb)%Statein%prefluxi(ix,k) = _DBL_(_RL_(Atm(mygrid)%inline_mp%prefluxi(i,j,k1)))
-               IPD_Data(nb)%Statein%prefluxs(ix,k) = _DBL_(_RL_(Atm(mygrid)%inline_mp%prefluxs(i,j,k1)))
-               IPD_Data(nb)%Statein%prefluxg(ix,k) = _DBL_(_RL_(Atm(mygrid)%inline_mp%prefluxg(i,j,k1)))
+               IPD_Data(nb)%Statein%prefluxw(ix,k) = _DBL_(Atm(mygrid)%inline_mp%prefluxw(i,j,k1))
+               IPD_Data(nb)%Statein%prefluxr(ix,k) = _DBL_(Atm(mygrid)%inline_mp%prefluxr(i,j,k1))
+               IPD_Data(nb)%Statein%prefluxi(ix,k) = _DBL_(Atm(mygrid)%inline_mp%prefluxi(i,j,k1))
+               IPD_Data(nb)%Statein%prefluxs(ix,k) = _DBL_(Atm(mygrid)%inline_mp%prefluxs(i,j,k1))
+               IPD_Data(nb)%Statein%prefluxg(ix,k) = _DBL_(Atm(mygrid)%inline_mp%prefluxg(i,j,k1))
              enddo
            endif
          enddo
@@ -1838,26 +1713,26 @@ contains
             !Indices for FV's vertical coordinate, for which 1 = top
             !here, k is the index for GFS's vertical coordinate, for which 1 = bottom
          k1 = npz+1-k ! flipping the index
-         IPD_Data(nb)%Statein%tgrs(ix,k) = _DBL_(_RL_(Atm(mygrid)%pt(i,j,k1)))
-         IPD_Data(nb)%Statein%ugrs(ix,k) = _DBL_(_RL_(Atm(mygrid)%ua(i,j,k1)))
-         IPD_Data(nb)%Statein%vgrs(ix,k) = _DBL_(_RL_(Atm(mygrid)%va(i,j,k1)))
-          IPD_Data(nb)%Statein%vvl(ix,k) = _DBL_(_RL_(omega_for_physics(i,j,k1)))
-         IPD_Data(nb)%Statein%prsl(ix,k) = _DBL_(_RL_(Atm(mygrid)%delp(i,j,k1)))   ! Total mass
-         if (Atm(mygrid)%flagstruct%do_diss_est)IPD_Data(nb)%Statein%diss_est(ix,k) = _DBL_(_RL_(Atm(mygrid)%diss_est(i,j,k1)))
+         IPD_Data(nb)%Statein%tgrs(ix,k) = _DBL_(Atm(mygrid)%pt(i,j,k1))
+         IPD_Data(nb)%Statein%ugrs(ix,k) = _DBL_(Atm(mygrid)%ua(i,j,k1))
+         IPD_Data(nb)%Statein%vgrs(ix,k) = _DBL_(Atm(mygrid)%va(i,j,k1))
+          IPD_Data(nb)%Statein%vvl(ix,k) = _DBL_(omega_for_physics(i,j,k1))
+         IPD_Data(nb)%Statein%prsl(ix,k) = _DBL_(Atm(mygrid)%delp(i,j,k1))   ! Total mass
+         if (Atm(mygrid)%flagstruct%do_diss_est)IPD_Data(nb)%Statein%diss_est(ix,k) = _DBL_(Atm(mygrid)%diss_est(i,j,k1))
 
          if (.not.Atm(mygrid)%flagstruct%hydrostatic .and. (.not.Atm(mygrid)%flagstruct%use_hydro_pressure))  &
-           IPD_Data(nb)%Statein%phii(ix,k+1) = IPD_Data(nb)%Statein%phii(ix,k) - _DBL_(_RL_(Atm(mygrid)%delz(i,j,k1)*grav))
+           IPD_Data(nb)%Statein%phii(ix,k+1) = IPD_Data(nb)%Statein%phii(ix,k) - _DBL_(Atm(mygrid)%delz(i,j,k1)*grav)
 
 ! Convert to tracer mass:
-         IPD_Data(nb)%Statein%qgrs(ix,k,1:nq_adv) =  _DBL_(_RL_(Atm(mygrid)%q(i,j,k1,1:nq_adv))) &
+         IPD_Data(nb)%Statein%qgrs(ix,k,1:nq_adv) =  _DBL_(Atm(mygrid)%q(i,j,k1,1:nq_adv)) &
                                                           * IPD_Data(nb)%Statein%prsl(ix,k)
 
          if (dnats .gt. 0) &
-             IPD_Data(nb)%Statein%qgrs(ix,k,nq_adv+1:nq) =  _DBL_(_RL_(Atm(mygrid)%q(i,j,k1,nq_adv+1:nq)))
+             IPD_Data(nb)%Statein%qgrs(ix,k,nq_adv+1:nq) =  _DBL_(Atm(mygrid)%q(i,j,k1,nq_adv+1:nq))
          !--- SHOULD THESE BE CONVERTED TO MASS SINCE THE DYCORE DOES NOT TOUCH THEM IN ANY WAY???
          !--- See Note in state update...
          if ( ncnst > nq) &
-             IPD_Data(nb)%Statein%qgrs(ix,k,nq+1:ncnst) = _DBL_(_RL_(Atm(mygrid)%qdiag(i,j,k1,nq+1:ncnst)))
+             IPD_Data(nb)%Statein%qgrs(ix,k,nq+1:ncnst) = _DBL_(Atm(mygrid)%qdiag(i,j,k1,nq+1:ncnst))
 ! Remove the contribution of condensates to delp (mass):
          if ( Atm(mygrid)%flagstruct%nwat .eq. 6 ) then
             IPD_Data(nb)%Statein%prsl(ix,k) = IPD_Data(nb)%Statein%prsl(ix,k) &
@@ -2057,5 +1932,8 @@ contains
 
    coarsening_strategy = Atm(mygrid)%coarse_graining%strategy
  end subroutine atmosphere_coarsening_strategy
+
+#include "atmosphere_r4.fh"
+#include "atmosphere_r8.fh"
 
 end module atmosphere_mod
