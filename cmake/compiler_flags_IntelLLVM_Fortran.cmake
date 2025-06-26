@@ -10,7 +10,7 @@ set(CMAKE_Fortran_FLAGS_REPRO "-O2 -debug minimal -fp-model consistent -qoverrid
 
 set(CMAKE_Fortran_FLAGS_RELEASE "-O2 -debug minimal -fp-model strict -qoverride-limits")
 
-set(CMAKE_Fortran_FLAGS_DEBUG "-O0 -check -check noarg_temp_created -check nopointer -warn -warn noerrors -fp-stack-check -fstack-protector-all -fpe0 -debug -ftrapuv -init=snan,arrays")
+set(CMAKE_Fortran_FLAGS_DEBUG "-O0 -check all -check noarg_temp_created -check nopointer -warn -warn noerrors -fp-stack-check -fstack-protector-all -fpe0 -debug -ftrapuv -init=snan,arrays")
 
 set(CMAKE_Fortran_LINK_FLAGS "")
 
