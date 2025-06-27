@@ -897,22 +897,40 @@ contains
             enddo
          enddo
        endif
-       call d_sw(vt(isd,jsd,k), delp(isd,jsd,k), ptc(isd,jsd,k),  pt(isd,jsd,k),      &
-                  u(isd,jsd,k),    v(isd,jsd,k),   w(isd:,jsd:,k),  uc(isd,jsd,k),      &
-                  vc(isd,jsd,k),   ua(isd,jsd,k),  va(isd,jsd,k), divgd(isd,jsd,k),   &
-                  mfx(is, js, k),  mfy(is, js, k),  cx(is, jsd,k),  cy(isd,js, k),    &
-!The following variable is for SA-3D-TKE (kyf) (modify for data structure)
-                  sa3dtke_var%dku3d_h(isd, jsd, k), &
-                  crx(is, jsd,k),  cry(isd,js, k), xfx(is, jsd,k), yfx(isd,js, k),    &
+
+       if(flagstruct%sa3dtke_dyco) then
+          call d_sw(vt(isd,jsd,k), delp(isd,jsd,k), ptc(isd,jsd,k),  pt(isd,jsd,k),      &
+                    u(isd,jsd,k),    v(isd,jsd,k),   w(isd:,jsd:,k),  uc(isd,jsd,k),      &
+                    vc(isd,jsd,k),   ua(isd,jsd,k),  va(isd,jsd,k), divgd(isd,jsd,k),   &
+                    mfx(is, js, k),  mfy(is, js, k),  cx(is, jsd,k),  cy(isd,js, k),    &
+                    crx(is, jsd,k),  cry(isd,js, k), xfx(is, jsd,k), yfx(isd,js, k),    &
 #ifdef USE_COND
-                  q_con(isd:,jsd:,k),  z_rat(isd,jsd),  &
+                    q_con(isd:,jsd:,k),  z_rat(isd,jsd),  &
 #else
-                  q_con(isd:,jsd:,1),  z_rat(isd,jsd),  &
+                    q_con(isd:,jsd:,1),  z_rat(isd,jsd),  &
 #endif
-                  kgb, heat_s, diss_e,zvir, sphum, nq,  q,  k,  npz, flagstruct%inline_q,  dt,  &
-                  flagstruct%hord_tr, hord_m, hord_v, hord_t, hord_p,    &
-                  nord_k, nord_v(k), nord_w, nord_t, flagstruct%dddmp, d2_divg, flagstruct%d4_bg,  &
-                  damp_vt(k), damp_w, damp_t, d_con_k, hydrostatic, gridstruct, flagstruct, bd)
+                    kgb, heat_s, diss_e,zvir, sphum, nq,  q,  k,  npz, flagstruct%inline_q,  dt,  &
+                    flagstruct%hord_tr, hord_m, hord_v, hord_t, hord_p,    &
+                    nord_k, nord_v(k), nord_w, nord_t, flagstruct%dddmp, d2_divg, flagstruct%d4_bg,  &
+                    damp_vt(k), damp_w, damp_t, d_con_k, hydrostatic, gridstruct, flagstruct, bd,  &
+!The following optional variable is for SA-3D-TKE (kyf)
+                    sa3dtke_var%dku3d_h(isd, jsd, k) )
+       else
+          call d_sw(vt(isd,jsd,k), delp(isd,jsd,k), ptc(isd,jsd,k),  pt(isd,jsd,k),      &
+                    u(isd,jsd,k),    v(isd,jsd,k),   w(isd:,jsd:,k),  uc(isd,jsd,k),      &
+                    vc(isd,jsd,k),   ua(isd,jsd,k),  va(isd,jsd,k), divgd(isd,jsd,k),   &
+                    mfx(is, js, k),  mfy(is, js, k),  cx(is, jsd,k),  cy(isd,js, k),    &
+                    crx(is, jsd,k),  cry(isd,js, k), xfx(is, jsd,k), yfx(isd,js, k),    &
+#ifdef USE_COND
+                    q_con(isd:,jsd:,k),  z_rat(isd,jsd),  &
+#else
+                    q_con(isd:,jsd:,1),  z_rat(isd,jsd),  &
+#endif
+                    kgb, heat_s, diss_e,zvir, sphum, nq,  q,  k,  npz, flagstruct%inline_q,  dt,  &
+                    flagstruct%hord_tr, hord_m, hord_v, hord_t, hord_p,    &
+                    nord_k, nord_v(k), nord_w, nord_t, flagstruct%dddmp, d2_divg, flagstruct%d4_bg,  &
+                    damp_vt(k), damp_w, damp_t, d_con_k, hydrostatic, gridstruct, flagstruct, bd)
+       endif
 
        if((.not.flagstruct%use_old_omega) .and. last_step ) then
 ! Average horizontal "convergence" to cell center

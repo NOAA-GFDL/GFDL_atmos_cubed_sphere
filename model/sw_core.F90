@@ -50,7 +50,6 @@
                               deln_flux_explm, deln_flux_explm_udvd
  use fv_mp_mod, only: is_master, fill_corners, XDir, YDir
  use fv_arrays_mod, only: fv_grid_type, fv_grid_bounds_type, fv_flags_type
- !use fv_arrays_mod, only: sa3dtke_type ! for SA-3D-TKE (kyf) (modify for data structure) 
  use a2b_edge_mod, only: a2b_ord4
 
 #ifdef SW_DYNAMICS
@@ -522,13 +521,13 @@
 !! and other prognostic varaiables.
    subroutine d_sw(delpc, delp,  ptc,   pt, u,  v, w, uc,vc, &
                    ua, va, divg_d, xflux, yflux, cx, cy,              &
-!The following 2 variables are for SA-3D-TKE (kyf) (modify for data structure)
-                   dku3d_h,                    &
                    crx_adv, cry_adv,  xfx_adv, yfx_adv, q_con, z_rat, kgb, heat_source,diss_est,  &
                    zvir, sphum, nq, q, k, km, inline_q,  &
                    dt, hord_tr, hord_mt, hord_vt, hord_tm, hord_dp, nord,   &
                    nord_v, nord_w, nord_t, dddmp, d2_bg, d4_bg, damp_v, damp_w, &
-                   damp_t, d_con, hydrostatic, gridstruct, flagstruct, bd)
+                   damp_t, d_con, hydrostatic, gridstruct, flagstruct, bd, &
+!The following optional variable is for SA-3D-TKE (kyf)
+                   dku3d_h)
 
       integer, intent(IN):: hord_tr, hord_mt, hord_vt, hord_tm, hord_dp
       integer, intent(IN):: nord   !< nord=1 divergence damping; (del-4) or 3 (del-8)
@@ -540,9 +539,6 @@
       real   , intent(IN):: zvir
       real,    intent(in):: damp_v, damp_w, damp_t, kgb
       type(fv_grid_bounds_type), intent(IN) :: bd
-!The following 2 variables are for SA-3D-TKE (kyf) (modify for data structure)
-      !type(sa3dtke_type), intent(in) :: sa3dtke_var
-      real, intent(IN), dimension(bd%isd:bd%ied,  bd%jsd:bd%jed):: dku3d_h 
 
       real, intent(inout):: divg_d(bd%isd:bd%ied+1,bd%jsd:bd%jed+1) !< divergence
       real, intent(IN), dimension(bd%isd:bd%ied,  bd%jsd:bd%jed):: z_rat
@@ -566,6 +562,8 @@
       real, intent(OUT), dimension(bd%isd:bd%ied,bd%js:bd%je+1):: cry_adv, yfx_adv
       type(fv_grid_type), intent(IN), target :: gridstruct
       type(fv_flags_type), intent(IN), target :: flagstruct
+!The following optional variable is for SA-3D-TKE (kyf)
+      real, intent(IN), optional, dimension(bd%isd:bd%ied,bd%jsd:bd%jed):: dku3d_h
 ! Local:
       logical:: sw_corner, se_corner, ne_corner, nw_corner
       real :: ut(bd%isd:bd%ied+1,bd%jsd:bd%jed)
