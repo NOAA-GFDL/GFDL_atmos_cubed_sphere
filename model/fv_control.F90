@@ -395,6 +395,9 @@ module fv_control_mod
 
      integer, pointer :: ndims
 
+!The following is used for SA-3D-TKE
+     logical , pointer :: sa3dtke_dyco
+
      real(kind=R_GRID), pointer :: dx_const
      real(kind=R_GRID), pointer :: dy_const
      real(kind=R_GRID), pointer :: deglon_start, deglon_stop, &  ! boundaries of latlon patch
@@ -954,6 +957,10 @@ module fv_control_mod
        external_eta                  => Atm%flagstruct%external_eta
        read_increment                => Atm%flagstruct%read_increment
        increment_file_on_native_grid => Atm%flagstruct%increment_file_on_native_grid
+
+!The following is used for SA-3D-TKE
+       sa3dtke_dyco                  => Atm%flagstruct%sa3dtke_dyco
+
        hydrostatic                   => Atm%flagstruct%hydrostatic
        phys_hydrostatic              => Atm%flagstruct%phys_hydrostatic
        use_hydro_pressure            => Atm%flagstruct%use_hydro_pressure
@@ -1083,6 +1090,7 @@ module fv_control_mod
             consv_te, fill, filter_phys, fill_dp, fill_wz, fill_gfs, consv_am, RF_fast, &
             range_warn, dwind_2d, inline_q, z_tracer, reproduce_sum, adiabatic, do_vort_damp, no_dycore,   &
             tau, tau_w, fast_tau_w_sec, tau_h2o, rf_cutoff, rf_cutoff_w, nf_omega, hydrostatic, fv_sg_adj, sg_cutoff, breed_vortex_inline,  &
+            sa3dtke_dyco, &
             na_init, nudge_dz, hybrid_z, Make_NH, n_zs_filter, nord_zs_filter, full_zs_filter, reset_eta,         &
             pnats, dnats, dnrts, a2b_ord, remap_t, p_ref, d2_bg_k1, d2_bg_k2,  &
             c2l_ord, dx_const, dy_const, umax, deglat,      &
