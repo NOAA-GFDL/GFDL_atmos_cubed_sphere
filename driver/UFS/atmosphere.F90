@@ -973,13 +973,14 @@ contains
 !! decomposition for the current cubed-sphere tile.
 !>@detail Coupling is done using the mass/temperature grid with no halos.
  subroutine atmosphere_domain ( fv_domain, rd_domain, layout, regional, nested, &
-                                ngrids_atmos, mygrid_atmos, pelist )
+                                ngrids_atmos, mygrid_atmos, pelist, grid_type)
    type(domain2d), intent(out) :: fv_domain, rd_domain
    integer, intent(out) :: layout(2)
    logical, intent(out) :: regional
    logical, intent(out) :: nested
    integer, intent(out) :: ngrids_atmos
    integer, intent(out) :: mygrid_atmos
+   integer, intent(out) :: grid_type
    integer, pointer, intent(out) :: pelist(:)
 
    integer :: n
@@ -993,6 +994,7 @@ contains
    mygrid_atmos = mygrid
    call set_atmosphere_pelist()
    pelist => Atm(mygrid)%pelist
+   grid_type = Atm(mygrid)%flagstruct%grid_type
 
  end subroutine atmosphere_domain
 
