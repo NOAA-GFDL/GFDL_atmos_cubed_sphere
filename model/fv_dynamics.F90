@@ -156,6 +156,7 @@ module fv_dynamics_mod
    use fv_regional_mod,     only: current_time_in_seconds
    use boundary_mod,        only: nested_grid_BC_apply_intT
    use fv_arrays_mod,       only: fv_grid_type, fv_flags_type, fv_atmos_type, fv_nest_type, fv_diag_type, fv_grid_bounds_type, inline_mp_type
+   use fv_arrays_mod,       only: sa3dtke_type ! for SA-3D-TKE (kyf) (modify for data structure)
    use fv_nwp_nudge_mod,    only: do_adiabatic_init
    use time_manager_mod,    only: get_time
 
@@ -187,8 +188,11 @@ contains
 
   subroutine fv_dynamics(npx, npy, npz, nq_tot,  ng, bdt, consv_te, fill,             &
                         reproduce_sum, kappa, cp_air, zvir, ptop, ks, ncnst, n_split, &
-                        q_split, u, v, w, delz, hydrostatic, pt, delp, q,             &
+                        q_split, u, v, w, delz, hydrostatic,                          &
+                        pt, delp, q,                                                  &
                         ps, pe, pk, peln, pkz, phis, q_con, omga, ua, va, uc, vc,     &
+!The following variable is for SA-3D-TKE (kyf) (modify for data structure)
+                        sa3dtke_var,                                                  &
                         ak, bk, mfx, mfy, cx, cy, ze0, hybrid_z,                      &
                         gridstruct, flagstruct, neststruct, idiag, bd,                &
                         parent_grid, domain, diss_est, inline_mp)
@@ -255,8 +259,11 @@ contains
     real, intent(inout) :: vc(bd%isd:bd%ied  ,bd%jsd:bd%jed+1,npz)
 
     real, intent(inout), dimension(bd%isd:bd%ied ,bd%jsd:bd%jed ,npz):: ua, va
-    real, intent(in),    dimension(npz+1):: ak, bk
+    !The following variable is for SA-3D-TKE (kyf) (modify for data structure)
 
+    real, intent(in),    dimension(npz+1):: ak, bk
+    ! For SA-3D-TKE (kyf) (modify for data structure)
+    type(sa3dtke_type), intent(inout) :: sa3dtke_var
     type(inline_mp_type), intent(inout) :: inline_mp
 
 ! Accumulated Mass flux arrays: the "Flux Capacitor"
@@ -666,7 +673,10 @@ contains
 #endif
                     grav, hydrostatic, &
                     u, v, w, delz, pt, q, delp, pe, pk, phis, ws, omga, ptop, pfull, ua, va,           &
-                    uc, vc, mfx, mfy, cx, cy, pkz, peln, q_con, ak, bk, ks, &
+                    uc, vc,            &
+!The following variable is for SA-3D-TKE (kyf) (modify for data structure)
+                    sa3dtke_var,        &
+                    mfx, mfy, cx, cy, pkz, peln, q_con, ak, bk, ks, &
                     gridstruct, flagstruct, neststruct, idiag, bd, &
                     domain, n_map==1, i_pack, GFDL_interstitial%last_step, diss_est,time_total)
                                            call timing_off('DYN_CORE')

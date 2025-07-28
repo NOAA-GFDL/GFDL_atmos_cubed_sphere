@@ -698,6 +698,8 @@ module fv_arrays_mod
                          !< considered; and for non-hydrostatic models values of 10 or less should be
                          !< considered, with smaller values for higher-resolution.
    real    :: rf_cutoff = 30.E2   !< Pressure below which no Rayleigh damping is applied if tau > 0.
+   real    :: rf_cutoff_w = 1.E2  !< Pressure below which no fast vertical velocity Rayleigh
+                                       ! damping is applied if fast_tau_w_sec > 0.
    real    :: fast_tau_w_sec = 0.0 !< Time scale (seconds) for Rayleigh damping applied to vertical velocity only.
                                    !< Values of 0.2 are very effective at eliminating spurious vertical motion in
                                    !< the stratosphere. Default is 0.0, which disables this.
@@ -935,6 +937,8 @@ module fv_arrays_mod
   logical :: regional_bcs_from_gsi = .false.    !< Default setting for writing restart files with boundary rows
   logical :: pass_full_omega_to_physics_in_non_hydrostatic_mode = .false.  !< Default to passing local omega to physics in non-hydrostatic 
 
+!This logical variable is used for SA-3D-TKE
+     logical :: sa3dtke_dyco = .false.
 
   !>Convenience pointers
   integer, pointer :: grid_number
@@ -1066,6 +1070,16 @@ module fv_arrays_mod
      logical :: BCfile_ne_is_open=.false.
      logical :: BCfile_sw_is_open=.false.
   end type fv_nest_type
+  
+  !3D-SA-TKE (kyf) (modify for data structure)
+  type sa3dtke_type
+    real, _ALLOCATABLE :: deform_1(:,:,:)  _NULL !< horizontal deformation
+    real, _ALLOCATABLE :: deform_2(:,:,:)  _NULL !< vertical deformation
+    real, _ALLOCATABLE :: deform_3(:,:,:)  _NULL !< 3D TKE transport & pressure correlation
+    real, _ALLOCATABLE :: dku3d_h(:,:,:)   _NULL !< 3D Horizontal Eddy Diffusivity for Momentum
+    real, _ALLOCATABLE :: dku3d_e(:,:,:)   _NULL !< 3D Eddy Diffusivity for TKE
+  end type sa3dtke_type
+  !3D-SA-TKE-end
 
   type inline_mp_type
     real, _ALLOCATABLE :: prer(:,:)     _NULL
@@ -1290,7 +1304,6 @@ module fv_arrays_mod
     real, _ALLOCATABLE :: va(:,:,:)     _NULL
     real, _ALLOCATABLE :: uc(:,:,:)     _NULL  !< (uc, vc) are mostly used as the C grid winds
     real, _ALLOCATABLE :: vc(:,:,:)     _NULL
-
     real, _ALLOCATABLE :: ak(:)  _NULL
     real, _ALLOCATABLE :: bk(:)  _NULL
 
@@ -1377,6 +1390,7 @@ module fv_arrays_mod
 
   integer :: atmos_axes(4)
 
+     type(sa3dtke_type) :: sa3dtke_var ! SA-3D TKE (kyf) (modify for data structure)
      type(inline_mp_type) :: inline_mp
      type(phys_diag_type) :: phys_diag
      type(nudge_diag_type) :: nudge_diag
@@ -1523,6 +1537,17 @@ contains
     allocate (   Atm%va(isd:ied  ,jsd:jed  ,npz) )
     allocate (   Atm%uc(isd:ied+1,jsd:jed  ,npz) )
     allocate (   Atm%vc(isd:ied  ,jsd:jed+1,npz) )
+    
+    !3D-SA-TKE (kyf) (modify for data structure)
+    if ( Atm%flagstruct%sa3dtke_dyco ) then
+       allocate (   Atm%sa3dtke_var%deform_1(isd:ied  ,jsd:jed  ,npz) )
+       allocate (   Atm%sa3dtke_var%deform_2(isd:ied  ,jsd:jed  ,npz) )
+       allocate (   Atm%sa3dtke_var%deform_3(isd:ied  ,jsd:jed  ,npz) )
+       allocate (   Atm%sa3dtke_var%dku3d_h(isd:ied  ,jsd:jed, npz) )
+       allocate (   Atm%sa3dtke_var%dku3d_e(isd:ied  ,jsd:jed, npz) )
+    endif
+    !3D-SA-TKE-end
+
     ! For tracer transport:
     allocate ( Atm%mfx(is:ie+1, js:je,  npz) )
     allocate ( Atm%mfy(is:ie  , js:je+1,npz) )
@@ -1575,6 +1600,16 @@ contains
                 Atm%va(i,j,k) = real_big
                 Atm%pt(i,j,k) = real_big
               Atm%delp(i,j,k) = real_big
+              
+              !3D-SA-TKE (kyf) (modify for data structure)
+              if ( Atm%flagstruct%sa3dtke_dyco ) then
+                 Atm%sa3dtke_var%deform_1(i,j,k) = 0.
+                 Atm%sa3dtke_var%deform_2(i,j,k) = 0.
+                 Atm%sa3dtke_var%deform_3(i,j,k) = 0.
+                 Atm%sa3dtke_var%dku3d_h(i,j,k) = 0.
+                 Atm%sa3dtke_var%dku3d_e(i,j,k) = 0.
+              endif
+              !3D-SA-TKE-end
 #ifdef USE_COND
              Atm%q_con(i,j,k) = 0.
 #endif

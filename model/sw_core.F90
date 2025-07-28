@@ -525,7 +525,9 @@
                    zvir, sphum, nq, q, k, km, inline_q,  &
                    dt, hord_tr, hord_mt, hord_vt, hord_tm, hord_dp, nord,   &
                    nord_v, nord_w, nord_t, dddmp, d2_bg, d4_bg, damp_v, damp_w, &
-                   damp_t, d_con, hydrostatic, gridstruct, flagstruct, bd)
+                   damp_t, d_con, hydrostatic, gridstruct, flagstruct, bd, &
+!The following optional variable is for SA-3D-TKE (kyf)
+                   dku3d_h)
 
       integer, intent(IN):: hord_tr, hord_mt, hord_vt, hord_tm, hord_dp
       integer, intent(IN):: nord   !< nord=1 divergence damping; (del-4) or 3 (del-8)
@@ -537,6 +539,7 @@
       real   , intent(IN):: zvir
       real,    intent(in):: damp_v, damp_w, damp_t, kgb
       type(fv_grid_bounds_type), intent(IN) :: bd
+
       real, intent(inout):: divg_d(bd%isd:bd%ied+1,bd%jsd:bd%jed+1) !< divergence
       real, intent(IN), dimension(bd%isd:bd%ied,  bd%jsd:bd%jed):: z_rat
       real, intent(INOUT), dimension(bd%isd:bd%ied,  bd%jsd:bd%jed):: delp, pt, ua, va
@@ -559,6 +562,8 @@
       real, intent(OUT), dimension(bd%isd:bd%ied,bd%js:bd%je+1):: cry_adv, yfx_adv
       type(fv_grid_type), intent(IN), target :: gridstruct
       type(fv_flags_type), intent(IN), target :: flagstruct
+!The following optional variable is for SA-3D-TKE (kyf)
+      real, intent(IN), optional, dimension(bd%isd:bd%ied,bd%jsd:bd%jed):: dku3d_h
 ! Local:
       logical:: sw_corner, se_corner, ne_corner, nw_corner
       real :: ut(bd%isd:bd%ied+1,bd%jsd:bd%jed)
@@ -1453,7 +1458,13 @@
 
      do j=js,je+1
         do i=is,ie+1
+!The following is for SA-3D-TKE
+          if(flagstruct%sa3dtke_dyco) then
+           damp2 = abs(dt)*dku3d_h(i,j) 
+          else
            damp2 =  gridstruct%da_min_c*max(d2_bg, min(0.20, dddmp*vort(i,j)))  ! del-2
+          endif
+
            vort(i,j) = damp2*delpc(i,j) + dd8*divg_d(i,j)
              ke(i,j) = ke(i,j) + vort(i,j)
         enddo
