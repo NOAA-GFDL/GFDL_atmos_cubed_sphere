@@ -1461,7 +1461,7 @@
           damp2 =  gridstruct%da_min_c*max(d2_bg, min(0.20, dddmp*vort(i,j)))  ! del-2
 !The following is for SA-3D-TKE
           if(flagstruct%sa3dtke_dyco) then
-            damp2 = damp2 + abs(dt)*dku3d_h(i,j)
+            damp2 = max(damp2, abs(dt)*dku3d_h(i,j))
           endif
 
            vort(i,j) = damp2*delpc(i,j) + dd8*divg_d(i,j)
