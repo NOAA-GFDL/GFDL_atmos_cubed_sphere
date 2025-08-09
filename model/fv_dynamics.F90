@@ -900,7 +900,7 @@ contains
                     sa3dtke_var,        &
                     mfx, mfy, cx, cy, pkz, peln, q_con, ak, bk, ks, &
                     gridstruct, flagstruct, neststruct, idiag, bd, &
-                    domain, n_map==1, i_pack, GFDL_interstitial%last_step, diss_est,time_total)
+                    domain, n_map==1, i_pack, GFDL_interstitial%last_step, diss_est,pdc, time_total)
       endif
                                            call timing_off('DYN_CORE')
 
