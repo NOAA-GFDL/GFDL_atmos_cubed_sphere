@@ -141,6 +141,9 @@ module fv_control_mod
    use fv_mp_mod,           only: mp_start, domain_decomp, mp_assign_gid, global_nest_domain
    use fv_mp_mod,           only: broadcast_domains, mp_barrier, is_master, setup_master, grids_master_procs, tile_fine
    use fv_mp_mod,           only: MAX_NNEST, MAX_NTILE
+#ifdef GFS_PHYS
+   use fv_processmodel_mod, only: read_namelist_fv_processmodel
+#endif
    use test_cases_mod,      only: read_namelist_test_case_nml
    use fv_timing_mod,       only: timing_on, timing_off, timing_init, timing_prt
    use mpp_domains_mod,     only: domain2D
@@ -333,6 +336,7 @@ module fv_control_mod
      real    , pointer :: tau_w
      real    , pointer :: fast_tau_w_sec
      real    , pointer :: rf_cutoff
+     real    , pointer :: rf_cutoff_w
      logical , pointer :: filter_phys
      logical , pointer :: dwind_2d
      logical , pointer :: breed_vortex_inline
@@ -394,11 +398,16 @@ module fv_control_mod
 
      integer, pointer :: ndims
 
+!The following is used for SA-3D-TKE
+     logical , pointer :: sa3dtke_dyco
+
      real(kind=R_GRID), pointer :: dx_const
      real(kind=R_GRID), pointer :: dy_const
      real(kind=R_GRID), pointer :: deglon_start, deglon_stop, &  ! boundaries of latlon patch
           deglat_start, deglat_stop
      real(kind=R_GRID), pointer :: deglat
+     real(kind=R_GRID), pointer :: deglon
+     real(kind=R_GRID), pointer :: deg_domain
 
      logical, pointer :: nested, twowaynest
      logical, pointer :: regional
@@ -578,7 +587,12 @@ module fv_control_mod
         call read_namelist_molecular_diffusion_nml(Atm(this_grid)%nml_filename, &
                   Atm(this_grid)%flagstruct%ncnst,  Atm(this_grid)%flagstruct%nwat)
      endif
+
+#ifdef GFS_PHYS
+     call read_namelist_fv_processmodel(Atm(this_grid)%nml_filename)
+#endif
      call read_namelist_test_case_nml(Atm(this_grid)%nml_filename)
+ 
      call mpp_get_current_pelist(Atm(this_grid)%pelist, commID=commID) ! for commID
      call mp_start(commID,halo_update_type)
 
@@ -912,6 +926,7 @@ module fv_control_mod
        tau_w                         => Atm%flagstruct%tau_w
        fast_tau_w_sec                => Atm%flagstruct%fast_tau_w_sec
        rf_cutoff                     => Atm%flagstruct%rf_cutoff
+       rf_cutoff_w                   => Atm%flagstruct%rf_cutoff_w
        filter_phys                   => Atm%flagstruct%filter_phys
        dwind_2d                      => Atm%flagstruct%dwind_2d
        breed_vortex_inline           => Atm%flagstruct%breed_vortex_inline
@@ -952,6 +967,10 @@ module fv_control_mod
        external_eta                  => Atm%flagstruct%external_eta
        read_increment                => Atm%flagstruct%read_increment
        increment_file_on_native_grid => Atm%flagstruct%increment_file_on_native_grid
+
+!The following is used for SA-3D-TKE
+       sa3dtke_dyco                  => Atm%flagstruct%sa3dtke_dyco
+
        hydrostatic                   => Atm%flagstruct%hydrostatic
        phys_hydrostatic              => Atm%flagstruct%phys_hydrostatic
        use_hydro_pressure            => Atm%flagstruct%use_hydro_pressure
@@ -978,6 +997,8 @@ module fv_control_mod
        deglat_stop                   => Atm%flagstruct%deglat_stop
 
        deglat                        => Atm%flagstruct%deglat
+       deglon                        => Atm%flagstruct%deglon
+       deg_domain                    => Atm%flagstruct%deg_domain
 
        nested                        => Atm%neststruct%nested
        twowaynest                    => Atm%neststruct%twowaynest
@@ -1080,10 +1101,11 @@ module fv_control_mod
             dry_mass, grid_type, do_Held_Suarez, do_reed_physics, reed_cond_only, &
             consv_te, fill, filter_phys, fill_dp, fill_wz, fill_gfs, consv_am, RF_fast, &
             range_warn, dwind_2d, inline_q, z_tracer, reproduce_sum, adiabatic, do_vort_damp, no_dycore,   &
-            tau, tau_w, fast_tau_w_sec, tau_h2o, rf_cutoff, nf_omega, hydrostatic, fv_sg_adj, sg_cutoff, breed_vortex_inline,  &
+            tau, tau_w, fast_tau_w_sec, tau_h2o, rf_cutoff, rf_cutoff_w, nf_omega, hydrostatic, fv_sg_adj, sg_cutoff, breed_vortex_inline,  &
+            sa3dtke_dyco, &
             na_init, nudge_dz, hybrid_z, Make_NH, n_zs_filter, nord_zs_filter, full_zs_filter, reset_eta,         &
             pnats, dnats, dnrts, a2b_ord, remap_t, p_ref, d2_bg_k1, d2_bg_k2,  &
-            c2l_ord, dx_const, dy_const, umax, deglat,      &
+            c2l_ord, dx_const, dy_const, umax, deglat, deglon, deg_domain,      &
             deglon_start, deglon_stop, deglat_start, deglat_stop, &
             phys_hydrostatic, use_hydro_pressure, make_hybrid_z, old_divg_damp, add_noise, butterfly_effect, &
             molecular_diffusion, dz_min, psm_bc, nested, twowaynest, nudge_qv, &
