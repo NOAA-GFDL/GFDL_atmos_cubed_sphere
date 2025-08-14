@@ -1115,84 +1115,93 @@ endif        ! end last_step check
  subroutine remap_z(km, pe1, q1, kn, pe2, q2, i1, i2, iv, kord)
 
 ! INPUT PARAMETERS:
-      integer, intent(in) :: i1                !< Starting longitude
-      integer, intent(in) :: i2                !< Finishing longitude
-      integer, intent(in) :: kord              !< Method order
-      integer, intent(in) :: km                !< Original vertical dimension
-      integer, intent(in) :: kn                !< Target vertical dimension
-      integer, intent(in) :: iv
+   integer, intent(in) :: i1                !< Starting longitude
+   integer, intent(in) :: i2                !< Finishing longitude
+   integer, intent(in) :: kord              !< Method order
+   integer, intent(in) :: km                !< Original vertical dimension
+   integer, intent(in) :: kn                !< Target vertical dimension
+   integer, intent(in) :: iv
 
-      real, intent(in) ::  pe1(i1:i2,km+1)     !< height at layer edges
+   real, intent(in) ::  pe1(i1:i2,km+1)     !< height at layer edges
                                                !! (from model top to bottom surface)
-      real, intent(in) ::  pe2(i1:i2,kn+1)     !< hieght at layer edges
+   real, intent(in) ::  pe2(i1:i2,kn+1)     !< hieght at layer edges
                                                !! (from model top to bottom surface)
-      real, intent(in) ::  q1(i1:i2,km)        !< Field input
+   real, intent(in) ::  q1(i1:i2,km)        !< Field input
 
 ! INPUT/OUTPUT PARAMETERS:
-      real, intent(inout)::  q2(i1:i2,kn)      !< Field output
+   real, intent(inout)::  q2(i1:i2,kn)      !< Field output
 
 ! LOCAL VARIABLES:
-      real   qs(i1:i2)
-      real  dp1(  i1:i2,km)
-      real   q4(4,i1:i2,km)
-      real   pl, pr, qsum, delp, esl
-      integer i, k, l, m, k0
+   real   qs(i1:i2)
+   real  dp1(  i1:i2,km)
+   real   q4(4,i1:i2,km)
+   real   pl, pr, qsum, delp, esl
+   integer i, k, l, m, k0
+   logical :: frac_calc !< determine if calc is needed; replaces previous goto statement logic
 
-      do k=1,km
-         do i=i1,i2
-             dp1(i,k) = pe1(i,k+1) - pe1(i,k)      ! negative
-            q4(1,i,k) = q1(i,k)
-         enddo
-      enddo
+   do k=1,km
+     do i=i1,i2
+       dp1(i,k) = pe1(i,k+1) - pe1(i,k)      ! negative
+        q4(1,i,k) = q1(i,k)
+     enddo
+   enddo
 
 ! Compute vertical subgrid distribution
    if ( kord >7 ) then
-        call  cs_profile( qs, q4, dp1, km, i1, i2, iv, kord )
+     call  cs_profile( qs, q4, dp1, km, i1, i2, iv, kord )
    else
-        call ppm_profile( q4, dp1, km, i1, i2, iv, kord )
+     call ppm_profile( q4, dp1, km, i1, i2, iv, kord )
    endif
 
 ! Mapping
-      do 1000 i=i1,i2
-         k0 = 1
-      do 555 k=1,kn
-      do 100 l=k0,km
-! locate the top edge: pe2(i,k)
-      if(pe2(i,k) <= pe1(i,l) .and. pe2(i,k) >= pe1(i,l+1)) then
-         pl = (pe2(i,k)-pe1(i,l)) / dp1(i,l)
-         if(pe2(i,k+1) >= pe1(i,l+1)) then
-! entire new grid is within the original grid
-            pr = (pe2(i,k+1)-pe1(i,l)) / dp1(i,l)
-            q2(i,k) = q4(2,i,l) + 0.5*(q4(4,i,l)+q4(3,i,l)-q4(2,i,l))  &
-                       *(pr+pl)-q4(4,i,l)*r3*(pr*(pr+pl)+pl**2)
+   do i=i1,i2
+     k0 = 1
+     do k=1,kn
+       frac_calc = .false.
+            
+         do l=k0,km
+           ! locate the top edge: pe2(i,k)
+           if(pe2(i,k) <= pe1(i,l) .and. pe2(i,k) >= pe1(i,l+1)) then
+             pl = (pe2(i,k)-pe1(i,l)) / dp1(i,l)
+             if(pe2(i,k+1) >= pe1(i,l+1)) then
+             ! entire new grid is within the original grid
+               pr = (pe2(i,k+1)-pe1(i,l)) / dp1(i,l)
+               q2(i,k) = q4(2,i,l) + 0.5*(q4(4,i,l)+q4(3,i,l)-q4(2,i,l))  &
+                         *(pr+pl)-q4(4,i,l)*r3*(pr*(pr+pl)+pl**2)
                k0 = l
-               goto 555
-          else
-! Fractional area...
-            qsum = (pe1(i,l+1)-pe2(i,k))*(q4(2,i,l)+0.5*(q4(4,i,l)+   &
-                    q4(3,i,l)-q4(2,i,l))*(1.+pl)-q4(4,i,l)*           &
-                     (r3*(1.+pl*(1.+pl))))
-              do m=l+1,km
-! locate the bottom edge: pe2(i,k+1)
+               exit  ! Terminate l-loop; continue to next k iteration
+             else
+               ! Fractional area...
+               qsum = (pe1(i,l+1)-pe2(i,k))*(q4(2,i,l)+0.5*(q4(4,i,l)+   &
+                       q4(3,i,l)-q4(2,i,l))*(1.+pl)-q4(4,i,l)*           &
+                      (r3*(1.+pl*(1.+pl))))
+               do m=l+1,km
+                 ! locate the bottom edge: pe2(i,k+1)
                  if(pe2(i,k+1) < pe1(i,m+1) ) then
-! Whole layer..
-                    qsum = qsum + dp1(i,m)*q4(1,i,m)
+                   ! Whole layer..
+                   qsum = qsum + dp1(i,m)*q4(1,i,m)
                  else
-                    delp = pe2(i,k+1)-pe1(i,m)
-                    esl = delp / dp1(i,m)
-                    qsum = qsum + delp*(q4(2,i,m)+0.5*esl*               &
+                   delp = pe2(i,k+1)-pe1(i,m)
+                   esl = delp / dp1(i,m)
+                   qsum = qsum + delp*(q4(2,i,m)+0.5*esl*               &
                          (q4(3,i,m)-q4(2,i,m)+q4(4,i,m)*(1.-r23*esl)))
-                    k0 = m
-                 goto 123
+                   k0 = m
+                   exit  ! Terminate m-loop; set frac_calc to True
                  endif
-              enddo
-              goto 123
+               enddo
+               frac_calc = .true.
+               exit  ! Found frac_calc point, exit l-loop to compute q2
+             endif
            endif
-      endif
-100   continue
-123   q2(i,k) = qsum / ( pe2(i,k+1) - pe2(i,k) )
-555   continue
-1000  continue
+         enddo
+       
+       ! Compute q2 if frac_calc point was found
+       if (frac_calc) then
+         q2(i,k) = qsum / ( pe2(i,k+1) - pe2(i,k) )
+       endif
+       
+     enddo
+   enddo
 
  end subroutine remap_z
 
