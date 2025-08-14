@@ -3409,8 +3409,8 @@ endif        ! end last_step check
 #endif
                         dpsum = dpsum + delp
                      endif
-                     q2(i,k) = qsum / dpsum
                   endif
+                  q2(i,k) = qsum / dpsum
                endif
             endif
          enddo
