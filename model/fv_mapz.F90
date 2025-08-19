@@ -1137,7 +1137,7 @@ endif        ! end last_step check
    real   q4(4,i1:i2,km)
    real   pl, pr, qsum, delp, esl
    integer i, k, l, m, k0
-   logical :: frac_calc !< determine if calc is needed; replaces previous goto statement logic
+   logical :: spans_multi_layers !< Does the current layer span multiple layers (downsampling or upsampling)
 
    do k=1,km
      do i=i1,i2
@@ -1157,7 +1157,7 @@ endif        ! end last_step check
    do i=i1,i2
      k0 = 1
      do k=1,kn
-       frac_calc = .false.
+       spans_multi_layers = .false.
             
          do l=k0,km
            ! locate the top edge: pe2(i,k)
@@ -1186,17 +1186,16 @@ endif        ! end last_step check
                    qsum = qsum + delp*(q4(2,i,m)+0.5*esl*               &
                          (q4(3,i,m)-q4(2,i,m)+q4(4,i,m)*(1.-r23*esl)))
                    k0 = m
-                   exit  ! Terminate m-loop; set frac_calc to True
+                   exit
                  endif
                enddo
-               frac_calc = .true.
-               exit  ! Found frac_calc point, exit l-loop to compute q2
+               spans_multi_layers = .true.
+               exit
              endif
            endif
          enddo
-       
-       ! Compute q2 if frac_calc point was found
-       if (frac_calc) then
+
+       if (spans_multi_layers) then
          q2(i,k) = qsum / ( pe2(i,k+1) - pe2(i,k) )
        endif
        
@@ -1240,7 +1239,7 @@ endif        ! end last_step check
    real   q4(4,i1:i2,km)
    real    pl, pr, qsum, dp, esl
    integer i, k, l, m, k0
-   logical frac_calc
+   logical spans_multi_layers
 
    do k=1,km
       do i=i1,i2
@@ -1259,7 +1258,7 @@ endif        ! end last_step check
   do i=i1,i2
      k0 = 1
      do k=1,kn
-        frac_calc = .false.
+        spans_multi_layers = .false.
         
         do l=k0,km
 ! locate the top edge: pe2(i,k)
@@ -1291,12 +1290,12 @@ endif        ! end last_step check
                        exit
                     endif
                  enddo
-                 frac_calc = .true.
+                 spans_multi_layers = .true.
                  exit
               endif
            endif
         enddo
-        if(frac_calc) then
+        if(spans_multi_layers) then
            q2(i,j,k) = qsum / ( pe2(i,k+1) - pe2(i,k) )
         endif
      enddo
@@ -1339,7 +1338,7 @@ endif        ! end last_step check
    real   q4(4,i1:i2,km)
    real    pl, pr, qsum, dp, esl
    integer i, k, l, m, k0
-   logical frac_calc
+   logical spans_multi_layers
 
    do k=1,km
       do i=i1,i2
@@ -1358,7 +1357,7 @@ endif        ! end last_step check
   do i=i1,i2
      k0 = 1
      do k=1,kn
-        frac_calc = .false.
+        spans_multi_layers = .false.
         do l=k0,km
 ! locate the top edge: pe2(i,k)
            if( pe2(i,k) >= pe1(i,l) .and. pe2(i,k) <= pe1(i,l+1) ) then
@@ -1389,13 +1388,13 @@ endif        ! end last_step check
                         exit
                     endif
                  enddo
-                 frac_calc = .true.
+                 spans_multi_layers = .true.
                  exit
               endif
            endif
         enddo
         
-        if(frac_calc) then
+        if(spans_multi_layers) then
            q2(i,j,k) = qsum / ( pe2(i,k+1) - pe2(i,k) )
         endif
      enddo
@@ -1429,6 +1428,7 @@ endif        ! end last_step check
       real:: qs(i1:i2)
       real:: pl, pr, dp, esl, fac1, fac2
       integer:: i, k, l, m, k0, iq
+      logical :: spans_multi_layers
 
       do k=1,km
          do i=i1,i2
@@ -1446,65 +1446,68 @@ endif        ! end last_step check
       enddo
 
 ! Mapping
-      do 1000 i=i1,i2
+      do i=i1,i2
          k0 = 1
-      do 555 k=1,km
-      do 100 l=k0,km
+         do k=1,km
+            spans_multi_layers = .false.
+            do l=k0,km
 ! locate the top edge: pe2(i,k)
-      if(pe2(i,k) >= pe1(i,l) .and. pe2(i,k) <= pe1(i,l+1)) then
-         pl = (pe2(i,k)-pe1(i,l)) / dp1(i,l)
-         if(pe2(i,k+1) <= pe1(i,l+1)) then
+               if(pe2(i,k) >= pe1(i,l) .and. pe2(i,k) <= pe1(i,l+1)) then
+                  pl = (pe2(i,k)-pe1(i,l)) / dp1(i,l)
+                  if(pe2(i,k+1) <= pe1(i,l+1)) then
 ! entire new grid is within the original grid
-            pr = (pe2(i,k+1)-pe1(i,l)) / dp1(i,l)
-            fac1 = pr + pl
-            fac2 = r3*(pr*fac1 + pl*pl)
-            fac1 = 0.5*fac1
-            do iq=1,nq
-               q2(i,k,iq) = q4(2,i,l,iq) + (q4(4,i,l,iq)+q4(3,i,l,iq)-q4(2,i,l,iq))*fac1  &
-                                         -  q4(4,i,l,iq)*fac2
-            enddo
-            k0 = l
-            goto 555
-          else
+                     pr = (pe2(i,k+1)-pe1(i,l)) / dp1(i,l)
+                     fac1 = pr + pl
+                     fac2 = r3*(pr*fac1 + pl*pl)
+                     fac1 = 0.5*fac1
+                     do iq=1,nq
+                        q2(i,k,iq) = q4(2,i,l,iq) + (q4(4,i,l,iq)+q4(3,i,l,iq)-q4(2,i,l,iq))*fac1  &
+                                     -  q4(4,i,l,iq)*fac2
+                     enddo
+                     k0 = l
+                     exit
+                  else
 ! Fractional area...
-            dp = pe1(i,l+1) - pe2(i,k)
-            fac1 = 1. + pl
-            fac2 = r3*(1.+pl*fac1)
-            fac1 = 0.5*fac1
-            do iq=1,nq
-               qsum(iq) = dp*(q4(2,i,l,iq) + (q4(4,i,l,iq)+   &
-                              q4(3,i,l,iq) - q4(2,i,l,iq))*fac1 - q4(4,i,l,iq)*fac2)
-            enddo
-            do m=l+1,km
+                     dp = pe1(i,l+1) - pe2(i,k)
+                     fac1 = 1. + pl
+                     fac2 = r3*(1.+pl*fac1)
+                     fac1 = 0.5*fac1
+                     do iq=1,nq
+                        qsum(iq) = dp*(q4(2,i,l,iq) + (q4(4,i,l,iq)+   &
+                                   q4(3,i,l,iq) - q4(2,i,l,iq))*fac1 - q4(4,i,l,iq)*fac2)
+                     enddo
+                     do m=l+1,km
 ! locate the bottom edge: pe2(i,k+1)
-               if(pe2(i,k+1) > pe1(i,m+1) ) then
-                                                   ! Whole layer..
-                  do iq=1,nq
-                     qsum(iq) = qsum(iq) + dp1(i,m)*q4(1,i,m,iq)
-                  enddo
-               else
-                  dp = pe2(i,k+1)-pe1(i,m)
-                  esl = dp / dp1(i,m)
-                  fac1 = 0.5*esl
-                  fac2 = 1.-r23*esl
-                  do iq=1,nq
-                     qsum(iq) = qsum(iq) + dp*( q4(2,i,m,iq) + fac1*(         &
-                                q4(3,i,m,iq)-q4(2,i,m,iq)+q4(4,i,m,iq)*fac2 ) )
-                  enddo
-                  k0 = m
-                  goto 123
+                        if(pe2(i,k+1) > pe1(i,m+1) ) then
+! Whole layer..
+                           do iq=1,nq
+                              qsum(iq) = qsum(iq) + dp1(i,m)*q4(1,i,m,iq)
+                           enddo
+                        else
+                           dp = pe2(i,k+1)-pe1(i,m)
+                           esl = dp / dp1(i,m)
+                           fac1 = 0.5*esl
+                           fac2 = 1.-r23*esl
+                           do iq=1,nq
+                              qsum(iq) = qsum(iq) + dp*( q4(2,i,m,iq) + fac1*(         &
+                                         q4(3,i,m,iq)-q4(2,i,m,iq)+q4(4,i,m,iq)*fac2 ) )
+                           enddo
+                           k0 = m
+                           exit
+                        endif
+                     enddo
+                     spans_multi_layers = .true.
+                     exit
+                  endif
                endif
             enddo
-            goto 123
-          endif
-      endif
-100   continue
-123   continue
-      do iq=1,nq
-         q2(i,k,iq) = qsum(iq) / dp2(i,k)
+            if (spans_multi_layers) then
+               do iq=1,nq
+                  q2(i,k,iq) = qsum(iq) / dp2(i,k)
+               enddo
+            endif
+         enddo
       enddo
-555   continue
-1000  continue
 
   if (fill) call fillz(i2-i1+1, km, nq, q2, dp2)
 
@@ -1553,6 +1556,7 @@ endif        ! end last_step check
       real   pl, pr, qsum, dp, esl
 
       integer i, k, l, m, k0
+      logical spans_multi_layers
 
       do k=1,km
          do i=i1,i2
@@ -1569,46 +1573,50 @@ endif        ! end last_step check
    endif
 
 ! Mapping
-      do 1000 i=i1,i2
-         k0 = 1
-      do 555 k=1,kn
-      do 100 l=k0,km
+   do i=i1,i2
+      k0 = 1
+      do k=1,kn
+         spans_multi_layers = .false.
+         do l=k0,km
 ! locate the top edge: pe2(i,k)
-      if(pe2(i,k) >= pe1(i,l) .and. pe2(i,k) <= pe1(i,l+1)) then
-         pl = (pe2(i,k)-pe1(i,l)) / dp1(i,l)
-         if(pe2(i,k+1) <= pe1(i,l+1)) then
+         if(pe2(i,k) >= pe1(i,l) .and. pe2(i,k) <= pe1(i,l+1)) then
+            pl = (pe2(i,k)-pe1(i,l)) / dp1(i,l)
+            if(pe2(i,k+1) <= pe1(i,l+1)) then
 ! entire new grid is within the original grid
-            pr = (pe2(i,k+1)-pe1(i,l)) / dp1(i,l)
-            q2(i,k) = q4(2,i,l) + 0.5*(q4(4,i,l)+q4(3,i,l)-q4(2,i,l))  &
-                       *(pr+pl)-q4(4,i,l)*r3*(pr*(pr+pl)+pl**2)
+               pr = (pe2(i,k+1)-pe1(i,l)) / dp1(i,l)
+               q2(i,k) = q4(2,i,l) + 0.5*(q4(4,i,l)+q4(3,i,l)-q4(2,i,l))  &
+                          *(pr+pl)-q4(4,i,l)*r3*(pr*(pr+pl)+pl**2)
                k0 = l
-               goto 555
-          else
+               exit
+            else
 ! Fractional area...
-            qsum = (pe1(i,l+1)-pe2(i,k))*(q4(2,i,l)+0.5*(q4(4,i,l)+   &
-                    q4(3,i,l)-q4(2,i,l))*(1.+pl)-q4(4,i,l)*           &
+               qsum = (pe1(i,l+1)-pe2(i,k))*(q4(2,i,l)+0.5*(q4(4,i,l)+   &
+                       q4(3,i,l)-q4(2,i,l))*(1.+pl)-q4(4,i,l)*           &
                      (r3*(1.+pl*(1.+pl))))
-              do m=l+1,km
+               do m=l+1,km
 ! locate the bottom edge: pe2(i,k+1)
-                 if(pe2(i,k+1) > pe1(i,m+1) ) then
-                                                   ! Whole layer..
-                    qsum = qsum + dp1(i,m)*q4(1,i,m)
-                 else
+                  if(pe2(i,k+1) > pe1(i,m+1) ) then
+! Whole layer..
+                     qsum = qsum + dp1(i,m)*q4(1,i,m)
+                  else
                      dp = pe2(i,k+1)-pe1(i,m)
-                    esl = dp / dp1(i,m)
-                   qsum = qsum + dp*(q4(2,i,m)+0.5*esl*               &
-                       (q4(3,i,m)-q4(2,i,m)+q4(4,i,m)*(1.-r23*esl)))
-                   k0 = m
-                   goto 123
-                 endif
-              enddo
-              goto 123
-          endif
-      endif
-100   continue
-123   q2(i,k) = qsum / dp2(i,k)
-555   continue
-1000  continue
+                     esl = dp / dp1(i,m)
+                     qsum = qsum + dp*(q4(2,i,m)+0.5*esl*               &
+                           (q4(3,i,m)-q4(2,i,m)+q4(4,i,m)*(1.-r23*esl)))
+                     k0 = m
+                     exit
+                  endif
+               enddo
+               spans_multi_layers = .true.
+               exit
+            endif
+         endif
+         enddo
+         if(spans_multi_layers) then
+            q2(i,k) = qsum / dp2(i,k)
+         endif
+      enddo
+   enddo
 
  end subroutine map1_q2
 
@@ -3309,7 +3317,7 @@ endif        ! end last_step check
       integer i, k, l
       integer k0, k1
       real pl, pr, tt, delp, qsum, dpsum, esl
-      logical frac_area, is_whole_layer
+      logical spans_multi_layers, is_whole_layer
 
       do k=1,km
          do i=i1,i2
@@ -3338,7 +3346,7 @@ endif        ! end last_step check
       do i=i1,i2
          k0 = 1
          do k=1,kn
-            frac_area = .true.
+            spans_multi_layers = .true.
             if(pe2(i,k) .le. pe1(i,1)) then
 ! above old ptop
                q2(i,k) = q1(i,1)
@@ -3364,7 +3372,7 @@ endif        ! end last_step check
                         TT = r3*(PR*(PR+PL)+PL**2)
                         q2(i,k) = a4(2,i,L) + 0.5*(a4(4,i,L)+a4(3,i,L)  &
                                 - a4(2,i,L))*(PR+PL) - a4(4,i,L)*TT
-                        frac_area = .false.
+                        spans_multi_layers = .false.
                         exit ! exit L-loop
                      else
 ! Fractional area...
@@ -3379,7 +3387,7 @@ endif        ! end last_step check
                   endif
                enddo
                
-               if(frac_area) then
+               if(spans_multi_layers) then
                   is_whole_layer = .true.
                   do L=k1,km
                      if( pe2(i,k+1) .gt. pe1(i,L+1) ) then
@@ -3409,8 +3417,8 @@ endif        ! end last_step check
 #endif
                         dpsum = dpsum + delp
                      endif
+                     q2(i,k) = qsum / dpsum
                   endif
-                  q2(i,k) = qsum / dpsum
                endif
             endif
          enddo
