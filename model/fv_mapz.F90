@@ -1644,6 +1644,7 @@ endif        ! end last_step check
    real   q4(4,i1:i2,km)
    real   pl, pr, qsum, dp, esl
    integer i, k, l, m, k0
+   logical spans_multi_layer
 
    do k=1,km
       do i=i1,i2
@@ -1661,7 +1662,8 @@ endif        ! end last_step check
 
    do i=i1,i2
       k0 = 1
-      do 555 k=1,kn
+      do k=1,kn
+         spans_multi_layer = .false.
 #ifdef OLD_TOP_EDGE
          if( pe2(i,k+1) <= pe1(i,1) ) then
 ! Entire grid above old ptop
@@ -1685,7 +1687,7 @@ endif        ! end last_step check
                   q2(i,k) = q4(2,i,l) + 0.5*(q4(4,i,l)+q4(3,i,l)-q4(2,i,l))  &
                           *(pr+pl)-q4(4,i,l)*r3*(pr*(pr+pl)+pl**2)
                   k0 = l
-                  goto 555
+                  exit
                else
 ! Fractional area...
                  qsum = (pe1(i,l+1)-pe2(i,k))*(q4(2,i,l)+0.5*(q4(4,i,l)+   &
@@ -1702,16 +1704,19 @@ endif        ! end last_step check
                       qsum = qsum + dp*(q4(2,i,m)+0.5*esl*               &
                             (q4(3,i,m)-q4(2,i,m)+q4(4,i,m)*(1.-r23*esl)))
                       k0 = m
-                      goto 123
+                      exit
                     endif
                  enddo
-                 goto 123
+                 spans_multi_layer = .true.
+                 exit
                endif
            endif
            enddo
-123        q2(i,k) = qsum / ( pe2(i,k+1) - pe2(i,k) )
+           if(spans_multi_layer) then
+             q2(i,k) = qsum / ( pe2(i,k+1) - pe2(i,k) )
+           endif
          endif
-555   continue
+      enddo
    enddo
 
  end subroutine remap_2d
