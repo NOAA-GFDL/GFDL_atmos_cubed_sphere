@@ -1888,14 +1888,13 @@ contains
      do i=is, ie
      if( qv(i,j,kbot) < 0. ) then
          do k=kbot-1,1,-1
-            if ( qv(i,j,kbot)>=0. ) goto 123
+            if ( qv(i,j,kbot)>=0. ) exit
             if ( qv(i,j,k) > 0. ) then
                  dq = min(-qv(i,j,kbot)*dp(i,j,kbot), qv(i,j,k)*dp(i,j,k))
                  qv(i,j,k   ) = qv(i,j,k   ) - dq/dp(i,j,k)
                  qv(i,j,kbot) = qv(i,j,kbot) + dq/dp(i,j,kbot)
             endif
          enddo   ! k-loop
-123      continue
      endif
      enddo ! i-loop
  enddo   ! j-loop
@@ -2261,14 +2260,13 @@ real, dimension(is:ie,js:je):: pt2, qv2, ql2, qi2, qs2, qr2, qg2, qh2, dp2, p2, 
      do i=is, ie
      if( qv(i,j,kbot) < 0. ) then
          do k=kbot-1,1,-1
-            if ( qv(i,j,kbot)>=0. ) goto 123
+            if ( qv(i,j,kbot)>=0. ) exit
             if ( qv(i,j,k) > 0. ) then
                  dq = min(-qv(i,j,kbot)*dp(i,j,kbot), qv(i,j,k)*dp(i,j,k))
                  qv(i,j,k   ) = qv(i,j,k   ) - dq/dp(i,j,k)
                  qv(i,j,kbot) = qv(i,j,kbot) + dq/dp(i,j,kbot)
             endif
          enddo   ! k-loop
-123      continue
      endif
      enddo ! i-loop
  enddo   ! j-loop
@@ -2581,14 +2579,13 @@ real, dimension(is:ie,js:je):: pt2, qv2, ql2, qi2, qs2, qr2, qg2, qh2, dp2, p2, 
       if( qv(i,j,kbot) < 0. ) then
          tx1 = 1.0 / dp(i,j,kbot)
          do k=kbot-1,1,-1
-            if ( qv(i,j,kbot)>= 0. ) goto 123
+            if ( qv(i,j,kbot)>= 0. ) exit
             if ( qv(i,j,k) > 0. ) then
                  dq = min(-qv(i,j,kbot)*dp(i,j,kbot), qv(i,j,k)*dp(i,j,k))
                  qv(i,j,k   ) = qv(i,j,k   ) - dq / dp(i,j,k)
                  qv(i,j,kbot) = qv(i,j,kbot) + dq * tx1
             endif
          enddo   ! k-loop
-123      continue
       endif
     enddo ! i-loop
  enddo   ! j-loop
@@ -2637,31 +2634,32 @@ real, dimension(is:ie,js:je):: pt2, qv2, ql2, qi2, qs2, qr2, qg2, qh2, dp2, p2, 
  integer:: i, k
  real:: sum1, sum2, dq
 
- do 500 i=1,im
+  do i=1,im
     sum1 = 0.
     do k=1,km
        if ( q(i,k)>0. ) then
             sum1 = sum1 + q(i,k)*dp(i,k)
        endif
     enddo
-    if ( sum1<1.E-12  ) goto 500
-    sum2 = 0.
-    do k=km,1,-1
-       if ( q(i,k)<0.0 .and. sum1>0. ) then
-            dq = min( sum1, -q(i,k)*dp(i,k) )
-            sum1 = sum1 - dq
-            sum2 = sum2 + dq
-            q(i,k) = q(i,k) + dq/dp(i,k)
-       endif
-    enddo
-    do k=km,1,-1
-       if ( q(i,k)>0.0 .and. sum2>0. ) then
-            dq = min( sum2, q(i,k)*dp(i,k) )
-            sum2 = sum2 - dq
-            q(i,k) = q(i,k) - dq/dp(i,k)
-       endif
-    enddo
-500  continue
+    if ( sum1 >= 1.E-12  ) then
+      sum2 = 0.
+      do k=km,1,-1
+        if ( q(i,k)<0.0 .and. sum1>0. ) then
+          dq = min( sum1, -q(i,k)*dp(i,k) )
+          sum1 = sum1 - dq
+          sum2 = sum2 + dq
+          q(i,k) = q(i,k) + dq/dp(i,k)
+        endif
+      enddo
+      do k=km,1,-1
+        if ( q(i,k)>0.0 .and. sum2>0. ) then
+          dq = min( sum2, q(i,k)*dp(i,k) )
+          sum2 = sum2 - dq
+          q(i,k) = q(i,k) - dq/dp(i,k)
+        endif
+      enddo
+    endif
+  enddo
 
  end subroutine fillq
 
