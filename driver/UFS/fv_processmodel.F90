@@ -882,7 +882,7 @@
         enddo
        
        ! Interpolate to p levels using pk1: p**kappa
-        do 555 k=1, km
+        do k=1, km
            if ( pk1(k) .le. pk(1) ) then
                 tp(k) = pt(1)*pk(1)/pk1(k)   ! isothermal above
                 qp(k) = qst                  ! set to stratosphere value
@@ -895,11 +895,11 @@
                     fac_z = (pk1(k)-pk(kk))/(pk(kk+1)-pk(kk))
                     tp(k) = pt(kk) + (pt(kk+1)-pt(kk))*fac_z
                     qp(k) = qs(kk) + (qs(kk+1)-qs(kk))*fac_z
-                    goto 555
+                    exit
                 endif
              enddo
            endif
-       555  continue
+        enddo
        
         do k=1,km
            tp(k) = tp(k)*pk1(k)    ! temperature
