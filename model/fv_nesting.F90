@@ -2677,10 +2677,10 @@ subroutine twoway_nesting(Atm, ngrids, grids_on_this_pe, zvir, Time, this_grid)
          if (parent_grid%neststruct%parent_proc) then
 
          !comment out if statement to always remap theta instead of t in the remap-update.
-         !(In LtE typically we use remap_option = 0: remapping t is better (except in
+         !(In LtE typically we use remap_t = .true.: remapping t is better (except in
          !idealized simulations with a background uniform theta) since near the top
          !boundary theta is exponential, which is hard to accurately interpolate with a spline
-         if (.not. parent_grid%flagstruct%remap_option==0) then
+         if (.not. parent_grid%flagstruct%remap_t) then
 !$OMP parallel do default(none) shared(jsc_p,jec_p,isc_p,iec_p,parent_grid,zvir,sphum)
             do k=1,parent_grid%npz
                do j=jsc_p,jec_p
@@ -2703,7 +2703,7 @@ subroutine twoway_nesting(Atm, ngrids, grids_on_this_pe, zvir, Time, this_grid)
               parent_grid%flagstruct%kord_wz, &
               isc_p, iec_p, jsc_p, jec_p, isd_p, ied_p, jsd_p, jed_p, .false., &
               neststruct%isu, neststruct%ieu, neststruct%jsu, neststruct%jeu, blend_wt) !neststruct%nestupdate < 7)
-         if (.not. parent_grid%flagstruct%remap_option==0) then
+         if (.not. parent_grid%flagstruct%remap_t) then
 !$OMP parallel do default(none) shared(jsc_p,jec_p,isc_p,iec_p,parent_grid,zvir,sphum)
             do k=1,parent_grid%npz
                do j=jsc_p,jec_p
