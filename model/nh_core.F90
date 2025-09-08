@@ -72,7 +72,7 @@ CONTAINS
                           ptop, zs, q_con, w,  delz, pt,  &
                           delp, zh, pe, ppe, pk3, pk, peln, &
                           ws, scale_m,  p_fac, a_imp, &
-                          use_logp, last_call, fp_out, fast_tau_w_sec)
+                          use_logp, last_call, fp_out,fast_tau_w_sec, grav_var, visc3d)
 !--------------------------------------------
 ! !OUTPUT PARAMETERS
 ! Ouput: gz: grav*height at edges
@@ -90,6 +90,7 @@ CONTAINS
 #ifdef MULTI_GASES
    real, intent(in), dimension(isd:ied,jsd:jed,km):: kapad
 #endif
+   real, intent(in), dimension(isd:ied,jsd:jed,km):: grav_var
    real, intent(in), dimension(isd:ied,jsd:jed,km):: delp, pt
    real, intent(inout), dimension(isd:ied,jsd:jed,km+1):: zh
    real, intent(inout), dimension(isd:ied,jsd:jed,km):: w
@@ -99,22 +100,33 @@ CONTAINS
    real, intent(out):: delz(is:ie,js:je,km)
    real, intent(out):: pk(is:ie,js:je,km+1)
    real, intent(out):: pk3(isd:ied,jsd:jed,km+1)
+   real, optional, intent(in) :: visc3d(isd:ied,jsd:jed,km)
 ! Local:
-  real, dimension(is:ie,km):: dm, dz2, pm2, w2, gm2, cp2
+  real, dimension(is:ie,km):: dm, dz2, pm2, w2, gm2, cp2, visc
   real, dimension(is:ie,km+1)::pem, pe2, peln2, peg, pelng
 #ifdef MULTI_GASES
   real, dimension(is:ie,km):: kapad2
 #endif
-  real gama, rgrav, ptk, peln1
+  real, dimension(isd:ied,jsd:jed,km) :: rgrav
+  real gama, ptk, peln1
   integer i, j, k
 
     gama = 1./(1.-akap)
-   rgrav = 1./grav
+    do k=1,km
+      do j=jsd,jed
+        do i=isd,ied
+          rgrav(i,j,k) = 1./grav_var(i,j,k)
+        enddo
+      enddo
+    enddo
+
    peln1 = log(ptop)
      ptk = exp(akap*peln1)
 
+   visc(:,:) = 0.0
+
 !$OMP parallel do default(none) shared(is,ie,js,je,km,delp,ptop,peln1,pk3,ptk,akap,rgrav,zh,pt, &
-!$OMP                                  w,a_imp,dt,gama,ws,p_fac,scale_m,ms,delz,last_call,  &
+!$OMP                                  w,a_imp,dt,gama,ws,p_fac,scale_m,ms,delz,last_call,visc3d,visc, &
 #ifdef MULTI_GASES
 !$OMP                                  peln,pk,fp_out,ppe,use_logp,zs,pe,cappa,q_con,kapad,fast_tau_w_sec )          &
 !$OMP                          private(cp2, gm2, dm, dz2, pm2, pem, peg, pelng, pe2, peln2, w2,kapad2)
@@ -133,6 +145,7 @@ CONTAINS
 #ifdef MULTI_GASES
             kapad2(i,k) = kapad(i,j,k)
 #endif
+            if(present(visc3d)) visc(i,k) = visc3d(i,j,k)
          enddo
       enddo
 
@@ -172,7 +185,7 @@ CONTAINS
 #else
             pm2(i,k) = dm(i,k)/(peln2(i,k+1)-peln2(i,k))
 #endif
-             dm(i,k) = dm(i,k) * rgrav
+             dm(i,k) = dm(i,k) * rgrav(i,j,k)
             dz2(i,k) = zh(i,j,k+1) - zh(i,j,k)
              w2(i,k) = w(i,j,k)
          enddo
@@ -206,7 +219,7 @@ CONTAINS
                             kapad2,  &
 #endif
                             pe2, dm,   &
-                            pm2, pem, w2, dz2, pt(is:ie,j,1:km), ws(is,j), p_fac, fast_tau_w_sec)
+                            pm2, pem, w2, dz2, pt(is:ie,j,1:km), ws(is,j), p_fac, fast_tau_w_sec, visc)
       else
            call SIM_solver(dt, is, ie, km, rdgas, gama, gm2, cp2, akap, &
 #ifdef MULTI_GASES

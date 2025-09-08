@@ -103,7 +103,7 @@ module dyn_core_mod
 !   </tr>
 ! </table>
 
-  use constants_mod,      only: rdgas, radius, cp_air, pi
+  use constants_mod,      only: rdgas, radius, cp_air, pi, grav
   use mpp_mod,            only: mpp_pe
   use mpp_domains_mod,    only: CGRID_NE, DGRID_NE, mpp_get_boundary, mpp_update_domains,  &
                                 domain2d
@@ -181,7 +181,7 @@ contains
 #ifdef MULTI_GASES
                      kapad,  &
 #endif
-                     grav, hydrostatic,  &
+                     grav_var_h, hydrostatic,  &
                      u,  v,  w, delz, pt, q, delp, pe, pk, phis, ws, omga, ptop, pfull, ua, va, &
                      uc, vc,                                     &
 !The following variable is for SA-3D-TKE (kyf) (modify for data structure)
@@ -196,7 +196,7 @@ contains
     integer, intent(IN) :: ng, nq, sphum
     integer, intent(IN) :: n_map, n_split
     real   , intent(IN) :: bdt
-    real   , intent(IN) :: zvir, cp, akap, grav
+    real   , intent(IN) :: zvir, cp, akap
     real   , intent(IN) :: ptop
     logical, intent(IN) :: hydrostatic
     logical, intent(IN) :: init_step, end_step
@@ -215,6 +215,7 @@ contains
 #endif
     real, intent(inout) :: pt(  bd%isd:bd%ied  ,bd%jsd:bd%jed  ,npz)  !< potential temperature (K)
     real, intent(inout) :: delp(bd%isd:bd%ied  ,bd%jsd:bd%jed  ,npz)  !< pressure thickness (pascal)
+    real, intent(inout) :: grav_var_h(bd%isd:bd%ied,bd%jsd:bd%jed,npz+1)  !< variable gravity
     real, intent(inout) :: q(   bd%isd:bd%ied  ,bd%jsd:bd%jed  ,npz, nq)  !
     real, intent(in), optional:: time_total  !< total time (seconds) since start
     real, intent(inout) :: diss_est(bd%isd:bd%ied  ,bd%jsd:bd%jed  ,npz)  !< skeb dissipation estimate
@@ -292,7 +293,7 @@ contains
     real    :: beta, beta_d, d_con_k, damp_w, damp_t, kgb, cv_air
     real    :: dt, dt2, rdt
     real    :: d2_divg
-    real    :: k1k, rdg, dtmp, delt
+    real    :: k1k, dtmp, delt
     real    :: recip_k_split_n_split
     real    :: reg_bc_update_time
     logical :: last_step, remap_step
@@ -302,9 +303,10 @@ contains
 !The following is for SA-3D-TKE
     integer :: sgs_tke
 
+    real, dimension(bd%is:bd%ie,bd%js:bd%je,npz) :: rdg
     integer :: is,  ie,  js,  je
     integer :: isd, ied, jsd, jed
-
+    real :: grav_var(bd%isd:bd%ied,bd%jsd:bd%jed,npz)  !< variable gravity
       is  = bd%is
       ie  = bd%ie
       js  = bd%js
@@ -313,6 +315,7 @@ contains
       ied = bd%ied
       jsd = bd%jsd
       jed = bd%jed
+
 
 #ifdef SW_DYNAMICS
     peln1 = 0.
@@ -325,7 +328,6 @@ contains
     rdt = 1.0/dt
     ms = max(1, flagstruct%m_split/2)
     beta = flagstruct%beta
-    rdg = -rdgas / grav
     cv_air = cp_air - rdgas
     recip_k_split_n_split=1./real(flagstruct%k_split*n_split)
 
@@ -335,8 +337,8 @@ contains
 
     if ( .not.hydrostatic ) then
 
-         rgrav = 1.0/grav
            k1k =  akap / (1.-akap)    ! rg/Cv=0.4
+           rgrav = 1.0 / grav
 
 !$OMP parallel do default(none) shared(npz,dp_ref,ak,bk)
        do k=1,npz
@@ -507,7 +509,24 @@ contains
      if ( it==1 ) then
                                        call timing_on('COMM_TOTAL')
           call complete_group_halo_update(i_pack(1), domain)
+          if(flagstruct%var_grav) call complete_group_halo_update(i_pack(2), domain)
                                       call timing_off('COMM_TOTAL')
+          do k=1,npz
+            do j=jsd,jed
+              do i=isd,ied
+                grav_var(i,j,k) = (grav_var_h(i,j,k+1)+grav_var_h(i,j,k))/2.
+              enddo
+            enddo
+          enddo
+
+          do k=1,npz
+            do j=js,je
+              do i=is,ie
+                rdg(i,j,k) = -rdgas / grav_var(i,j,k)
+              enddo
+            enddo
+          enddo
+
           beta_d = 0.
      else
           beta_d = beta
@@ -538,7 +557,7 @@ contains
      if( .not. hydrostatic )  &
           call complete_group_halo_update(i_pack(7), domain)
                                                      call timing_off('COMM_TOTAL')
-
+                                                     
                                                      call timing_on('c_sw')
 !$OMP parallel do default(none) shared(npz,isd,jsd,delpc,delp,ptc,pt,u,v,w,uc,vc,ua,va, &
 !$OMP                                  omga,ut,vt,divgd,flagstruct,dt2,hydrostatic,bd,  &
@@ -647,11 +666,11 @@ contains
                                ptop, phis, omga, ptc,  &
                                q_con,  delpc, gz,  pkc, ws3, flagstruct%p_fac, &
                                flagstruct%a_imp, flagstruct%scale_z, pfull, &
-                               flagstruct%fast_tau_w_sec, flagstruct%rf_cutoff_w )
+                               flagstruct%fast_tau_w_sec, flagstruct%rf_cutoff_w,grav_var)
                                                call timing_off('Riem_Solver')
 
            if (gridstruct%nested) then
-           call nh_bc(ptop, grav, akap, cp, delpc, neststruct%delz_BC, ptc, phis, &
+           call nh_bc(ptop, grav_var, akap, cp, delpc, neststruct%delz_BC, ptc, phis, &
 #ifdef MULTI_GASES
                 q, &
 #endif
@@ -669,7 +688,7 @@ contains
            if (flagstruct%regional) then
 
              reg_bc_update_time=current_time_in_seconds+bdt*(n_map-1)+(0.5+(it-1))*dt
-             call nh_bc(ptop, grav, akap, cp, delpc, delz_regBC, ptc, phis, &
+             call nh_bc(ptop, grav_var, akap, cp, delpc, delz_regBC, ptc, phis, &
 #ifdef MULTI_GASES
                 q, &
 #endif
@@ -1078,6 +1097,7 @@ contains
 !           call prt_maxmin('WS', ws, is, ie, js, je, 0, 1, 1., master)
             used=send_data(idiag%id_ws, ws, fv_time)
         endif
+
                                                          call timing_on('Riem_Solver')
 
         call Riem_Solver3(flagstruct%m_split, dt,  is,  ie,   js,   je, npz, ng,     &
@@ -1090,8 +1110,9 @@ contains
                          pe, pkc, pk3, pk, peln, ws, &
                          flagstruct%scale_z, flagstruct%p_fac, flagstruct%a_imp, &
                          flagstruct%use_logp, remap_step, beta<-0.1, &
-                         flagstruct%fast_tau_w_sec)
+                         flagstruct%fast_tau_w_sec, grav_var)
                                                          call timing_off('Riem_Solver')
+
 
                                        call timing_on('COMM_TOTAL')
         if ( gridstruct%square_domain ) then
@@ -1112,7 +1133,7 @@ contains
         endif
 
         if (gridstruct%nested) then
-           call nh_bc(ptop, grav, akap, cp, delp, neststruct%delz_BC, pt, phis, &
+           call nh_bc(ptop, grav_var, akap, cp, delp, neststruct%delz_BC, pt, phis, &
 #ifdef MULTI_GASES
                q, &
 #endif
@@ -1129,7 +1150,7 @@ contains
 
         if (flagstruct%regional) then
           reg_bc_update_time=current_time_in_seconds+bdt*(n_map-1)+it*dt
-          call nh_bc(ptop, grav, akap, cp, delp, delz_regBC, pt, phis, &
+          call nh_bc(ptop, grav_var, akap, cp, delp, delz_regBC, pt, phis, &
 #ifdef MULTI_GASES
                q, &
 #endif
@@ -1148,11 +1169,11 @@ contains
         call timing_on('COMM_TOTAL')
         call complete_group_halo_update(i_pack(4), domain)
         call timing_off('COMM_TOTAL')
-!$OMP parallel do default(none) shared(is,ie,js,je,npz,gz,zh,grav)
+!$OMP parallel do default(none) shared(is,ie,js,je,npz,gz,zh,grav_var_h)
         do k=1,npz+1
            do j=js-2,je+2
               do i=is-2,ie+2
-                 gz(i,j,k) = zh(i,j,k)*grav
+                 gz(i,j,k) = zh(i,j,k)*grav_var_h(i,j,k)
               enddo
            enddo
         enddo
@@ -1237,12 +1258,12 @@ contains
                  do i=is,ie
 ! Note: pt at this stage is Theta_m
 #ifdef MOIST_CAPPA
-                    pkz(i,j,k) = exp(cappa(i,j,k)/(1.-cappa(i,j,k))*log(rdg*delp(i,j,k)/delz(i,j,k)*pt(i,j,k)) )
+                    pkz(i,j,k) = exp(cappa(i,j,k)/(1.-cappa(i,j,k))*log(rdg(i,j,k)*delp(i,j,k)/delz(i,j,k)*pt(i,j,k)) )
 #else
 #ifdef MULTI_GASES
-                    pkz(i,j,k) = exp( k1k*virqd(q(i,j,k,:))/vicvqd(q(i,j,k,:))*log(rdg*delp(i,j,k)/delz(i,j,k)*pt(i,j,k)) )
+                    pkz(i,j,k) = exp( k1k*virqd(q(i,j,k,:))/vicvqd(q(i,j,k,:))*log(rdg(i,j,k)*delp(i,j,k)/delz(i,j,k)*pt(i,j,k)) )
 #else
-                    pkz(i,j,k) = exp( k1k*log(rdg*delp(i,j,k)/delz(i,j,k)*pt(i,j,k)) )
+                    pkz(i,j,k) = exp( k1k*log(rdg(i,j,k)*delp(i,j,k)/delz(i,j,k)*pt(i,j,k)) )
 #endif
 #endif
                  enddo
@@ -1477,12 +1498,12 @@ contains
           do j=js,je
              do i=is,ie
 #ifdef MOIST_CAPPA
-                pkz(i,j,k) = exp( cappa(i,j,k)/(1.-cappa(i,j,k))*log(rdg*delp(i,j,k)/delz(i,j,k)*pt(i,j,k)) )
+                pkz(i,j,k) = exp( cappa(i,j,k)/(1.-cappa(i,j,k))*log(rdg(i,j,k)*delp(i,j,k)/delz(i,j,k)*pt(i,j,k)) )
 #else
 #ifdef MULTI_GASES
-                pkz(i,j,k) = exp( k1k*virqd(q(i,j,k,:))/vicvqd(q(i,j,k,:))*log(rdg*delp(i,j,k)/delz(i,j,k)*pt(i,j,k)) )
+                pkz(i,j,k) = exp( k1k*virqd(q(i,j,k,:))/vicvqd(q(i,j,k,:))*log(rdg(i,j,k)*delp(i,j,k)/delz(i,j,k)*pt(i,j,k)) )
 #else
-                pkz(i,j,k) = exp( k1k*log(rdg*delp(i,j,k)/delz(i,j,k)*pt(i,j,k)) )
+                pkz(i,j,k) = exp( k1k*log(rdg(i,j,k)*delp(i,j,k)/delz(i,j,k)*pt(i,j,k)) )
 #endif
 #endif
                 dtmp = heat_source(i,j,k) / (cv_air*delp(i,j,k))
@@ -3139,7 +3160,7 @@ do 1000 j=jfirst,jlast
 
  end subroutine gz_bc
 
-  subroutine molecular_diffusion_run(u,v,w,delp,pt,pkz,cappa,q,bd,   &
+ subroutine molecular_diffusion_run(u,v,w,delp,pt,pkz,cappa,q,bd,   &
                             gridstruct,flagstruct,domain,i_pack,npx,npy,npz, &
                             nq,dt,it,akap,zvir,cv_air)
   type(fv_grid_bounds_type), intent(IN) :: bd

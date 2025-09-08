@@ -287,6 +287,7 @@ character(len=20)   :: mod_name = 'UFS/atmosphere_mod'
   real, allocatable, dimension(:,:,:)   :: u_dt, v_dt, t_dt, qv_dt
   real, allocatable                     :: pref(:,:), dum1d(:)
 
+  real, allocatable, dimension(:,:,:)  :: grav_var, grav_var_h
   logical :: first_diag = .true.
 
 contains
@@ -309,7 +310,7 @@ contains
    type(grid_box_type), intent(inout) :: Grid_box
    real(kind=kind_phys), pointer, dimension(:,:), intent(inout) :: area
 !--- local variables ---
-   integer :: i, n
+   integer :: i, n, j, k
 !  integer :: itrac
    logical :: do_atmos_nudge
    character(len=32) :: tracer_name, tracer_units
@@ -561,6 +562,9 @@ contains
    endif
    call fv_io_register_nudge_restart ( Atm )
 
+   if(.not.allocated(grav_var))then
+     allocate(grav_var(isd:ied,jsd:jed,npz),grav_var_h(isd:ied,jsd:jed,npz+1))
+   endif
 
    if ( Atm(mygrid)%flagstruct%na_init>0 ) then
       if ( .not. Atm(mygrid)%flagstruct%hydrostatic ) then
@@ -708,7 +712,7 @@ contains
                       Atm(n)%gridstruct,  Atm(n)%flagstruct,                    &
                       Atm(n)%neststruct,  Atm(n)%idiag, Atm(n)%bd,              &
                       Atm(n)%parent_grid, Atm(n)%domain,Atm(n)%diss_est,        &
-                      Atm(n)%inline_mp)
+                      Atm(n)%inline_mp, grav_var_h, grav_var)
 
      call timing_off('fv_dynamics')
 
@@ -766,7 +770,7 @@ contains
                         Atm(n)%peln, Atm(n)%pkz, Atm(n)%pt, Atm(n)%q,       &
                         Atm(n)%ua, Atm(n)%va, Atm(n)%flagstruct%hydrostatic,&
                         Atm(n)%w, Atm(n)%delz, u_dt, v_dt, t_dt,            &
-                        Atm(n)%flagstruct%n_sponge)
+                        Atm(n)%flagstruct%n_sponge, grav_var)
     endif
 
 #ifdef USE_Q_DT
@@ -1062,7 +1066,7 @@ contains
      !--- generate dz using hydrostatic assumption
      do j = jsc, jec
        do i = isc, iec
-         dz(i-isc+1,j-jsc+1,1:npz) = (rdgas/grav)*Atm(mygrid)%pt(i,j,1:npz)  &
+         dz(i-isc+1,j-jsc+1,1:npz) = (rdgas/grav_var(i,j,1:npz))*Atm(mygrid)%pt(i,j,1:npz)  &
                          * (Atm(mygrid)%peln(i,1:npz,j) - Atm(mygrid)%peln(i,2:npz+1,j))
        enddo
      enddo
@@ -1910,7 +1914,7 @@ contains
                      Atm(mygrid)%cx, Atm(mygrid)%cy, Atm(mygrid)%ze0, Atm(mygrid)%flagstruct%hybrid_z,    &
                      Atm(mygrid)%gridstruct, Atm(mygrid)%flagstruct,                            &
                      Atm(mygrid)%neststruct, Atm(mygrid)%idiag, Atm(mygrid)%bd, Atm(mygrid)%parent_grid,  &
-                     Atm(mygrid)%domain,Atm(mygrid)%diss_est, Atm(mygrid)%inline_mp)
+                     Atm(mygrid)%domain,Atm(mygrid)%diss_est, Atm(mygrid)%inline_mp, grav_var_h, grav_var)
 ! Backward
     call fv_dynamics(Atm(mygrid)%npx, Atm(mygrid)%npy, npz,  nq, Atm(mygrid)%ng, -dt_atmos, 0.,      &
                      Atm(mygrid)%flagstruct%fill, Atm(mygrid)%flagstruct%reproduce_sum, kappa, cp_air, zvir,  &
@@ -1927,7 +1931,7 @@ contains
                      Atm(mygrid)%cx, Atm(mygrid)%cy, Atm(mygrid)%ze0, Atm(mygrid)%flagstruct%hybrid_z,    &
                      Atm(mygrid)%gridstruct, Atm(mygrid)%flagstruct,                            &
                      Atm(mygrid)%neststruct, Atm(mygrid)%idiag, Atm(mygrid)%bd, Atm(mygrid)%parent_grid,  &
-                     Atm(mygrid)%domain,Atm(mygrid)%diss_est, Atm(mygrid)%inline_mp)
+                     Atm(mygrid)%domain,Atm(mygrid)%diss_est, Atm(mygrid)%inline_mp, grav_var_h, grav_var)
 !Nudging back to IC
 !$omp parallel do default (none) &
 !$omp              shared (pref, npz, jsc, jec, isc, iec, n, sphum, Atm, u0, v0, t0, dp0, xt, zvir, mygrid, nudge_dz, dz0) &
@@ -2005,7 +2009,7 @@ contains
                      Atm(mygrid)%cx, Atm(mygrid)%cy, Atm(mygrid)%ze0, Atm(mygrid)%flagstruct%hybrid_z,    &
                      Atm(mygrid)%gridstruct, Atm(mygrid)%flagstruct,                            &
                      Atm(mygrid)%neststruct, Atm(mygrid)%idiag, Atm(mygrid)%bd, Atm(mygrid)%parent_grid,  &
-                     Atm(mygrid)%domain,Atm(mygrid)%diss_est, Atm(mygrid)%inline_mp)
+                     Atm(mygrid)%domain,Atm(mygrid)%diss_est, Atm(mygrid)%inline_mp, grav_var_h, grav_var)
 ! Forward call
     call fv_dynamics(Atm(mygrid)%npx, Atm(mygrid)%npy, npz,  nq, Atm(mygrid)%ng, dt_atmos, 0.,      &
                      Atm(mygrid)%flagstruct%fill, Atm(mygrid)%flagstruct%reproduce_sum, kappa, cp_air, zvir,  &
@@ -2021,7 +2025,7 @@ contains
                      Atm(mygrid)%cx, Atm(mygrid)%cy, Atm(mygrid)%ze0, Atm(mygrid)%flagstruct%hybrid_z,    &
                      Atm(mygrid)%gridstruct, Atm(mygrid)%flagstruct,                            &
                      Atm(mygrid)%neststruct, Atm(mygrid)%idiag, Atm(mygrid)%bd, Atm(mygrid)%parent_grid,  &
-                     Atm(mygrid)%domain,Atm(mygrid)%diss_est, Atm(mygrid)%inline_mp)
+                     Atm(mygrid)%domain,Atm(mygrid)%diss_est, Atm(mygrid)%inline_mp, grav_var_h, grav_var)
 ! Nudging back to IC
 !$omp parallel do default (none) &
 !$omp              shared (nudge_dz,npz, jsc, jec, isc, iec, n, sphum, Atm, u0, v0, t0, dz0, dp0, xt, zvir, mygrid) &
@@ -2136,7 +2140,7 @@ contains
 !$OMP             shared  (Atm_block, Atm, IPD_Control, IPD_Statein, npz, nq, ncnst, sphum, liq_wat, &
 !$OMP                      IPD_Tbd, &
 !$OMP                      ice_wat, rainwat, snowwat, graupel, pk0inv, ptop,   &
-!$OMP                      pktop, zvir, mygrid, dnats, nq_adv, flip_vc) &
+!$OMP                      pktop, zvir, mygrid, dnats, nq_adv, flip_vc, grav_var) &
 #ifdef MULTI_GASES
 
 !$OMP             private (dm, nb, blen, i, j, ix, im, k1, kz, rTv, qgrs_rad, q_min, q_grs)
@@ -2206,10 +2210,10 @@ contains
 
          if(flip_vc) then
            if (.not.Atm(mygrid)%flagstruct%hydrostatic .and. (.not.Atm(mygrid)%flagstruct%use_hydro_pressure))  &
-             IPD_Statein%phii(im,k+1) = IPD_Statein%phii(im,k) - _DBL_(_RL_(Atm(mygrid)%delz(i,j,k1)*grav))
+             IPD_Statein%phii(im,k+1) = IPD_Statein%phii(im,k) - _DBL_(_RL_(Atm(mygrid)%delz(i,j,k1)*grav_var(i,j,k1)))
          else
            if (.not.Atm(mygrid)%flagstruct%hydrostatic .and. (.not.Atm(mygrid)%flagstruct%use_hydro_pressure))  &
-             IPD_Statein%phii(im,kz) = IPD_Statein%phii(im,kz+1) - _DBL_(_RL_(Atm(mygrid)%delz(i,j,kz)*grav))
+             IPD_Statein%phii(im,kz) = IPD_Statein%phii(im,kz+1) - _DBL_(_RL_(Atm(mygrid)%delz(i,j,kz)*grav_var(i,j,kz)))
          endif
 
 ! Convert to tracer mass:

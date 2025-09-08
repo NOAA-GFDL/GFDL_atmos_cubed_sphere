@@ -356,7 +356,7 @@ CONTAINS
 #endif
                            ptop, hs, w3,  pt, q_con, &
                            delp, gz,  pef,  ws, p_fac, a_imp, scale_m, &
-                           pfull, fast_tau_w_sec, rf_cutoff_w)
+                           pfull, fast_tau_w_sec, rf_cutoff_w,grav_var)
 
    integer, intent(in):: is, ie, js, je, ng, km
    integer, intent(in):: ms
@@ -369,6 +369,7 @@ CONTAINS
 #endif
    real, intent(in)::   hs(is-ng:ie+ng,js-ng:je+ng)
    real, intent(in), dimension(is-ng:ie+ng,js-ng:je+ng,km):: w3
+   real, intent(in), dimension(is-ng:ie+ng,js-ng:je+ng,km):: grav_var
    real, intent(in) :: pfull(km)
 ! OUTPUT PARAMETERS
    real, intent(inout), dimension(is-ng:ie+ng,js-ng:je+ng,km+1):: gz
@@ -379,16 +380,25 @@ CONTAINS
 #ifdef MULTI_GASES
   real, dimension(is-1:ie+1,km  ):: kapad2
 #endif
-  real gama, rgrav
+  real, dimension(is-ng:ie+ng,js-ng:je+ng,km):: rgrav
+  real gama
   real(kind=8) :: rff_temp
   integer i, j, k
   integer is1, ie1
 
     gama = 1./(1.-akap)
-   rgrav = 1./grav
+
 
    is1 = is - 1
    ie1 = ie + 1
+
+   do k=1,km
+     do j=js-1,je+1
+       do i=is1,ie1
+         rgrav(i,j,k) = 1./grav_var(i,j,k)
+       enddo
+     enddo
+   enddo
 
    !Set up rayleigh damping
    if (fast_tau_w_sec > 1.e-5 .and. .not. RFw_initialized) then
@@ -404,7 +414,7 @@ CONTAINS
    endif
 
 
-!$OMP parallel do default(none) shared(js,je,is1,ie1,km,delp,pef,ptop,gz,rgrav,w3,pt, &
+!$OMP parallel do default(none) shared(js,je,is1,ie1,km,delp,pef,ptop,gz,rgrav,grav_var,w3,pt, &
 #ifdef MULTI_GASES
 !$OMP                                  a_imp,dt,gama,akap,ws,p_fac,scale_m,ms,hs,q_con,cappa,kapad,fast_tau_w_sec) &
 !$OMP                          private(cp2,gm2, dm, dz2, w2, pm2, pe2, pem, peg, kapad2)
@@ -455,7 +465,7 @@ CONTAINS
 #ifdef MULTI_GASES
          kapad2(i,k) = kapad(i,j,k)
 #endif
-             dm(i,k) = dm(i,k) * rgrav
+             dm(i,k) = dm(i,k) * rgrav(i,j,k)
              w2(i,k) = w3(i,j,k)
          enddo
       enddo
@@ -481,7 +491,7 @@ CONTAINS
                             kapad2, &
 #endif
                             pe2,  &
-                            dm, pm2, pem, w2, dz2, pt(is1:ie1,j,1:km), ws(is1,j), p_fac, fast_tau_w_sec)
+                        dm, pm2, pem, w2, dz2, pt(is1:ie1,j,1:km), ws(is1,j), p_fac, fast_tau_w_sec)
       endif
 
       do k=2,km+1
@@ -497,7 +507,7 @@ CONTAINS
 
       do k=km,1,-1
          do i=is1, ie1
-            gz(i,j,k) = gz(i,j,k+1) - dz2(i,k)*grav
+            gz(i,j,k) = gz(i,j,k+1) - dz2(i,k) * grav_var(i,j,k)
          enddo
       enddo
 
@@ -557,8 +567,9 @@ CONTAINS
    peln1 = log(ptop)
      ptk = exp(akap*peln1)
 
+
 !$OMP parallel do default(none) shared(is,ie,js,je,km,delp,ptop,peln1,pk3,ptk,akap,rgrav,zh,pt, &
-!$OMP                                  w,a_imp,dt,gama,ws,p_fac,scale_m,ms,delz,last_call,  &
+!$OMP                                  w,a_imp,dt,gama,ws,p_fac,scale_m,ms,delz,last_call, &
 #ifdef MULTI_GASES
 !$OMP                                  peln,pk,fp_out,ppe,use_logp,zs,pe,cappa,q_con,kapad )          &
 !$OMP                          private(cp2, gm2, dm, dz2, pm2, pem, peg, pelng, pe2, peln2, w2,kapad2)
@@ -575,7 +586,7 @@ CONTAINS
             cp2(i,k) = cappa(i,j,k)
 #endif
 #ifdef MULTI_GASES
-         kapad2(i,k) = kapad(i,j,k)
+            kapad2(i,k) = kapad(i,j,k)
 #endif
          enddo
       enddo
@@ -1432,6 +1443,7 @@ CONTAINS
 #endif
    integer i, k
 
+
 #ifdef MOIST_CAPPA
       t1g = 2.*dt*dt
 #else
@@ -2130,7 +2142,7 @@ CONTAINS
  end subroutine edge_profile_0grad
 
 !TODO LMH 25may18: do not need delz defined on full compute domain; pass appropriate BCs instead
- subroutine nh_bc(ptop, grav, kappa, cp, delp, delzBC, pt, phis, &
+ subroutine nh_bc(ptop, grav_var, kappa, cp, delp, delzBC, pt, phis, &
 #ifdef MULTI_GASES
       q ,    &
 #endif
@@ -2148,7 +2160,7 @@ CONTAINS
       !OUTPUT: gz, pkc, pk3 (optional)
       integer, intent(IN) :: npx, npy, npz
       logical, intent(IN) :: pkc_pertn, computepk3, fullhalo, bounded_domain
-      real, intent(IN) :: ptop, kappa, cp, grav, BC_step, BC_split
+      real, intent(IN) :: ptop, kappa, cp, BC_step, BC_split
       type(fv_grid_bounds_type), intent(IN) :: bd
       real, intent(IN) :: phis(bd%isd:bd%ied,bd%jsd:bd%jed)
       real, intent(IN),  dimension(bd%isd:bd%ied,bd%jsd:bd%jed,npz):: pt, delp
@@ -2162,11 +2174,12 @@ CONTAINS
       real, intent(INOUT),  dimension(bd%isd:bd%ied,bd%jsd:bd%jed,npz):: cappa
 #endif
 #endif
+      real, intent(IN),  dimension(bd%isd:bd%ied,bd%jsd:bd%jed,npz):: grav_var
       real, intent(INOUT), dimension(bd%isd:bd%ied,bd%jsd:bd%jed,npz+1):: gz, pkc, pk3
 
       integer :: i,j,k
       real :: gama !'gamma'
-      real :: ptk, rgrav, rkap, peln1, rdg
+      real :: ptk, rkap, peln1, rdg
 
       integer :: istart, iend
 
@@ -2186,7 +2199,7 @@ CONTAINS
 
       if (is == 1) then
 
-         call nh_BC_k(ptop, grav, kappa, cp, delp, delzBC%west_t0, delzBC%west_t1, pt, phis, &
+         call nh_BC_k(ptop, grav_var, kappa, cp, delp, delzBC%west_t0, delzBC%west_t1, pt, phis, &
 #ifdef MULTI_GASES
       q ,    &
 #endif
@@ -2204,7 +2217,7 @@ CONTAINS
 
       if (ie == npx-1) then
 
-         call nh_BC_k(ptop, grav, kappa, cp, delp, delzBC%east_t0, delzBC%east_t1, pt, phis, &
+         call nh_BC_k(ptop, grav_var, kappa, cp, delp, delzBC%east_t0, delzBC%east_t1, pt, phis, &
 #ifdef MULTI_GASES
       q ,    &
 #endif
@@ -2233,7 +2246,7 @@ CONTAINS
 
       if (js == 1) then
 
-         call nh_BC_k(ptop, grav, kappa, cp, delp, delzBC%south_t0, delzBC%south_t1, pt, phis, &
+         call nh_BC_k(ptop, grav_var, kappa, cp, delp, delzBC%south_t0, delzBC%south_t1, pt, phis, &
 #ifdef MULTI_GASES
       q ,    &
 #endif
@@ -2251,7 +2264,7 @@ CONTAINS
 
       if (je == npy-1) then
 
-         call nh_BC_k(ptop, grav, kappa, cp, delp, delzBC%north_t0, delzBC%north_t1, pt, phis, &
+         call nh_BC_k(ptop, grav_var, kappa, cp, delp, delzBC%north_t0, delzBC%north_t1, pt, phis, &
 #ifdef MULTI_GASES
       q ,    &
 #endif
@@ -2268,7 +2281,7 @@ CONTAINS
 
 end subroutine nh_bc
 
-subroutine nh_BC_k(ptop, grav, kappa, cp, delp, delzBC_t0, delzBC_t1, pt, phis, &
+subroutine nh_BC_k(ptop, grav_var, kappa, cp, delp, delzBC_t0, delzBC_t1, pt, phis, &
 #ifdef MULTI_GASES
       q ,    &
 #endif
@@ -2287,7 +2300,7 @@ subroutine nh_BC_k(ptop, grav, kappa, cp, delp, delzBC_t0, delzBC_t1, pt, phis, 
    real, intent(IN)    :: BC_step, BC_split
 
    logical, intent(IN) :: pkc_pertn, computepk3
-   real, intent(IN) :: ptop, kappa, cp, grav
+   real, intent(IN) :: ptop, kappa, cp
    real, intent(IN) :: phis(isd:ied,jsd:jed)
    real, intent(IN),  dimension(isd:ied,jsd:jed,npz):: pt, delp
 #ifdef MULTI_GASES
@@ -2299,11 +2312,12 @@ subroutine nh_BC_k(ptop, grav, kappa, cp, delp, delzBC_t0, delzBC_t1, pt, phis, 
    real, intent(INOUT),  dimension(isd:ied,jsd:jed,npz):: cappa
 #endif
 #endif
+   real, intent(IN),  dimension(isd:ied,jsd:jed,npz):: grav_var
    real, intent(INOUT), dimension(isd:ied,jsd:jed,npz+1):: gz, pkc, pk3
 
    integer :: i,j,k
    real :: gama !'gamma'
-   real :: ptk, rgrav, rkap, peln1, rdg, denom
+   real :: ptk, rkap, peln1, denom
 
    real, dimension(istart:iend, npz+1, jstart:jend ) :: pe, peln
 #ifdef USE_COND
@@ -2313,19 +2327,26 @@ subroutine nh_BC_k(ptop, grav, kappa, cp, delp, delzBC_t0, delzBC_t1, pt, phis, 
    real, dimension(istart:iend, npz-1) :: g_rat
    real, dimension(istart:iend) :: bet
    real :: pm, delz_int
-
+   real, dimension(isd:ied,jsd:jed,npz) :: rgrav, rdg
 
    real :: pealn, pebln, rpkz
 #ifdef MULTI_GASES
       real gamax
 #endif
-   rgrav = 1./grav
    gama = 1./(1.-kappa)
    ptk = ptop ** kappa
    rkap = 1./kappa
    peln1 = log(ptop)
-   rdg = - rdgas * rgrav
    denom = 1./BC_split
+
+   do k=1,npz
+     do j=jsd,jed
+       do i=isd,ied
+         rgrav(i,j,k) = 1./grav_var(i,j,k)
+         rdg(i,j,k) = -rdgas/grav_var(i,j,k)
+       enddo
+     enddo
+   enddo
 
    do j=jstart,jend
 
@@ -2336,7 +2357,7 @@ subroutine nh_BC_k(ptop, grav, kappa, cp, delp, delzBC_t0, delzBC_t1, pt, phis, 
       do k=npz,1,-1
          do i=istart,iend
             delz_int = (delzBC_t0(i,j,k)*(BC_split-BC_step) + BC_step*delzBC_t1(i,j,k))*denom
-            gz(i,j,k) = gz(i,j,k+1) - delz_int*grav
+            gz(i,j,k) = gz(i,j,k+1) - delz_int*grav_var(i,j,k)
          enddo
       enddo
 
@@ -2367,13 +2388,13 @@ subroutine nh_BC_k(ptop, grav, kappa, cp, delp, delzBC_t0, delzBC_t1, pt, phis, 
 
             !Full p
 #ifdef MOIST_CAPPA
-            pkz(i,k) = exp(1./(1.-cappa(i,j,k))*log(rdg*delp(i,j,k)/delz_int*pt(i,j,k)))
+            pkz(i,k) = exp(1./(1.-cappa(i,j,k))*log(rdg(i,j,k)*delp(i,j,k)/delz_int*pt(i,j,k)))
 #else
 #ifdef MULTI_GASES
                   gamax = gama * (vicpqd(q(i,j,k,:))/vicvqd(q(i,j,k,:)))
-                  pkz(i,k) = exp(gamax*log(-delp(i,j,k)*rgrav/delz_int*rdgas*pt(i,j,k)))
+                  pkz(i,k) = exp(gamax*log(-delp(i,j,k)*rgrav(i,j,k)/delz_int*rdgas*pt(i,j,k)))
 #else
-                  pkz(i,k) = exp(gama*log(-delp(i,j,k)*rgrav/delz_int*rdgas*pt(i,j,k)))
+                  pkz(i,k) = exp(gama*log(-delp(i,j,k)*rgrav(i,j,k)/delz_int*rdgas*pt(i,j,k)))
 #endif
 #endif
             !hydro
