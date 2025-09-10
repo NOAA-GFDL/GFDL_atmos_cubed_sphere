@@ -1921,6 +1921,15 @@ contains
     deallocate (   Atm%va )
     deallocate (   Atm%uc )
     deallocate (   Atm%vc )
+    !3D-SA-TKE (kyf) (modify for data structure)
+    if ( Atm%flagstruct%sa3dtke_dyco ) then
+       deallocate ( Atm%sa3dtke_var%deform_1 )
+       deallocate ( Atm%sa3dtke_var%deform_2 )
+       deallocate ( Atm%sa3dtke_var%deform_3 )
+       deallocate ( Atm%sa3dtke_var%dku3d_h )
+       deallocate ( Atm%sa3dtke_var%dku3d_e )
+    endif
+    !3D-SA-TKE-end
     deallocate ( Atm%mfx )
     deallocate ( Atm%mfy )
     deallocate (  Atm%cx )
