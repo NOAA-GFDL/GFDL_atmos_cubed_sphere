@@ -217,11 +217,9 @@ character(len=20)   :: mod_name = 'GFDL/atmosphere_mod'
 contains
 
 #if defined(OVERLOAD_R4)
-#define _DBL_(X) DBLE(X)
-#define _RL_(X) REAL(X,KIND=4)
+#define _DBL_ DBLE
 #else
-#define _DBL_(X) X
-#define _RL_(X) X
+#define _DBL_
 #endif
 
  subroutine atmosphere_init (Time_init, Time, Time_step, Surf_diff, Grid_box)
@@ -1349,28 +1347,28 @@ contains
      jbs = Atm_block%jbs(nb)
      jbe = Atm_block%jbe(nb)
 
-     Physics%block(nb)%phis = _DBL_(_RL_(Atm(mygrid)%phis(ibs:ibe,jbs:jbe)))
-     Physics%block(nb)%u    = _DBL_(_RL_(Atm(mygrid)%ua(ibs:ibe,jbs:jbe,:)))
-     Physics%block(nb)%v    = _DBL_(_RL_(Atm(mygrid)%va(ibs:ibe,jbs:jbe,:)))
-     Physics%block(nb)%t    = _DBL_(_RL_(Atm(mygrid)%pt(ibs:ibe,jbs:jbe,:)))
-     Physics%block(nb)%q    = _DBL_(_RL_(Atm(mygrid)%q(ibs:ibe,jbs:jbe,:,:)))
-     Physics%block(nb)%omega= _DBL_(_RL_(Atm(mygrid)%omga(ibs:ibe,jbs:jbe,:)))
-     Physics%block(nb)%pe   = _DBL_(_RL_(Atm(mygrid)%pe(ibs:ibe,:,jbs:jbe)))
-     Physics%block(nb)%peln = _DBL_(_RL_(Atm(mygrid)%peln(ibs:ibe,:,jbs:jbe)))
-     Physics%block(nb)%delp = _DBL_(_RL_(Atm(mygrid)%delp(ibs:ibe,jbs:jbe,:)))
+     Physics%block(nb)%phis = _DBL_(Atm(mygrid)%phis(ibs:ibe,jbs:jbe))
+     Physics%block(nb)%u    = _DBL_(Atm(mygrid)%ua(ibs:ibe,jbs:jbe,:))
+     Physics%block(nb)%v    = _DBL_(Atm(mygrid)%va(ibs:ibe,jbs:jbe,:))
+     Physics%block(nb)%t    = _DBL_(Atm(mygrid)%pt(ibs:ibe,jbs:jbe,:))
+     Physics%block(nb)%q    = _DBL_(Atm(mygrid)%q(ibs:ibe,jbs:jbe,:,:))
+     Physics%block(nb)%omega= _DBL_(Atm(mygrid)%omga(ibs:ibe,jbs:jbe,:))
+     Physics%block(nb)%pe   = _DBL_(Atm(mygrid)%pe(ibs:ibe,:,jbs:jbe))
+     Physics%block(nb)%peln = _DBL_(Atm(mygrid)%peln(ibs:ibe,:,jbs:jbe))
+     Physics%block(nb)%delp = _DBL_(Atm(mygrid)%delp(ibs:ibe,jbs:jbe,:))
      if (.not.Physics%control%phys_hydrostatic) then
-        Physics%block(nb)%delz = _DBL_(_RL_(Atm(mygrid)%delz(ibs:ibe,jbs:jbe,:)))
-        Physics%block(nb)%w    = _DBL_(_RL_(Atm(mygrid)%w(ibs:ibe,jbs:jbe,:)))
+        Physics%block(nb)%delz = _DBL_(Atm(mygrid)%delz(ibs:ibe,jbs:jbe,:))
+        Physics%block(nb)%w    = _DBL_(Atm(mygrid)%w(ibs:ibe,jbs:jbe,:))
      endif
      if (_ALLOCATED(Physics%block(nb)%tmp_4d)) &
-        Physics%block(nb)%tmp_4d = _DBL_(_RL_(Atm(mygrid)%qdiag(ibs:ibe,jbs:jbe,:,:)))
+        Physics%block(nb)%tmp_4d = _DBL_(Atm(mygrid)%qdiag(ibs:ibe,jbs:jbe,:,:))
 
      call fv_compute_p_z (Atm_block%npz, Physics%block(nb)%phis, Physics%block(nb)%pe, &
                           Physics%block(nb)%peln, Physics%block(nb)%delp, Physics%block(nb)%delz, &
                           Physics%block(nb)%t, Physics%block(nb)%q(:,:,:,Physics%control%sphum), &
                           Physics%block(nb)%p_full, Physics%block(nb)%p_half, &
                           Physics%block(nb)%z_full, Physics%block(nb)%z_half, &
-                          _DBL_(_RL_(Atm(mygrid)%q_con)), & !This should work; indices are same on block as on full PE
+                          _DBL_(Atm(mygrid)%q_con), & !This should work; indices are same on block as on full PE
                           Physics%control%phys_hydrostatic, Physics%control%do_uni_zfull, & !miz
                           Atm(mygrid)%thermostruct%use_cond)
 
@@ -1380,11 +1378,11 @@ contains
 !--- these values would be zeroed out and accumulated
 !--- in the atmosphere_state_update
 
-       Physics_tendency%block(nb)%u_dt = _DBL_(_RL_(u_dt(ibs:ibe,jbs:jbe,:)))
-       Physics_tendency%block(nb)%v_dt = _DBL_(_RL_(v_dt(ibs:ibe,jbs:jbe,:)))
-       Physics_tendency%block(nb)%t_dt = _DBL_(_RL_(t_dt(ibs:ibe,jbs:jbe,:)))
-       Physics_tendency%block(nb)%q_dt = _DBL_(_RL_(q_dt(ibs:ibe,jbs:jbe,:,:)))
-       Physics_tendency%block(nb)%qdiag = _DBL_(_RL_(Atm(mygrid)%qdiag(ibs:ibe,jbs:jbe,:,:)))
+       Physics_tendency%block(nb)%u_dt = _DBL_(u_dt(ibs:ibe,jbs:jbe,:))
+       Physics_tendency%block(nb)%v_dt = _DBL_(v_dt(ibs:ibe,jbs:jbe,:))
+       Physics_tendency%block(nb)%t_dt = _DBL_(t_dt(ibs:ibe,jbs:jbe,:))
+       Physics_tendency%block(nb)%q_dt = _DBL_(q_dt(ibs:ibe,jbs:jbe,:,:))
+       Physics_tendency%block(nb)%qdiag = _DBL_(Atm(mygrid)%qdiag(ibs:ibe,jbs:jbe,:,:))
      endif
    enddo
 
@@ -1408,21 +1406,21 @@ contains
      jbs = Atm_block%jbs(nb)
      jbe = Atm_block%jbe(nb)
 
-     Radiation%block(nb)%phis =  _DBL_(_RL_(Atm(mygrid)%phis(ibs:ibe,jbs:jbe)))
-     Radiation%block(nb)%t    =  _DBL_(_RL_(Atm(mygrid)%pt(ibs:ibe,jbs:jbe,:)))
-     Radiation%block(nb)%q    =  _DBL_(_RL_(Atm(mygrid)%q(ibs:ibe,jbs:jbe,:,:)))
-     Radiation%block(nb)%pe   =  _DBL_(_RL_(Atm(mygrid)%pe(ibs:ibe,:,jbs:jbe)))
-     Radiation%block(nb)%peln =  _DBL_(_RL_(Atm(mygrid)%peln(ibs:ibe,:,jbs:jbe)))
-     Radiation%block(nb)%delp =  _DBL_(_RL_(Atm(mygrid)%delp(ibs:ibe,jbs:jbe,:)))
+     Radiation%block(nb)%phis =  _DBL_(Atm(mygrid)%phis(ibs:ibe,jbs:jbe))
+     Radiation%block(nb)%t    =  _DBL_(Atm(mygrid)%pt(ibs:ibe,jbs:jbe,:))
+     Radiation%block(nb)%q    =  _DBL_(Atm(mygrid)%q(ibs:ibe,jbs:jbe,:,:))
+     Radiation%block(nb)%pe   =  _DBL_(Atm(mygrid)%pe(ibs:ibe,:,jbs:jbe))
+     Radiation%block(nb)%peln =  _DBL_(Atm(mygrid)%peln(ibs:ibe,:,jbs:jbe))
+     Radiation%block(nb)%delp =  _DBL_(Atm(mygrid)%delp(ibs:ibe,jbs:jbe,:))
      if (.not.Radiation%control%phys_hydrostatic) &
-        Radiation%block(nb)%delz =  _DBL_(_RL_(Atm(mygrid)%delz(ibs:ibe,jbs:jbe,:)))
+        Radiation%block(nb)%delz =  _DBL_(Atm(mygrid)%delz(ibs:ibe,jbs:jbe,:))
 
      call fv_compute_p_z (Atm_block%npz, Radiation%block(nb)%phis, Radiation%block(nb)%pe, &
                           Radiation%block(nb)%peln, Radiation%block(nb)%delp, Radiation%block(nb)%delz, &
                           Radiation%block(nb)%t, Radiation%block(nb)%q(:,:,:,Radiation%control%sphum), &
                           Radiation%block(nb)%p_full, Radiation%block(nb)%p_half, &
                           Radiation%block(nb)%z_full, Radiation%block(nb)%z_half, &
-                          _DBL_(_RL_(Atm(mygrid)%q_con)), & !This should work; indices are same on block as on full PE
+                          _DBL_(Atm(mygrid)%q_con), & !This should work; indices are same on block as on full PE
                           Radiation%control%phys_hydrostatic, Radiation%control%do_uni_zfull, & !miz
                           Atm(mygrid)%thermostruct%use_cond)
    enddo
