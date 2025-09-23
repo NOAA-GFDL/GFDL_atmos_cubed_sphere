@@ -2197,9 +2197,9 @@ contains
          IPD_Statein%prsl(im,k) = _DBL_(_RL_(Atm(mygrid)%delp(i,j,k1)))   ! Total mass
 !The following is for SA-3D-TKE (kyf) (modify for data structure)
          if(Atm(mygrid)%flagstruct%sa3dtke_dyco) then
-          IPD_Statein%def_1(ix,k) = _DBL_(_RL_(Atm(mygrid)%sa3dtke_var%deform_1(i,j,k1)))
-          IPD_Statein%def_2(ix,k) = _DBL_(_RL_(Atm(mygrid)%sa3dtke_var%deform_2(i,j,k1)))
-          IPD_Statein%def_3(ix,k) = _DBL_(_RL_(Atm(mygrid)%sa3dtke_var%deform_3(i,j,k1)))
+          IPD_Statein%def_1(im,k) = _DBL_(_RL_(Atm(mygrid)%sa3dtke_var%deform_1(i,j,k1)))
+          IPD_Statein%def_2(im,k) = _DBL_(_RL_(Atm(mygrid)%sa3dtke_var%deform_2(i,j,k1)))
+          IPD_Statein%def_3(im,k) = _DBL_(_RL_(Atm(mygrid)%sa3dtke_var%deform_3(i,j,k1)))
          endif
 
          if (Atm(mygrid)%flagstruct%do_skeb) IPD_Statein%diss_est(im,k) = _DBL_(_RL_(Atm(mygrid)%diss_est(i,j,k1)))
@@ -2486,7 +2486,7 @@ contains
     endif
 
     ! Deal with usfco and vsfco
-    if (IPD_control%cplocn2atm .and. IPD_control%icplocn2atm==1) then
+    if (IPD_control%cplocn2atm .and. IPD_control%use_oceanuv) then
       ! Extract the coupling field
       do nb = 1,Atm_block%nblks
         blen = Atm_block%blksz(nb)
