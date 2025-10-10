@@ -6657,7 +6657,7 @@ subroutine remap_scalar_nggps_regional_bc(Atm                         &
 !---------------------------------------------------------------------
 
   subroutine exch_uv(domain, bd, npz, u, v)
-    use mpi
+    use mpi_f08
 
     implicit none
 
@@ -6667,9 +6667,15 @@ subroutine remap_scalar_nggps_regional_bc(Atm                         &
     real, intent(inout) :: u   (bd%isd:bd%ied  ,bd%jsd:bd%jed+1,1:npz)
     real, intent(inout) :: v   (bd%isd:bd%ied+1,bd%jsd:bd%jed  ,1:npz)
 
-    real, dimension(:), allocatable :: buf1,buf2,buf3,buf4
-    integer :: ihandle1,ihandle2,ihandle3,ihandle4
-    integer,dimension(MPI_STATUS_SIZE) :: istat
+#ifdef OVERLOAD_R4
+#define _DYN_MPI_REAL MPI_REAL
+    real(kind=4), dimension(:), allocatable :: buf1,buf2,buf3,buf4
+#else
+#define _DYN_MPI_REAL MPI_DOUBLE_PRECISION
+    real(kind=8), dimension(:), allocatable :: buf1,buf2,buf3,buf4
+#endif
+    type(MPI_Request) :: ihandle1,ihandle2,ihandle3,ihandle4
+    type(MPI_Status)  :: istat
     integer :: ic, i, j, k, is, ie, js, je
     integer :: irecv, isend, ierr
 
@@ -6703,12 +6709,6 @@ subroutine remap_scalar_nggps_regional_bc(Atm                         &
     allocate(buf4(1:24*npz)) ; buf4=real_snan
 
 ! FIXME: MPI_COMM_WORLD
-
-#ifdef OVERLOAD_R4
-#define _DYN_MPI_REAL MPI_REAL
-#else
-#define _DYN_MPI_REAL MPI_DOUBLE_PRECISION
-#endif
 
 ! Receive from north
     if( north_pe /= NULL_PE )then
