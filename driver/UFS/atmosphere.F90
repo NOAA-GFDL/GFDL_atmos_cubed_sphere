@@ -2486,7 +2486,7 @@ contains
     endif
 
     ! Deal with usfco and vsfco
-    if (IPD_control%cplocn2atm .and. IPD_control%icplocn2atm==1) then
+    if (IPD_control%cplocn2atm .and. IPD_control%use_oceanuv) then
       ! Extract the coupling field
       do nb = 1,Atm_block%nblks
         blen = Atm_block%blksz(nb)
