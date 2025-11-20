@@ -2177,6 +2177,8 @@ subroutine allocate_fv_nest_BC_type_3D(BC,is,ie,js,je,isd,ied,jsd,jed,npx,npy,np
 
   integer, intent(IN) :: is, ie, js, je, isd, ied, jsd, jed, npx, npy, npz, ng
 
+  integer :: i, j, k
+
   if (BC%allocated) return
 
 
