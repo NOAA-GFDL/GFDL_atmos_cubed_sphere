@@ -897,7 +897,6 @@ contains
             enddo
          enddo
        endif
-
        if(flagstruct%sa3dtke_dyco) then
           call d_sw(vt(isd,jsd,k), delp(isd,jsd,k), ptc(isd,jsd,k),  pt(isd,jsd,k),      &
                     u(isd,jsd,k),    v(isd,jsd,k),   w(isd:,jsd:,k),  uc(isd,jsd,k),      &
@@ -2206,25 +2205,16 @@ subroutine diff3d(npx, npy, npz, nq, ua, va, w, q,       &
     real:: dudz(bd%isd:bd%ied,bd%jsd:bd%jed,npz)
     real:: dvdz(bd%isd:bd%ied,bd%jsd:bd%jed,npz)
     real:: dwdz(bd%isd:bd%ied,bd%jsd:bd%jed,npz)
-    real:: ut(bd%isd:bd%ied+1,bd%jsd:bd%jed)
-    real:: vt(bd%isd:bd%ied,  bd%jsd:bd%jed+1)
-    real:: u_e(bd%is:bd%ie,npz+1)
-    real:: v_e(bd%is:bd%ie,npz+1)
-    real:: w_e(bd%is:bd%ie,npz+1)
-
-    real:: dkdx(bd%isd:bd%ied,bd%jsd:bd%jed,npz)
-    real:: dkdy(bd%isd:bd%ied,bd%jsd:bd%jed,npz)
+    real:: ut(bd%isd:bd%ied,bd%jsd:bd%jed)
+    real:: vt(bd%isd:bd%ied,bd%jsd:bd%jed)
 
     integer :: sgs_tke
-    real :: tke_1(bd%isd:bd%ied+2,  bd%jsd:bd%jed+2)
-    real :: dedy_1(bd%isd:bd%ied+1, bd%jsd:bd%jed+1, npz)
-    real :: dedy_2(bd%isd:bd%ied,   bd%jsd:bd%jed,   npz)
-    real :: dedx_1(bd%isd:bd%ied+1, bd%jsd:bd%jed+1, npz)
-    real :: dedx_2(bd%isd:bd%ied,   bd%jsd:bd%jed,   npz)
-    real :: tke_2(npz)
-    real :: dedz_1(npz)
-    real :: dedz_2(bd%isd:bd%ied,  bd%jsd:bd%jed,npz)
-    real :: tmp
+    real :: tke_1(bd%isd:bd%ied,bd%jsd:bd%jed)
+    real :: kqdedy(bd%isd:bd%ied,bd%jsd:bd%jed,npz)
+    real :: dkqdedydy(bd%isd:bd%ied,bd%jsd:bd%jed,npz)
+    real :: kqdedx(bd%isd:bd%ied,bd%jsd:bd%jed,npz)
+    real :: dkqdedxdx(bd%isd:bd%ied,bd%jsd:bd%jed,npz)
+    real :: tmp, tmp1, tmp2
 
     real :: dz
     
@@ -2252,61 +2242,61 @@ subroutine diff3d(npx, npy, npz, nq, ua, va, w, q,       &
 ! KGao: make ut and vt private as suggested by Lucas
 
 !$OMP parallel do default(none) shared(npz,is,ie,js,je,ua,va,w,dx,dy,rarea, &
-!$OMP                           dudx,dudy,dvdx,dvdy,dwdx,dwdy)              &
+!$OMP                           dudx,dudy,dvdx,dvdy,dwdx,dwdy) &
 !$OMP                           private(ut,vt)
    do k=1,npz
 !-------------------------------------
 ! get du/dy and dv/dx
-       do j=js,je+1
+       do j=js-1,je+1
           do i=is,ie
              vt(i,j) = ua(i,j,k)*dx(i,j)
           enddo
        enddo
        do j=js,je
-          do i=is,ie+1
+          do i=is-1,ie+1
              ut(i,j) = va(i,j,k)*dy(i,j)
           enddo
        enddo
        do j=js,je
           do i=is,ie
-             dudy(i,j,k) = rarea(i,j)*(vt(i,j+1)-vt(i,j))
-             dvdx(i,j,k) = rarea(i,j)*(ut(i+1,j)-ut(i,j))
+             dudy(i,j,k) = 0.5*rarea(i,j)*(vt(i,j+1)-vt(i,j-1))
+             dvdx(i,j,k) = 0.5*rarea(i,j)*(ut(i+1,j)-ut(i-1,j))
           enddo
        enddo
 !-------------------------------------
 ! get du/dx and dv/dy
        do j=js,je
-          do i=is,ie+1
+          do i=is-1,ie+1
              ut(i,j) = ua(i,j,k)*dy(i,j)
           enddo
        enddo
-       do j=js,je+1
+       do j=js-1,je+1
           do i=is,ie
              vt(i,j) = va(i,j,k)*dx(i,j)
           enddo
        enddo
        do j=js,je
           do i=is,ie
-             dudx(i,j,k) = rarea(i,j)*(ut(i+1,j)-ut(i,j))
-             dvdy(i,j,k) = rarea(i,j)*(vt(i,j+1)-vt(i,j))
+             dudx(i,j,k) = 0.5*rarea(i,j)*(ut(i+1,j)-ut(i-1,j))
+             dvdy(i,j,k) = 0.5*rarea(i,j)*(vt(i,j+1)-vt(i,j-1))
           enddo
        enddo
 !-------------------------------------
 ! get dw/dx and dw/dy
        do j=js,je
-          do i=is,ie+1
+          do i=is-1,ie+1
              ut(i,j) = w(i,j,k)*dy(i,j)
           enddo
        enddo
-       do j=js,je+1
+       do j=js-1,je+1
           do i=is,ie
              vt(i,j) = w(i,j,k)*dx(i,j)
           enddo
        enddo
        do j=js,je
           do i=is,ie
-             dwdx(i,j,k) = rarea(i,j)*(ut(i+1,j)-ut(i,j))
-             dwdy(i,j,k) = rarea(i,j)*(vt(i,j+1)-vt(i,j))
+             dwdx(i,j,k) = 0.5*rarea(i,j)*(ut(i+1,j)-ut(i-1,j))
+             dwdy(i,j,k) = 0.5*rarea(i,j)*(vt(i,j+1)-vt(i,j-1))
           enddo
        enddo
    enddo   !z loop
@@ -2316,19 +2306,23 @@ subroutine diff3d(npx, npy, npz, nq, ua, va, w, q,       &
 
 ! KGao: use Lucas's method as in compute_dudz()
 !$OMP parallel do default(none) shared(npz,is,ie,js,je,ua,va,w,  &
-!$OMP       zh,dp_ref,dudz,dvdz,dwdz) &
-!$OMP    private(u_e,v_e,w_e,dz)
-   do j=js,je
-      call edge_profile1(ua(is:ie,j,:), u_e, is, ie, npz, dp_ref, 1)
-      call edge_profile1(va(is:ie,j,:), v_e, is, ie, npz, dp_ref, 1)
-      call edge_profile1(w(is:ie,j,:),  w_e, is, ie, npz, dp_ref, 1)
-      do k=1,npz
+!$OMP       zh,dudz,dvdz,dwdz) &
+!$OMP    private(dz)
+   do k=2,npz
+      do j=js,je
          do i=is,ie
-            dz = zh(i,j,k) - zh(i,j,k+1)
-            dudz(i,j,k) = (u_e(i,k)-u_e(i,k+1))/dz
-            dvdz(i,j,k) = (v_e(i,k)-v_e(i,k+1))/dz
-            dwdz(i,j,k) = (w_e(i,k)-w_e(i,k+1))/dz
+            dz = 0.5*(zh(i,j,k-1) - zh(i,j,k+1))
+            dudz(i,j,k) = (ua(i,j,k-1)-ua(i,j,k))/dz
+            dvdz(i,j,k) = (va(i,j,k-1)-va(i,j,k))/dz
+            dwdz(i,j,k) = (w(i,j,k-1)-w(i,j,k))/dz
          enddo
+      enddo
+   enddo
+   do j=js,je
+      do i=is,ie
+         dudz(i,j,1) = 0.
+         dvdz(i,j,1) = 0.
+         dwdz(i,j,1) = 0.
       enddo
    enddo
 
@@ -2337,13 +2331,30 @@ subroutine diff3d(npx, npy, npz, nq, ua, va, w, q,       &
 
 !$OMP parallel do default(none) shared(npz,is,ie,js,je,deform_1,deform_2, &
 !$OMP              dudx,dudy,dudz,dvdx,dvdy,dvdz,dwdx,dwdy,dwdz) &
-!$OMP              private(tmp)
+!$OMP              private(tmp,tmp1,tmp2)
    do k=1,npz
        do j=js,je
           do i=is,ie
-             tmp=dwdx(i,j,k)*dudz(i,j,k)+dwdy(i,j,k)*dvdz(i,j,k)
+             if(k > 1) then
+               tmp1 = 0.5*(dwdx(i,j,k-1)+dwdx(i,j,k))
+               tmp2 = 0.5*(dwdy(i,j,k-1)+dwdy(i,j,k))
+               tmp = tmp1*dudz(i,j,k)+tmp2*dvdz(i,j,k)
+             else
+               tmp1 = dwdx(i,j,k)
+               tmp2 = dwdy(i,j,k)
+               tmp = tmp1*dudz(i,j,k)+tmp2*dvdz(i,j,k)
+             endif
              deform_1(i,j,k)=  2*dwdz(i,j,k)**2+                   &
                dudz(i,j,k)**2+dvdz(i,j,k)**2+tmp
+             if(k < npz) then
+               tmp1 = 0.5*(dudz(i,j,k)+dudz(i,j,k+1))
+               tmp2 = 0.5*(dvdz(i,j,k)+dvdz(i,j,k+1))
+               tmp = tmp1*dwdx(i,j,k)+tmp2*dwdy(i,j,k)
+             else
+               tmp1 = dudz(i,j,k)
+               tmp2 = dvdz(i,j,k)
+               tmp = tmp1*dwdx(i,j,k)+tmp2*dwdy(i,j,k)
+             endif
              deform_2(i,j,k)=                                      &
                2*(dudx(i,j,k)**2+dvdy(i,j,k)**2)+  &
                (dudy(i,j,k)+dvdx(i,j,k))**2+                       &
@@ -2363,74 +2374,56 @@ subroutine diff3d(npx, npy, npz, nq, ua, va, w, q,       &
 ! KGao: make the 2d temporay arrays private - as suggested by Lucas
 
 !$OMP parallel do default(none) shared(npz,is,ie,js,je,ua,va,w,q,dx,dy,rarea, &
-!$OMP                 dku3d_e,dkdx,dkdy,dedx_1,dedy_1,sgs_tke,dedy_2,dedx_2)  &
-!$OMP                           private(ut,vt,tke_1)
+!$OMP                 dku3d_e,kqdedy,dkqdedydy,kqdedx,dkqdedxdx,sgs_tke) &
+!$OMP                           private(ut,vt,tke_1,tmp)
    do k=1,npz
 !-------------------------------------
-       do j=js,je+2
-          do i=is,ie+2
+       do j=js-1,je+1
+          do i=is-1,ie+1
              tke_1(i,j)=q(i,j,k,sgs_tke)
           enddo
        enddo
-       do j=js,je+2
+       do j=js-1,je+1
           do i=is,ie
              vt(i,j)=tke_1(i,j)*dx(i,j)
           enddo
        enddo
-       do j=js,je+1
+       do j=js-1,je
           do i=is,ie
-             dedy_1(i,j,k)=rarea(i,j)*(vt(i,j+1)-vt(i,j))
+             tmp = 0.5*(dku3d_e(i,j,k)+dku3d_e(i,j+1,k))
+             kqdedy(i,j,k)=rarea(i,j)*tmp*(vt(i,j+1)-vt(i,j))
           enddo
        enddo
-       do j=js,je+1
+       do j=js-1,je
           do i=is,ie
-             vt(i,j)=dedy_1(i,j,k)*dx(i,j)
+             vt(i,j)=kqdedy(i,j,k)*dx(i,j)
           enddo
        enddo
        do j=js,je
           do i=is,ie
-             dedy_2(i,j,k)=rarea(i,j)*(vt(i,j+1)-vt(i,j))
+             dkqdedydy(i,j,k)=rarea(i,j)*(vt(i,j)-vt(i,j-1))
           enddo
        enddo
 !-------------------------------------
        do j=js,je
-          do i=is,ie+2
+          do i=is-1,ie+1
              ut(i,j)=tke_1(i,j)*dy(i,j)
           enddo
        enddo
        do j=js,je
-          do i=is,ie+1
-             dedx_1(i,j,k)=rarea(i,j)*(ut(i+1,j)-ut(i,j))
+          do i=is-1,ie
+             tmp = 0.5*(dku3d_e(i,j,k)+dku3d_e(i+1,j,k))
+             kqdedx(i,j,k)=rarea(i,j)*tmp*(ut(i+1,j)-ut(i,j))
           enddo
        enddo
        do j=js,je
-          do i=is,ie+1
-             ut(i,j)=dedx_1(i,j,k)*dy(i,j)
-          enddo
-       enddo
-       do j=js,je
-          do i=is,ie
-             dedx_2(i,j,k)=rarea(i,j)*(ut(i+1,j)-ut(i,j))
-          enddo
-       enddo
-       do j=js,je+1
-          do i=is,ie
-             vt(i,j)=dku3d_e(i,j,k)*dx(i,j)
+          do i=is-1,ie
+             ut(i,j)=kqdedx(i,j,k)*dy(i,j)
           enddo
        enddo
        do j=js,je
           do i=is,ie
-             dkdy(i,j,k)=rarea(i,j)*(vt(i,j+1)-vt(i,j))
-       enddo
-       enddo
-       do j=js,je
-          do i=is,ie+1
-             ut(i,j)=dku3d_e(i,j,k)*dy(i,j)
-          enddo
-       enddo
-       do j=js,je
-          do i=is,ie
-             dkdx(i,j,k)=rarea(i,j)*(ut(i+1,j)-ut(i,j))
+             dkqdedxdx(i,j,k)=rarea(i,j)*(ut(i,j)-ut(i-1,j))
           enddo
        enddo
    enddo ! z loop
@@ -2438,12 +2431,11 @@ subroutine diff3d(npx, npy, npz, nq, ua, va, w, q,       &
 ! get deform_3 based on all terms
 
 !$OMP parallel do default(none) shared(npz,is,ie,js,je,deform_3, &
-!$OMP                   dku3d_e,dkdx,dkdy,dedx_1,dedy_1,sgs_tke,dedx_2,dedy_2)
+!$OMP                   dkqdedxdx,dkqdedydy)
    do k=1,npz
        do j=js,je
           do i=is,ie
-             deform_3(i,j,k)=dku3d_e(i,j,k)*(dedx_2(i,j,k)+dedy_2(i,j,k))      &
-                     +dkdx(i,j,k)*dedx_1(i,j,k)+dkdy(i,j,k)*dedy_1(i,j,k)
+             deform_3(i,j,k)=dkqdedxdx(i,j,k)+dkqdedydy(i,j,k)
           enddo
        enddo
    enddo

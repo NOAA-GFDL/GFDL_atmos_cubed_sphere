@@ -8,7 +8,11 @@ set(CMAKE_Fortran_FLAGS "${CMAKE_Fortran_FLAGS} -g -traceback -fpp -fno-alias -a
 
 set(CMAKE_Fortran_FLAGS_REPRO "-O2 -debug minimal -fp-model consistent -qoverride-limits")
 
-set(CMAKE_Fortran_FLAGS_RELEASE "-O2 -debug minimal -fp-model strict -qoverride-limits")
+if(FASTER)
+  set(CMAKE_Fortran_FLAGS_RELEASE "-O3 -fp-model precise -assume buffered_stdout -fno-alias -align all -debug minimal -qoverride-limits -ftz")
+else()
+  set(CMAKE_Fortran_FLAGS_RELEASE "-O2 -debug minimal -fp-model strict -qoverride-limits")
+endif()
 
 set(CMAKE_Fortran_FLAGS_DEBUG "-O0 -check all -check noarg_temp_created -check nopointer -warn -warn noerrors -fp-stack-check -fstack-protector-all -fpe0 -debug -ftrapuv -init=snan,arrays")
 
