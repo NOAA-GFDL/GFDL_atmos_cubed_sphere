@@ -352,7 +352,7 @@ contains
             do k=npz,1,-1
               newrad(i,j,k) = newrad(i,j,k+1) - delz(i,j,k)
               grav_var_h(i,j,k) = grav*((radius**2)/(newrad(i,j,k)**2))
-              grav_var(i,j,k) = (grav_var_h(i,j,k+1)+grav_var_h(i,j,k))/2.
+              grav_var(i,j,k) = 0.5*(grav_var_h(i,j,k+1)+grav_var_h(i,j,k))
               rdg(i,j,k) = -rdgas/grav_var(i,j,k)
             enddo
           enddo
@@ -817,7 +817,7 @@ contains
             do k=npz,1,-1
               newrad(i,j,k) = newrad(i,j,k+1) - delz(i,j,k)
               grav_var_h(i,j,k) = grav*((radius**2)/(newrad(i,j,k)**2))
-              grav_var(i,j,k) = (grav_var_h(i,j,k+1)+grav_var_h(i,j,k))/2.
+              grav_var(i,j,k) = 0.5*(grav_var_h(i,j,k+1)+grav_var_h(i,j,k))
               rdg(i,j,k) = -rdgas/grav_var(i,j,k)
             enddo
           enddo

@@ -514,7 +514,7 @@ contains
           do k=1,npz
             do j=jsd,jed
               do i=isd,ied
-                grav_var(i,j,k) = (grav_var_h(i,j,k+1)+grav_var_h(i,j,k))/2.
+                grav_var(i,j,k) = 0.5*(grav_var_h(i,j,k+1)+grav_var_h(i,j,k))
               enddo
             enddo
           enddo

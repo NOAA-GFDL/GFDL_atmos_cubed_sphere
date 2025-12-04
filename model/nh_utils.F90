@@ -2343,7 +2343,7 @@ subroutine nh_BC_k(ptop, grav_var, kappa, cp, delp, delzBC_t0, delzBC_t1, pt, ph
      do j=jsd,jed
        do i=isd,ied
          rgrav(i,j,k) = 1./grav_var(i,j,k)
-         rdg(i,j,k) = -rdgas/grav_var(i,j,k)
+         rdg(i,j,k) = -rdgas*rgrav(i,j,k)
        enddo
      enddo
    enddo
