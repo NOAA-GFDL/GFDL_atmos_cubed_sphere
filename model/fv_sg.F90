@@ -1557,6 +1557,7 @@ contains
  real, intent(in):: dp(is-ng:ie+ng,js-ng:je+ng,kbot)  !< total delp-p
  real, intent(in):: delz(is:,js:,1:)
  real, intent(in):: peln(is:ie,kbot+1,js:je)           !< ln(pe)
+ real, intent(in), dimension(is-ng:ie+ng,js-ng:je+ng,kbot)::grav_var
  logical, intent(in), OPTIONAL :: check_negative
 #ifdef MULTI_GASES
  real, intent(inout), dimension(is-ng:ie+ng,js-ng:je+ng,kbot,*):: qvi
@@ -1564,7 +1565,7 @@ contains
  real, intent(inout), dimension(is-ng:ie+ng,js-ng:je+ng,kbot):: qv
 #endif
  real, intent(inout), dimension(is-ng:ie+ng,js-ng:je+ng,kbot)::    &
-                                 pt, ql, qr, qi, qs, qg, grav_var
+                                 pt, ql, qr, qi, qs, qg
  real, intent(inout), OPTIONAL, dimension(is-ng:ie+ng,js-ng:je+ng,kbot):: qa
 ! Local:
  logical:: sat_adj = .false.
@@ -1960,9 +1961,10 @@ contains
  real, intent(in):: dp(is-ng:ie+ng,js-ng:je+ng,kbot)  ! total delp-p
  real, intent(in):: delz(is:,js:,1:)
  real, intent(in):: peln(is:ie,kbot+1,js:je)           ! ln(pe)
+ real, intent(in), dimension(is-ng:ie+ng,js-ng:je+ng,kbot)::grav_var
  logical, intent(in), OPTIONAL :: check_negative
  real, intent(inout), dimension(is-ng:ie+ng,js-ng:je+ng,kbot)::    &
-                                 pt, qv, ql, qr, qi, qs, qg, qh, grav_var
+                                 pt, qv, ql, qr, qi, qs, qg, qh
  real, intent(inout), OPTIONAL, dimension(is-ng:ie+ng,js-ng:je+ng,kbot):: qa
 ! Local:
  logical:: sat_adj = .false.
@@ -2317,9 +2319,10 @@ real, dimension(is:ie,js:je):: pt2, qv2, ql2, qi2, qs2, qr2, qg2, qh2, dp2, p2, 
  real,    intent(in):: dp(is-ng:ie+ng,js-ng:je+ng,kbot)  !< total delp-p
  real,    intent(in):: delz(is-ng:,js-ng:,1:)
  real,    intent(in):: peln(is:ie,kbot+1,js:je)           !< ln(pe)
+ real, intent(in), dimension(is-ng:ie+ng,js-ng:je+ng,kbot)::grav_var
  logical, intent(in), OPTIONAL :: check_negative
  real,    intent(inout), dimension(is-ng:ie+ng,js-ng:je+ng,kbot)::    &
-                                 pt, qv, ql, qr, qi, qs, grav_var
+                                 pt, qv, ql, qr, qi, qs
  real, intent(inout), OPTIONAL, dimension(is-ng:ie+ng,js-ng:je+ng,kbot):: qa
 ! Local:
  logical:: sat_adj = .false.

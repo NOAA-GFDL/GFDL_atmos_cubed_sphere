@@ -511,6 +511,7 @@ contains
           call complete_group_halo_update(i_pack(1), domain)
           if(flagstruct%var_grav) call complete_group_halo_update(i_pack(2), domain)
                                       call timing_off('COMM_TOTAL')
+!$OMP parallel do default(none) shared(isd,ied,jsd,jed,npz,grav_var_h,grav_var)                                       
           do k=1,npz
             do j=jsd,jed
               do i=isd,ied
@@ -518,7 +519,7 @@ contains
               enddo
             enddo
           enddo
-
+!$OMP parallel do default(none) shared(is,ie,js,je,npz,rdg,grav_var)
           do k=1,npz
             do j=js,je
               do i=is,ie

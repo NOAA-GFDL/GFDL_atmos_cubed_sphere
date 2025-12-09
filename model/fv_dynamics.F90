@@ -289,7 +289,7 @@ contains
       real:: pfull(npz)
       real, dimension(bd%is:bd%ie):: cvm
       real, dimension(bd%is:bd%ie,bd%js:bd%je,npz) :: rdg
-      real, dimension(bd%is:bd%ie,bd%js:bd%je,npz+1) :: newrad
+      real, dimension(bd%is:bd%ie,bd%js:bd%je) :: newrad
 #ifdef MULTI_GASES
       real, allocatable :: kapad(:,:,:)
 #endif
@@ -341,32 +341,38 @@ contains
       nq = nq_tot - flagstruct%dnats
       nr = nq_tot - flagstruct%dnrts
 
-      grav_var_h = grav
-      grav_var = grav
+      call init_ijk_mem(isd,ied, jsd,jed, npz+1, grav_var_h, grav)
+      call init_ijk_mem(isd,ied, jsd,jed, npz, grav_var, grav)
 
       if(flagstruct%var_grav)then
+       ! Surface
+!$OMP parallel do default(none) shared(is,ie,js,je,npz,phis,newrad,grav_var_h)       
         do j=js,je
           do i=is,ie
-            newrad(i,j,npz+1) = radius + (phis(i,j)/grav)
-            grav_var_h(i,j,npz+1) = grav*((radius**2)/(newrad(i,j,npz+1)**2))
+            newrad(i,j) = radius + (phis(i,j)/grav)
+            grav_var_h(i,j,npz+1) = grav*((radius**2)/(newrad(i,j)**2))
+          enddo
+        enddo
+        ! To Top & get variable gravity
+!$OMP parallel do default(none) shared(is,ie,js,je,npz,newrad,delz,grav_var_h,grav_var)         
+         do j=js,je
+           do i=is,ie
             do k=npz,1,-1
-              newrad(i,j,k) = newrad(i,j,k+1) - delz(i,j,k)
-              grav_var_h(i,j,k) = grav*((radius**2)/(newrad(i,j,k)**2))
+              newrad(i,j) = newrad(i,j) - delz(i,j,k)
+              grav_var_h(i,j,k) = grav*((radius**2)/(newrad(i,j)**2))
               grav_var(i,j,k) = 0.5*(grav_var_h(i,j,k+1)+grav_var_h(i,j,k))
-              rdg(i,j,k) = -rdgas/grav_var(i,j,k)
             enddo
           enddo
         enddo
-      else
-        do k=1,npz
-          do j=js,je
-            do i=is,ie
-              rdg(i,j,k) = -rdgas/grav_var(i,j,k)
-            enddo
+      endif 
+!$OMP parallel do default(none) shared(is,ie,js,je,npz,rdg,grav_var)      
+      do k=1,npz
+        do j=js,je
+          do i=is,ie
+            rdg(i,j,k) = -rdgas/grav_var(i,j,k)
           enddo
         enddo
-      endif
-
+      enddo
       ! Call CCPP timestep init
       call ccpp_physics_timestep_init(cdata, suite_name=trim(ccpp_suite), group_name="fast_physics", ierr=ierr)
       ! Reset all interstitial variables for CCPP version
@@ -809,21 +815,28 @@ contains
         endif ! md_tadj_layers>0 and md_time and GFDL_interstitial%last_step
      endif
       
-     if(flagstruct%var_grav)then
-        do j=js,je
-          do i=is,ie
-            newrad(i,j,npz+1) = radius + (phis(i,j)/grav)
-            grav_var_h(i,j,npz+1) = grav*((radius**2)/(newrad(i,j,npz+1)**2))
-            do k=npz,1,-1
-              newrad(i,j,k) = newrad(i,j,k+1) - delz(i,j,k)
-              grav_var_h(i,j,k) = grav*((radius**2)/(newrad(i,j,k)**2))
-              grav_var(i,j,k) = 0.5*(grav_var_h(i,j,k+1)+grav_var_h(i,j,k))
-              rdg(i,j,k) = -rdgas/grav_var(i,j,k)
-            enddo
+      if(flagstruct%var_grav)then
+      ! Surface
+!$OMP parallel do default(none) shared(is,ie,js,je,npz,phis,newrad,grav_var_h)      
+      do j=js,je
+        do i=is,ie
+          newrad(i,j) = radius + (phis(i,j)/grav)
+          grav_var_h(i,j,npz+1) = grav*((radius**2)/(newrad(i,j)**2))
+        enddo
+      enddo
+      ! To Top & get variable gravity
+!$OMP parallel do default(none) shared(is,ie,js,je,npz,delz,newrad,grav_var_h,grav_var,rdg)
+      do j=js,je
+        do i=is,ie
+          do k=npz,1,-1
+            newrad(i,j) = newrad(i,j) - delz(i,j,k)
+            grav_var_h(i,j,k) = grav*((radius**2)/(newrad(i,j)**2))
+            grav_var(i,j,k) = 0.5*(grav_var_h(i,j,k+1)+grav_var_h(i,j,k))
+            rdg(i,j,k) = -rdgas/grav_var(i,j,k)
           enddo
         enddo
-      endif
-
+      enddo
+      endif  
      if ( flagstruct%fv_debug ) then
        if (is_master()) write(*,'(A, I3, A1, I3)') 'finished k_split ', n_map, '/', k_split
        call prt_mxm('T_dyn_a4',    pt, is, ie, js, je, ng, npz, 1., gridstruct%area_64, domain)

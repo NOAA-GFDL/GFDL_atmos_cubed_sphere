@@ -236,6 +236,7 @@ contains
         rg = rdgas
        rcp = 1./ cp
 
+!$OMP parallel do default(none) shared(is,ie,js,je,km,rrg,grav_var)
        do k=1,km
          do j=js,je
            do i=is,ie
