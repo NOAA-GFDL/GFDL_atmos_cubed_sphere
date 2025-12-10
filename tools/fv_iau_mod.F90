@@ -259,6 +259,11 @@ subroutine IAU_initialize (IPD_Control, IAU_Data, Init_parm, Atm)
     iau_state%wt = 1.0 ! IAU increment filter weights (default 1.0)
     iau_state%wt=iau_state%wt*IPD_Control%iau_inc_scale !Increase the weight
     iau_state%wt_normfact = 1.0
+    if (IPD_Control%iau_regional) then
+      dtp=IPD_control%dtp
+      nstep = 0.5*IPD_Control%iau_delthrs*3600./dtp
+      iau_state%wt=(1.0/real(nstep))*(1.0-dtp/real(nstep))*IPD_Control%iau_inc_scale
+    end if
     if (IPD_Control%iau_filter_increments) then
        ! compute increment filter weights, sum to obtain normalization factor
        dtp=IPD_control%dtp
@@ -359,8 +364,15 @@ subroutine getiauforcing(IPD_Control,IAU_Data,Atm)
 !         if (is_master()) print *,'no iau forcing',t1,IPD_Control%fhour,t2
          IAU_Data%in_interval=.false.
       else
+         if (IPD_Control%iau_regional) then
+           dtp=IPD_control%dtp
+           nstep = 0.5*IPD_Control%iau_delthrs*3600./dtp
+           kstep = (IPD_Control%fhour-t1)*3600./dtp-nstep
+           iau_state%wt=(1.0/real(nstep))*(1.0-kstep/real(nstep))*IPD_Control%iau_inc_scale
+           call setiauforcing(IPD_Control,IAU_Data,iau_state%wt)
+         end if
          if (IPD_Control%iau_filter_increments) call setiauforcing(IPD_Control,IAU_Data,iau_state%wt)
-         if (is_master()) print *,'apply iau forcing t1,t,t2,filter wt=',t1,IPD_Control%fhour,t2,iau_state%wt/iau_state%wt_normfact,iau_state%wt
+         if (is_master()) print *,'apply iau forcing t1,t,t2,filter wt=',t1,IPD_Control%fhour,t2,iau_state%wt/iau_state%wt_normfact,iau_state%wt,kstep,nstep
          IAU_Data%in_interval=.true.
       endif
       return
