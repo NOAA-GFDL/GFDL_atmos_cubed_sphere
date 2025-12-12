@@ -259,15 +259,10 @@ subroutine IAU_initialize (IPD_Control, IAU_Data, Init_parm, Atm)
     iau_state%wt = 1.0 ! IAU increment filter weights (default 1.0)
     iau_state%wt=iau_state%wt*IPD_Control%iau_inc_scale !Increase the weight
     iau_state%wt_normfact = 1.0
-    if (IPD_Control%iau_regional) then
-      dtp=IPD_control%dtp
-      nstep = 0.5*IPD_Control%iau_delthrs*3600./dtp
-      iau_state%wt=(1.0/real(nstep))*(1.0-dtp/real(nstep))*IPD_Control%iau_inc_scale
-    end if
     if (IPD_Control%iau_filter_increments) then
        ! compute increment filter weights, sum to obtain normalization factor
        dtp=IPD_control%dtp
-       nstep = 0.5*IPD_Control%iau_delthrs*3600/dtp
+       nstep = nint(0.5*IPD_Control%iau_delthrs*3600/dtp)
        ! compute normalization factor for filter weights
        normfact = 0.
        do k=1,2*nstep+1
@@ -284,6 +279,7 @@ subroutine IAU_initialize (IPD_Control, IAU_Data, Init_parm, Atm)
        enddo
        iau_state%wt_normfact = (2*nstep+1)/normfact
     endif
+    if (IPD_Control%iau_regional) iau_state%wt_normfact=iau_state%wt_normfact*IPD_Control%iau_inc_scale
     if ( Atm%flagstruct%increment_file_on_native_grid ) then
        call read_cubed_sphere_inc('INPUT/'//trim(IPD_Control%iau_inc_files(1)), iau_state%inc1, Atm, IPD_Control%iau_regional)
     else
@@ -339,9 +335,9 @@ subroutine getiauforcing(IPD_Control,IAU_Data,Atm)
       ! in window kstep=-nstep,nstep (2*nstep+1 total)
       ! time step IPD_control%dtp
       dtp=IPD_control%dtp
-      nstep = 0.5*IPD_Control%iau_delthrs*3600/dtp
+      nstep = nint(0.5*IPD_Control%iau_delthrs*3600/dtp)
       ! compute normalized filter weight
-      kstep = ((IPD_Control%fhour-t1) - 0.5*IPD_Control%iau_delthrs)*3600./dtp
+      kstep = nint(((IPD_Control%fhour-t1) - 0.5*IPD_Control%iau_delthrs)*3600./dtp)
       if (IPD_Control%fhour >= t1 .and. IPD_Control%fhour < t2) then
          sx     = acos(-1.)*kstep/nstep
          wx     = acos(-1.)*kstep/(nstep+1)
@@ -364,13 +360,6 @@ subroutine getiauforcing(IPD_Control,IAU_Data,Atm)
 !         if (is_master()) print *,'no iau forcing',t1,IPD_Control%fhour,t2
          IAU_Data%in_interval=.false.
       else
-         if (IPD_Control%iau_regional) then
-           dtp=IPD_control%dtp
-           nstep = 0.5*IPD_Control%iau_delthrs*3600./dtp
-           kstep = (IPD_Control%fhour-t1)*3600./dtp-nstep
-           iau_state%wt=(1.0/real(nstep))*(1.0-kstep/real(nstep))*IPD_Control%iau_inc_scale
-           call setiauforcing(IPD_Control,IAU_Data,iau_state%wt)
-         end if
          if (IPD_Control%iau_filter_increments) call setiauforcing(IPD_Control,IAU_Data,iau_state%wt)
          if (is_master()) print *,'apply iau forcing t1,t,t2,filter wt=',t1,IPD_Control%fhour,t2,iau_state%wt/iau_state%wt_normfact,iau_state%wt,kstep,nstep
          IAU_Data%in_interval=.true.
