@@ -364,6 +364,7 @@ contains
             enddo
           enddo
         enddo
+        call mpp_update_domains(grav_var, domain, complete=.true.)
       endif 
 !$OMP parallel do default(none) shared(is,ie,js,je,npz,rdg,grav_var)      
       do k=1,npz

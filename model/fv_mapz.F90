@@ -932,7 +932,7 @@ endif        ! end last_step check
    integer,  intent(in):: km, is, ie, js, je, isd, ied, jsd, jed, id_te
    integer,  intent(in):: sphum, liq_wat, ice_wat, rainwat, snowwat, graupel, hailwat, nwat
    real, intent(inout), dimension(isd:ied,jsd:jed,km):: ua, va
-   real, intent(in), dimension(isd:ied,jsd:jed,km):: pt, delp
+   real, intent(in), dimension(isd:ied,jsd:jed,km):: pt, delp,grav_var
    real, intent(in), dimension(isd:ied,jsd:jed,km,*):: q
    real, intent(in), dimension(isd:ied,jsd:jed,km):: qc
    real, intent(inout)::  u(isd:ied,  jsd:jed+1,km)
@@ -946,7 +946,7 @@ endif        ! end last_step check
    real, intent(in) :: rsin2_l(isd:ied, jsd:jed)
    real, intent(in) :: cosa_s_l(isd:ied, jsd:jed)
    logical, intent(in):: moist_phys, hydrostatic
-   real, intent(in) :: grav_var(is:ie,js:je,km)
+!   real, intent(in) :: grav_var(isd:ied,jsd:jed,km)
 !! Output:
    real, intent(out):: te_2d(is:ie,js:je)   !< vertically integrated TE
    real, intent(out)::   teq(is:ie,js:je)   !< Moist TE
