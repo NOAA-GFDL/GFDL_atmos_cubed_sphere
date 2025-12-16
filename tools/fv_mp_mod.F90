@@ -97,6 +97,7 @@
       use mpp_mod, only : mpp_get_current_pelist, mpp_set_current_pelist
       use mpp_domains_mod, only : mpp_get_domain_shift
       use ensemble_manager_mod, only : get_ensemble_id
+      use mpi_f08
 
       implicit none
       private
@@ -104,10 +105,10 @@
       integer, parameter:: ng    = 3     ! Number of ghost zones required
       integer, parameter :: MAX_NNEST=20, MAX_NTILE=50
 
-#include "mpif.h"
       integer, parameter :: XDir=1
       integer, parameter :: YDir=2
       integer :: commglobal, ierror, npes
+      type(MPI_COMM) :: commglobal_f08
 
       !need tile as a module variable so that some of the mp_ routines below will work
       integer::tile
@@ -288,9 +289,11 @@ contains
          integer :: unit
 
          masterproc = mpp_root_pe()
-         commglobal = MPI_COMM_WORLD
+         commglobal_f08 = MPI_COMM_WORLD
+         commglobal = commglobal_f08%mpi_val
          if( PRESENT(commID) )then
              commglobal = commID
+             commglobal_f08%mpi_val = commID
          end if
          halo_update_type = halo_update_type_in
 
@@ -310,7 +313,7 @@ contains
            master = .false.
          endif
 
-         if (mpp_npes() > 1)  call MPI_BARRIER(commglobal, ierror)
+         if (mpp_npes() > 1)  call MPI_BARRIER(commglobal_f08, ierror)
 
       end subroutine mp_start
 !
@@ -341,7 +344,7 @@ contains
 !>@brief The subroutine 'mp_barrier' waits for all SPMD processes
       subroutine mp_barrier()
 
-         call MPI_BARRIER(commglobal, ierror)
+         call MPI_BARRIER(commglobal_f08, ierror)
 
       end subroutine mp_barrier
 !
@@ -353,7 +356,7 @@ contains
 !>@brief The subroutine 'mp_stop' stops all SPMD processes
       subroutine mp_stop()
 
-         call MPI_BARRIER(commglobal, ierror)
+         call MPI_BARRIER(commglobal_f08, ierror)
          if (gid==masterproc) print*, 'Stopping PEs : ', npes
          call fms_end()
         ! call MPI_FINALIZE (ierror)
@@ -1804,7 +1807,7 @@ end subroutine switch_current_Atm
       subroutine mp_bcst_i4(q)
          integer, intent(INOUT)  :: q
 
-         call MPI_BCAST(q, 1, MPI_INTEGER, masterproc, commglobal, ierror)
+         call MPI_BCAST(q, 1, MPI_INTEGER, masterproc, commglobal_f08, ierror)
 
       end subroutine mp_bcst_i4
 !
@@ -1819,7 +1822,7 @@ end subroutine switch_current_Atm
       subroutine mp_bcst_r4(q)
          real(kind=4), intent(INOUT)  :: q
 
-         call MPI_BCAST(q, 1, MPI_REAL, masterproc, commglobal, ierror)
+         call MPI_BCAST(q, 1, MPI_REAL, masterproc, commglobal_f08, ierror)
 
       end subroutine mp_bcst_r4
 !
@@ -1834,7 +1837,7 @@ end subroutine switch_current_Atm
       subroutine mp_bcst_r8(q)
          real(kind=8), intent(INOUT)  :: q
 
-         call MPI_BCAST(q, 1, MPI_DOUBLE_PRECISION, masterproc, commglobal, ierror)
+         call MPI_BCAST(q, 1, MPI_DOUBLE_PRECISION, masterproc, commglobal_f08, ierror)
 
       end subroutine mp_bcst_r8
 !
@@ -1850,7 +1853,7 @@ end subroutine switch_current_Atm
          integer, intent(IN)  :: idim, jdim, kdim
          real(kind=4), intent(INOUT)  :: q(idim,jdim,kdim)
 
-         call MPI_BCAST(q, idim*jdim*kdim, MPI_REAL, masterproc, commglobal, ierror)
+         call MPI_BCAST(q, idim*jdim*kdim, MPI_REAL, masterproc, commglobal_f08, ierror)
 
       end subroutine mp_bcst_3d_r4
 !
@@ -1866,7 +1869,7 @@ end subroutine switch_current_Atm
          integer, intent(IN)  :: idim, jdim, kdim
          real(kind=8), intent(INOUT)  :: q(idim,jdim,kdim)
 
-         call MPI_BCAST(q, idim*jdim*kdim, MPI_DOUBLE_PRECISION, masterproc, commglobal, ierror)
+         call MPI_BCAST(q, idim*jdim*kdim, MPI_DOUBLE_PRECISION, masterproc, commglobal_f08, ierror)
 
       end subroutine mp_bcst_3d_r8
 !
@@ -1882,7 +1885,7 @@ end subroutine switch_current_Atm
          integer, intent(IN)  :: idim, jdim, kdim, ldim
          real(kind=4), intent(INOUT)  :: q(idim,jdim,kdim,ldim)
 
-         call MPI_BCAST(q, idim*jdim*kdim*ldim, MPI_REAL, masterproc, commglobal, ierror)
+         call MPI_BCAST(q, idim*jdim*kdim*ldim, MPI_REAL, masterproc, commglobal_f08, ierror)
 
       end subroutine mp_bcst_4d_r4
 !
@@ -1898,7 +1901,7 @@ end subroutine switch_current_Atm
          integer, intent(IN)  :: idim, jdim, kdim, ldim
          real(kind=8), intent(INOUT)  :: q(idim,jdim,kdim,ldim)
 
-         call MPI_BCAST(q, idim*jdim*kdim*ldim, MPI_DOUBLE_PRECISION, masterproc, commglobal, ierror)
+         call MPI_BCAST(q, idim*jdim*kdim*ldim, MPI_DOUBLE_PRECISION, masterproc, commglobal_f08, ierror)
 
       end subroutine mp_bcst_4d_r8
 !
@@ -1914,7 +1917,7 @@ end subroutine switch_current_Atm
          integer, intent(IN)  :: idim, jdim, kdim
          integer, intent(INOUT)  :: q(idim,jdim,kdim)
 
-         call MPI_BCAST(q, idim*jdim*kdim, MPI_INTEGER, masterproc, commglobal, ierror)
+         call MPI_BCAST(q, idim*jdim*kdim, MPI_INTEGER, masterproc, commglobal_f08, ierror)
 
       end subroutine mp_bcst_3d_i8
 !
@@ -1930,7 +1933,7 @@ end subroutine switch_current_Atm
          integer, intent(IN)  :: idim, jdim, kdim, ldim
          integer, intent(INOUT)  :: q(idim,jdim,kdim,ldim)
 
-         call MPI_BCAST(q, idim*jdim*kdim*ldim, MPI_INTEGER, masterproc, commglobal, ierror)
+         call MPI_BCAST(q, idim*jdim*kdim*ldim, MPI_INTEGER, masterproc, commglobal_f08, ierror)
 
       end subroutine mp_bcst_4d_i8
 !
@@ -1950,7 +1953,7 @@ end subroutine switch_current_Atm
          real(kind=4) :: gmax(npts)
 
          call MPI_ALLREDUCE( mymax, gmax, npts, MPI_REAL, MPI_MAX, &
-                             commglobal, ierror )
+                             commglobal_f08, ierror )
 
          mymax = gmax
 
@@ -1972,7 +1975,7 @@ end subroutine switch_current_Atm
          real(kind=8) :: gmax(npts)
 
          call MPI_ALLREDUCE( mymax, gmax, npts, MPI_DOUBLE_PRECISION, MPI_MAX, &
-                             commglobal, ierror )
+                             commglobal_f08, ierror )
 
          mymax = gmax
 
@@ -1993,7 +1996,7 @@ end subroutine switch_current_Atm
          real(kind=4) :: gmax
 
          call MPI_ALLREDUCE( mymax, gmax, 1, MPI_REAL, MPI_MAX, &
-                             commglobal, ierror )
+                             commglobal_f08, ierror )
 
          mymax = gmax
 
@@ -2013,7 +2016,7 @@ end subroutine switch_current_Atm
          real(kind=8) :: gmax
 
          call MPI_ALLREDUCE( mymax, gmax, 1, MPI_DOUBLE_PRECISION, MPI_MAX, &
-                             commglobal, ierror )
+                             commglobal_f08, ierror )
 
          mymax = gmax
 
@@ -2034,14 +2037,14 @@ end subroutine switch_current_Atm
          integer :: bcast(2), mrank
          real(kind=4) :: inreduce(2), outreduce(2)
 
-         call MPI_COMM_RANK( commglobal, mrank, ierror )
+         call MPI_COMM_RANK( commglobal_f08, mrank, ierror )
          inreduce=(/mymax, real(mrank,4)/)
          bcast=(/idex, jdex/)
          call MPI_ALLREDUCE( inreduce, outreduce, 1, MPI_2REAL, MPI_MAXLOC, &
-                             commglobal, ierror )
+                             commglobal_f08, ierror )
          mymax=outreduce(1)
          mrank=outreduce(2)
-         call MPI_BCAST( bcast, 2, MPI_INTEGER, mrank, commglobal, ierror )
+         call MPI_BCAST( bcast, 2, MPI_INTEGER, mrank, commglobal_f08, ierror )
          idex=bcast(1)
          jdex=bcast(2)
 
@@ -2062,14 +2065,14 @@ end subroutine switch_current_Atm
          integer :: bcast(2), mrank
          real(kind=8) :: inreduce(2), outreduce(2)
 
-         call MPI_COMM_RANK( commglobal, mrank, ierror )
+         call MPI_COMM_RANK( commglobal_f08, mrank, ierror )
          inreduce=(/mymax, real(mrank,8)/)
          bcast=(/idex, jdex/)
          call MPI_ALLREDUCE( inreduce, outreduce, 1, MPI_2DOUBLE_PRECISION, MPI_MAXLOC, &
-                             commglobal, ierror )
+                             commglobal_f08, ierror )
          mymax=outreduce(1)
          mrank=outreduce(2)
-         call MPI_BCAST( bcast, 2, MPI_INTEGER, mrank, commglobal, ierror )
+         call MPI_BCAST( bcast, 2, MPI_INTEGER, mrank, commglobal_f08, ierror )
          idex=bcast(1)
          jdex=bcast(2)
 
@@ -2091,14 +2094,14 @@ end subroutine switch_current_Atm
          integer :: mrank
          real(kind=4) :: inreduce(2), outreduce(2), bcast(5)
 
-         call MPI_COMM_RANK( commglobal, mrank, ierror )
+         call MPI_COMM_RANK( commglobal_f08, mrank, ierror )
          inreduce=(/mymax, real(mrank,4)/)
          call MPI_ALLREDUCE( inreduce, outreduce, 1, MPI_2REAL, MPI_MAXLOC, &
-                             commglobal, ierror )
+                             commglobal_f08, ierror )
          mymax=outreduce(1)
          mrank=outreduce(2)
          bcast=(/lat, lon, lev, real(idex,4), real(jdex,4)/)
-         call MPI_BCAST( bcast, 5, MPI_REAL, mrank, commglobal, ierror )
+         call MPI_BCAST( bcast, 5, MPI_REAL, mrank, commglobal_f08, ierror )
          lat=bcast(1)
          lon=bcast(2)
          lev=bcast(3)
@@ -2123,14 +2126,14 @@ end subroutine switch_current_Atm
          integer :: mrank
          real(kind=8) :: inreduce(2), outreduce(2), bcast(5)
 
-         call MPI_COMM_RANK( commglobal, mrank, ierror )
+         call MPI_COMM_RANK( commglobal_f08, mrank, ierror )
          inreduce=(/mymax, real(mrank,8)/)
          call MPI_ALLREDUCE( inreduce, outreduce, 1, MPI_2DOUBLE_PRECISION, MPI_MAXLOC, &
-                             commglobal, ierror )
+                             commglobal_f08, ierror )
          mymax=outreduce(1)
          mrank=outreduce(2)
          bcast=(/lat, lon, lev, real(idex,8), real(jdex,8)/)
-         call MPI_BCAST( bcast, 5, MPI_DOUBLE_PRECISION, mrank, commglobal, ierror )
+         call MPI_BCAST( bcast, 5, MPI_DOUBLE_PRECISION, mrank, commglobal_f08, ierror )
          lat=bcast(1)
          lon=bcast(2)
          lev=bcast(3)
@@ -2153,7 +2156,7 @@ end subroutine switch_current_Atm
          real(kind=4) :: gmin
 
          call MPI_ALLREDUCE( mymin, gmin, 1, MPI_REAL, MPI_MIN, &
-                             commglobal, ierror )
+                             commglobal_f08, ierror )
 
          mymin = gmin
 
@@ -2173,7 +2176,7 @@ end subroutine switch_current_Atm
          real(kind=8) :: gmin
 
          call MPI_ALLREDUCE( mymin, gmin, 1, MPI_DOUBLE_PRECISION, MPI_MIN, &
-                             commglobal, ierror )
+                             commglobal_f08, ierror )
 
          mymin = gmin
 
@@ -2194,14 +2197,14 @@ end subroutine switch_current_Atm
          integer :: bcast(2), mrank
          real(kind=4) :: inreduce(2), outreduce(2)
 
-         call MPI_COMM_RANK( commglobal, mrank, ierror )
+         call MPI_COMM_RANK( commglobal_f08, mrank, ierror )
          inreduce=(/mymin, real(mrank,4)/)
          bcast=(/idex, jdex/)
          call MPI_ALLREDUCE( inreduce, outreduce, 1, MPI_2REAL, MPI_MINLOC, &
-                             commglobal, ierror )
+                             commglobal_f08, ierror )
          mymin=outreduce(1)
          mrank=outreduce(2)
-         call MPI_BCAST( bcast, 2, MPI_INTEGER, mrank, commglobal, ierror )
+         call MPI_BCAST( bcast, 2, MPI_INTEGER, mrank, commglobal_f08, ierror )
          idex=bcast(1)
          jdex=bcast(2)
 
@@ -2222,14 +2225,14 @@ end subroutine switch_current_Atm
          integer :: bcast(2), mrank
          real(kind=8) :: inreduce(2), outreduce(2)
 
-         call MPI_COMM_RANK( commglobal, mrank, ierror )
+         call MPI_COMM_RANK( commglobal_f08, mrank, ierror )
          inreduce=(/mymin, real(mrank,8)/)
          bcast=(/idex, jdex/)
          call MPI_ALLREDUCE( inreduce, outreduce, 1, MPI_2DOUBLE_PRECISION, MPI_MINLOC, &
-                             commglobal, ierror )
+                             commglobal_f08, ierror )
          mymin=outreduce(1)
          mrank=outreduce(2)
-         call MPI_BCAST( bcast, 2, MPI_INTEGER, mrank, commglobal, ierror )
+         call MPI_BCAST( bcast, 2, MPI_INTEGER, mrank, commglobal_f08, ierror )
          idex=bcast(1)
          jdex=bcast(2)
 
@@ -2251,14 +2254,14 @@ end subroutine switch_current_Atm
          integer :: mrank
          real(kind=4) :: inreduce(2), outreduce(2), bcast(5)
 
-         call MPI_COMM_RANK( commglobal, mrank, ierror )
+         call MPI_COMM_RANK( commglobal_f08, mrank, ierror )
          inreduce=(/mymin, real(mrank,4)/)
          call MPI_ALLREDUCE( inreduce, outreduce, 1, MPI_2REAL, MPI_MINLOC, &
-                             commglobal, ierror )
+                             commglobal_f08, ierror )
          mymin=outreduce(1)
          mrank=outreduce(2)
          bcast=(/lat, lon, lev, real(idex,4), real(jdex,4)/)
-         call MPI_BCAST( bcast, 5, MPI_REAL, mrank, commglobal, ierror )
+         call MPI_BCAST( bcast, 5, MPI_REAL, mrank, commglobal_f08, ierror )
          lat=bcast(1)
          lon=bcast(2)
          lev=bcast(3)
@@ -2283,14 +2286,14 @@ end subroutine switch_current_Atm
          integer :: mrank
          real(kind=8) :: inreduce(2), outreduce(2), bcast(5)
 
-         call MPI_COMM_RANK( commglobal, mrank, ierror )
+         call MPI_COMM_RANK( commglobal_f08, mrank, ierror )
          inreduce=(/mymin, real(mrank,8)/)
          call MPI_ALLREDUCE( inreduce, outreduce, 1, MPI_2DOUBLE_PRECISION, MPI_MINLOC, &
-                             commglobal, ierror )
+                             commglobal_f08, ierror )
          mymin=outreduce(1)
          mrank=outreduce(2)
          bcast=(/lat, lon, lev, real(idex,8), real(jdex,8)/)
-         call MPI_BCAST( bcast, 5, MPI_DOUBLE_PRECISION, mrank, commglobal, ierror )
+         call MPI_BCAST( bcast, 5, MPI_DOUBLE_PRECISION, mrank, commglobal_f08, ierror )
          lat=bcast(1)
          lon=bcast(2)
          lev=bcast(3)
@@ -2313,7 +2316,7 @@ end subroutine switch_current_Atm
          integer :: gmax
 
          call MPI_ALLREDUCE( mymax, gmax, 1, MPI_INTEGER, MPI_MAX, &
-                             commglobal, ierror )
+                             commglobal_f08, ierror )
 
          mymax = gmax
 
@@ -2333,7 +2336,7 @@ end subroutine switch_current_Atm
          real(kind=4) :: gsum
 
          call MPI_ALLREDUCE( mysum, gsum, 1, MPI_REAL, MPI_SUM, &
-                             commglobal, ierror )
+                             commglobal_f08, ierror )
 
          mysum = gsum
 
@@ -2353,7 +2356,7 @@ end subroutine switch_current_Atm
          real(kind=8) :: gsum
 
          call MPI_ALLREDUCE( mysum, gsum, 1, MPI_DOUBLE_PRECISION, MPI_SUM, &
-                             commglobal, ierror )
+                             commglobal_f08, ierror )
 
          mysum = gsum
 
@@ -2381,7 +2384,7 @@ end subroutine switch_current_Atm
          enddo
 
          call MPI_ALLREDUCE( mysum, gsum, 1, MPI_DOUBLE_PRECISION, MPI_SUM, &
-                             commglobal, ierror )
+                             commglobal_f08, ierror )
 
          mysum = gsum
 
@@ -2409,7 +2412,7 @@ end subroutine switch_current_Atm
          enddo
 
          call MPI_ALLREDUCE( mysum, gsum, 1, MPI_DOUBLE_PRECISION, MPI_SUM, &
-                             commglobal, ierror )
+                             commglobal_f08, ierror )
 
          mysum = gsum
 
