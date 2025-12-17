@@ -4664,11 +4664,12 @@ contains
 ! local:
  real, dimension(2*km+1):: pn, gz
  integer n,i,j,k, k1, k2, l
+ logical :: flag_missing
 
  k2 = max(12, km/2+1)
 
 !$OMP parallel do default(none) shared(k2,is,ie,js,je,km,kd,id,log_p,peln,a2,wz)   &
-!$OMP             private(i,j,n,k,k1,l,pn,gz)
+!$OMP             private(i,j,n,k,k1,l,pn,gz,flag_missing)
  do j=js,je
     do i=is,ie
 !---------------
@@ -4684,17 +4685,21 @@ contains
           pn(k) = 2.*pn(km+1) - pn(l)
        enddo
        k1 = 1
-       do 1000 n=1,kd
-          if( id(n)<0 ) goto 1000
+       do n=1,kd
+          if( id(n)<0 ) cycle
+          flag_missing = .true.
           do k=k1,km+k2-1
              if( log_p(n) <= pn(k+1) .and. log_p(n) >= pn(k) ) then
                  a2(i,j,n) = gz(k) + (gz(k+1)-gz(k))*(log_p(n)-pn(k))/(pn(k+1)-pn(k))
                  k1 = k
-                 go to 1000
+                 flag_missing = .false.
+                 exit
              endif
           enddo
-       a2(i,j,n) = missing_value
-1000   continue
+          if (flag_missing) then
+             a2(i,j,n) = missing_value
+          endif
+       enddo
     enddo
  enddo
 
@@ -5148,10 +5153,8 @@ contains
             else
                 uc(i) = uc(i) / (zh(i)-dz(i) - zh0(i))
                 vc(i) = vc(i) / (zh(i)-dz(i) - zh0(i))
-                goto 123
             endif
          enddo
-123      continue
 
 ! Lowest layer wind shear computed betw top edge and mid-layer
          k = k1
@@ -5230,12 +5233,9 @@ contains
             elseif ( zh(i) < z_top ) then
                 k0 = k
             else
-                goto 123
+                exit
             endif
-
          enddo
-123      continue
-
 ! Lowest layer wind shear computed betw top edge and mid-layer
          k = k1
          srh(i,j) = 0.5*(va(i,j,k1)-vc(i,j))*(ua(i,j,k1-1)-ua(i,j,k1))  -  &
@@ -5311,11 +5311,10 @@ contains
                 umn = umn + ua(i,j,k)*dz
                 vmn = vmn + va(i,j,k)*dz
             else
-                goto 123
+                exit
             endif
 
          enddo
-123      continue
 
          u6km = u6km + (ua(i,j,k) - u6km) / dz * (6000. - (zh - dz))
          v6km = v6km + (va(i,j,k) - v6km) / dz * (6000. - (zh - dz))
@@ -5393,11 +5392,9 @@ contains
                uh(i,j) = uh(i,j) + vort(i,j,k)*w(i,j,k)*dz(i)
             else
                uh(i,j) = uh(i,j) + vort(i,j,k)*w(i,j,k)*(z_top - (zh(i)-dz(i)) )
-               goto 123
+               exit
             endif
          enddo
-123      continue
-
       enddo  ! i-loop
    enddo   ! j-loop
 

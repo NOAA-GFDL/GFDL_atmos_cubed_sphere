@@ -3169,22 +3169,22 @@ contains
          do l=m,km
             if ( (pn1(i,k).le.pn(l+1)) .and. (pn1(i,k).ge.pn(l)) ) then
                 gz_fv(k) = gz(l) + (gz(l+1)-gz(l))*(pn1(i,k)-pn(l))/(pn(l+1)-pn(l))
-                goto 555
+                exit
             elseif ( pn1(i,k) .gt. pn(km+1) ) then
 ! Isothermal under ground; linear in log-p extra-polation
                 gz_fv(k) = gz(km+1) + (gz_fv(npz+1)-gz(km+1))*(pn1(i,k)-pn(km+1))/(pn1(i,npz+1)-pn(km+1))
-                goto 555
+                exit
             endif
          enddo
 #else
          do l=m,km+k2-1
             if ( (pn1(i,k).le.pn(l+1)) .and. (pn1(i,k).ge.pn(l)) ) then
                 gz_fv(k) = gz(l) + (gz(l+1)-gz(l))*(pn1(i,k)-pn(l))/(pn(l+1)-pn(l))
-                goto 555
+                exit
             endif
          enddo
 #endif
-555   m = l
+      m = l
       enddo
 
       do k=1,npz+1
