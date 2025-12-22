@@ -928,11 +928,10 @@ CONTAINS
    do k=ks1, km
       if( dt > dts(k) ) then
           ktop = k-1
-          goto 333
+          exit
       endif
    enddo
    ktop = km
-333   continue
 
  if ( ktop >= ks1 ) then
    do k=ks1, ktop

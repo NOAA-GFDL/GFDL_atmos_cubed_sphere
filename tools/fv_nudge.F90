@@ -2196,14 +2196,14 @@ module fv_nwp_nudge_mod
       real:: dist
       integer n, i, j
 
-    do 5000 n=1,nstorms      ! loop through all storms
+    do n=1,nstorms      ! loop through all storms
 !----------------------------------------
 ! Obtain slp observation
 !----------------------------------------
       call get_slp_obs(time, nobs_tc(n), x_obs(1,n), y_obs(1,n), wind_obs(1,n),  mslp_obs(1,n), mslp_out(1,n), rad_out(1,n),   &
                        time_tc(1,n), pos(1), pos(2), w10_o, slp_o, r_vor, p_vor)
 
-      if ( slp_o<880.E2 .or. slp_o>min(slp_env,slp_mask) .or. abs(pos(2))*rad2deg>40. ) goto 5000  ! next storm
+      if ( slp_o<880.E2 .or. slp_o>min(slp_env,slp_mask) .or. abs(pos(2))*rad2deg>40. ) cycle  ! next storm
 
       if ( r_vor < 30.E3 ) then
            r_vor = r_min + (slp_env-slp_o)/20.E2*r_inc   ! radius of influence
@@ -2217,8 +2217,7 @@ module fv_nwp_nudge_mod
             endif
          enddo             ! i-loop
       enddo                ! end j-loop
-
-5000 continue
+    enddo                  ! end n-loop   
 
  end subroutine get_tc_mask
 
