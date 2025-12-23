@@ -3191,16 +3191,19 @@ do 1000 j=jfirst,jlast
 ! -----------------------------------------------------
 ! ------- update halo to prepare for diffusion -------
     pkzf = 0.0
+!$OMP parallel do default(none) shared(npz,is,ie,js,je,pkzf,pkz)
     do k=1,npz
        do j=js,je
-          pkzf(is:ie,j,k) = pkz(is:ie,j,k)
+         do i=is,ie
+          pkzf(i,j,k) = pkz(i,j,k)
+          enddo
        enddo
     enddo
 
                              call timing_on('COMM_TOTAL')
     call start_group_halo_update(i_pack(1),delp,  domain, complete=.false.)
     call start_group_halo_update(i_pack(1), pt,   domain, complete=.true.)
-    call start_group_halo_update(i_pack(2),pkzf,  domain)
+    call start_group_halo_update(i_pack(6),pkzf,  domain)
     call start_group_halo_update(i_pack(7), w, domain)
     call start_group_halo_update(i_pack(8), u, v, domain, gridtype=DGRID_NE)
     if ( nq > 0 ) then
@@ -3213,7 +3216,7 @@ do 1000 j=jfirst,jlast
 #endif
 
     call complete_group_halo_update(i_pack(1), domain)  ! delp. pt
-    call complete_group_halo_update(i_pack(2), domain)  ! pkzf
+    call complete_group_halo_update(i_pack(6), domain)  ! pkzf
     call complete_group_halo_update(i_pack(7), domain)  ! w
     call complete_group_halo_update(i_pack(8), domain)
     if ( nq>0 ) then
