@@ -183,9 +183,9 @@ subroutine IAU_initialize (IPD_Control, IAU_Data, Init_parm, Atm)
     if( file_exists(fname) ) then
       call open_ncfile( fname, ncid )        ! open the file
       if (IPD_Control%iau_regional) then
-       call get_ncdim1( ncid, 'nx',   im)
-       call get_ncdim1( ncid, 'ny',   jm)
-       call get_ncdim1( ncid, 'nz',   km)
+       call get_ncdim1( ncid, 'xaxis_1',   im)
+       call get_ncdim1( ncid, 'yaxis_1',   jm)
+       call get_ncdim1( ncid, 'zaxis_1',   km)
       else
        call get_ncdim1( ncid, 'lon',   im)
        call get_ncdim1( ncid, 'lat',   jm)
