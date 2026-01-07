@@ -125,7 +125,7 @@ module fv_mapz_mod
   private
 
   public compute_total_energy, Lagrangian_to_Eulerian, moist_cv, moist_cp,   &
-         rst_remap, mappm, E_Flux, remap_2d, map_scalar
+         rst_remap, mappm, E_Flux, remap_2d, map_scalar, map1_ppm
 
 contains
 
@@ -139,7 +139,7 @@ contains
                       ptop, ak, bk, pfull, gridstruct, domain, do_sat_adj, &
                       hydrostatic, phys_hydrostatic, hybrid_z, adiabatic, do_adiabatic_init, &
                       do_inline_mp, inline_mp, c2l_ord, bd, fv_debug, &
-                      moist_phys)
+                      moist_phys, pt_save)
   logical, intent(in):: last_step
   logical, intent(in):: fv_debug
   real,    intent(in):: mdt                   !< remap time step
@@ -207,6 +207,8 @@ contains
   real, intent(out)::     te(isd:ied,jsd:jed,km)
 
   type(inline_mp_type), intent(inout):: inline_mp
+
+  real, intent(inout), optional :: pt_save(isd:ied,jsd:jed,km)
 
 ! !DESCRIPTION:
 !
@@ -669,7 +671,7 @@ contains
 !$OMP                               ng,gridstruct,E_Flux,pdt,dtmp,reproduce_sum,q,             &
 !$OMP                               mdt,cld_amt,cappa,dtdt,out_dt,rrg,akap,do_sat_adj,         &
 !$OMP                               kord_tm, pe4,npx,npy, ccn_cm3,                             &
-!$OMP                               u_dt,v_dt,c2l_ord,bd,dp0,ps,cdata,GFDL_interstitial)       &
+!$OMP                               u_dt,v_dt,c2l_ord,bd,dp0,ps,cdata,GFDL_interstitial,pt_save)       &
 !$OMP                        shared(ccpp_suite)                                                &
 #ifdef MULTI_GASES
 !$OMP                        shared(num_gas)                                                   &
@@ -834,6 +836,19 @@ endif        ! end last_step check
   if ( last_step ) then
        ! Output temperature if last_step
 !!!  if ( is_master() ) write(*,*) 'dtmp=', dtmp, nwat
+
+    if(present(pt_save))then
+      ! pt_save = 0.
+!$OMP do
+       do k=1,km
+          do j=js,je
+             do i=is,ie
+                pt_save(i,j,k) = (pt(i,j,k)/pkz(i,j,k))+dtmp
+             enddo
+          enddo
+       enddo
+    endif
+
 !$OMP do
         do k=1,km
            do j=js,je
@@ -1381,7 +1396,6 @@ endif        ! end last_step check
   enddo
 
  end subroutine map1_ppm
-
 
  subroutine mapn_tracer(nq, km, pe1, pe2, q1, dp2, kord, j,     &
                         i1, i2, isd, ied, jsd, jed, q_min, fill)
