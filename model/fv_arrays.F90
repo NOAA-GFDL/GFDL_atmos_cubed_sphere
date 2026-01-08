@@ -936,7 +936,7 @@ module fv_arrays_mod
   logical :: write_restart_with_bcs = .false.   !< Default setting for using DA-updated BC files
   logical :: regional_bcs_from_gsi = .false.    !< Default setting for writing restart files with boundary rows
   logical :: pass_full_omega_to_physics_in_non_hydrostatic_mode = .false.  !< Default to passing local omega to physics in non-hydrostatic 
-
+  logical :: var_grav = .false.  ! apply variable gravity (4D) to simulations
 !This logical variable is used for SA-3D-TKE
      logical :: sa3dtke_dyco = .false.
 
@@ -1281,6 +1281,8 @@ module fv_arrays_mod
     real, _ALLOCATABLE :: pk  (:,:,:)   _NULL  !< pe**cappa
     real, _ALLOCATABLE :: peln(:,:,:)   _NULL  !< ln(pe)
     real, _ALLOCATABLE :: pkz (:,:,:)   _NULL  !< finite-volume mean pk
+    real, _ALLOCATABLE :: grav_var_h(:,:,:)   _NULL  !< variable gravity for Whole Atmos 
+    real, _ALLOCATABLE :: grav_var(:,:,:)   _NULL
 
 ! For downscaling/remapping a 2d variable from parent to its nest
     real, _ALLOCATABLE :: parent2nest_2d(:,:) _NULL !< 2d arrary for downscaling a variable from parent to its nest
@@ -1514,6 +1516,8 @@ contains
     allocate (   Atm%pk(is:ie    ,js:je  , npz+1) )
     allocate ( Atm%peln(is:ie,npz+1,js:je) )
     allocate (  Atm%pkz(is:ie,js:je,npz) )
+    allocate (  Atm%grav_var(isd:ied,jsd:jed,npz))
+    allocate (  Atm%grav_var_h(isd:ied,jsd:jed,npz+1))
 
     allocate ( Atm%parent2nest_2d(isd:ied,jsd:jed) )
 
@@ -1915,6 +1919,8 @@ contains
     deallocate (   Atm%pk )
     deallocate ( Atm%peln )
     deallocate (  Atm%pkz )
+    deallocate (  Atm%grav_var )
+    deallocate (  Atm%grav_var_h )
     deallocate ( Atm%phis )
     deallocate ( Atm%omga )
     deallocate (   Atm%ua )
