@@ -5,7 +5,7 @@ module cubed_sphere_inc_mod
   use fv_arrays_mod,      only: fv_atmos_type
   use fms2_io_mod,        only: open_file, close_file, read_data, variable_exists, &
                                 FmsNetcdfDomainFile_t, register_axis, FmsNetcdfFile_t
-  use fv_mp_mod,          only: is_master
+  use mpp_mod,            only: mpp_error, NOTE
 
   implicit none
   type increment_data_type
@@ -69,7 +69,7 @@ module cubed_sphere_inc_mod
             if ( variable_exists(fileobj, trim(tracer_name)//'_inc') ) then
                call read_data(fileobj, trim(tracer_name)//'_inc', increment_data%tracer_inc(:,:,:,itracer))
             else
-               if (is_master()) print *,'warning: no increment for ',trim(tracer_name),' found, assuming zero'
+               call mpp_error(NOTE, 'No Increment for '//trim(tracer_name)//' found, assuming zero')
                increment_data%tracer_inc(:,:,:,itracer) = 0.0
             end if
          end do

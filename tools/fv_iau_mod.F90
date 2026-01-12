@@ -361,7 +361,7 @@ subroutine getiauforcing(IPD_Control,IAU_Data,Atm)
          IAU_Data%in_interval=.false.
       else
          if (IPD_Control%iau_filter_increments) call setiauforcing(IPD_Control,IAU_Data,iau_state%wt)
-         if (is_master()) print *,'apply iau forcing t1,t,t2,filter wt=',t1,IPD_Control%fhour,t2,iau_state%wt/iau_state%wt_normfact,iau_state%wt,kstep,nstep
+         if (is_master()) print *,'apply iau forcing t1,t,t2,filter wt=',t1,IPD_Control%fhour,t2,iau_state%wt/iau_state%wt_normfact
          IAU_Data%in_interval=.true.
       endif
       return
@@ -408,7 +408,6 @@ subroutine updateiauforcing(IPD_Control,IAU_Data,wt)
 
 !   if (is_master()) print *,'in updateiauforcing',nfiles,IPD_Control%iaufhrs(1:nfiles)
    delt = (iau_state%hr2-(IPD_Control%fhour))/(IAU_state%hr2-IAU_state%hr1)
-   if (is_master()) print *,'XL',maxval(IAU_state%inc2%ua_inc(is:ie,js:je,:)),minval(IAU_state%inc2%ua_inc(is:ie,js:je,:)),delt,IPD_Control%iau_regional
    do j = js,je
       do i = is,ie
          do k = 1,npz
