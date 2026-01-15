@@ -441,12 +441,49 @@ contains
       call register_axis(SFC_restart, dim_names_alloc(2), "y")
       call register_axis(SFC_restart, dim_names_alloc(1), "x")
       call register_restart_field(SFC_restart, 'tsea', Atm%ts, dim_names_alloc)
+      if ( Atm%flagstruct%do_inline_pbl ) then
+        call register_restart_field(SFC_restart, 'slmsk', Atm%inline_pbl%lsm, dim_names_alloc)
+        call register_restart_field(SFC_restart, 'zorl', Atm%inline_pbl%zorl, dim_names_alloc)
+        !call register_restart_field(SFC_restart, 'ztrl', Atm%inline_pbl%ztrl, dim_names_alloc)
+        call register_restart_field(SFC_restart, 'ffmm', Atm%inline_pbl%ffmm, dim_names_alloc)
+        call register_restart_field(SFC_restart, 'ffhh', Atm%inline_pbl%ffhh, dim_names_alloc)
+        Atm%inline_pbl%tsfc = Atm%ts
+        call register_restart_field(SFC_restart, 'shdmax', Atm%inline_pbl%shdmax, dim_names_alloc)
+        call register_restart_field(SFC_restart, 'vtype', Atm%inline_pbl%vtype, dim_names_alloc)
+        call register_restart_field(SFC_restart, 'vfrac', Atm%inline_pbl%vfrac, dim_names_alloc)
+        call register_restart_field(SFC_restart, 'snwdph', Atm%inline_pbl%snowd, dim_names_alloc)
+        call register_restart_field(SFC_restart, 'uustar', Atm%inline_pbl%uustar, dim_names_alloc)
+        call register_restart_field(SFC_restart, 'srflag', Atm%inline_pbl%srflag, dim_names_alloc)
+        call register_restart_field(SFC_restart, 'hice', Atm%inline_pbl%hice, dim_names_alloc)
+        call register_restart_field(SFC_restart, 'fice', Atm%inline_pbl%fice, dim_names_alloc)
+        call register_restart_field(SFC_restart, 'tisfc', Atm%inline_pbl%tice, dim_names_alloc)
+        call register_restart_field(SFC_restart, 'sheleg', Atm%inline_pbl%weasd, dim_names_alloc)
+        call register_restart_field(SFC_restart, 'tprcp', Atm%inline_pbl%tprcp, dim_names_alloc)
+      endif
       call read_restart(SFC_restart)
       call close_file(SFC_restart)
       deallocate (dim_names_alloc)
     else
       call mpp_error(FATAL,'==> Error in External_ic::get_nggps_ic: tiled file '//trim(fn_sfc_ics)//' for NGGPS IC does not exist')
     endif
+
+    if ( Atm%flagstruct%do_inline_pbl ) then
+      if( open_file(SFC_restart, fn_sfc_ics, "read", Atm%domain_for_read, is_restart=.true., dont_add_res_to_filename=.true.) ) then
+          naxis_dims = get_variable_num_dimensions(SFC_restart, 'stc')
+          allocate (dim_names_alloc(naxis_dims))
+          call get_variable_dimension_names(SFC_restart, 'stc', dim_names_alloc)
+          call register_axis(SFC_restart, dim_names_alloc(3), size(Atm%inline_pbl%stc,3))
+          call register_axis(SFC_restart, dim_names_alloc(2), "y")
+          call register_axis(SFC_restart, dim_names_alloc(1), "x")
+          call register_restart_field(SFC_restart, 'stc', Atm%inline_pbl%stc, dim_names_alloc)
+          call read_restart(SFC_restart)
+          call close_file(SFC_restart)
+          deallocate (dim_names_alloc)
+      else
+        call mpp_error(FATAL,'==> Error in External_ic::get_nggps_ic: tiled file '//trim(fn_sfc_ics)//' for NGGPS IC does not exist')
+      endif
+    endif
+
     call mpp_error(NOTE,'==> External_ic::get_nggps_ic: using tiled data file '//trim(fn_sfc_ics)//' for NGGPS IC')
 
     ! set dimensions for register restart
@@ -472,6 +509,23 @@ contains
         if (Atm%neststruct%nested) then
           call extrapolation_BC(oro_ic, 0, 0, Atm%npx, Atm%npy, Atm%bd, .true.)
         endif
+      endif
+
+      if ( Atm%flagstruct%do_inline_gwd ) then
+        call register_restart_field(ORO_restart, 'stddev', Atm%inline_gwd%hprime, dim_names_2d)
+        call register_restart_field(ORO_restart, 'convexity', Atm%inline_gwd%oc, dim_names_2d)
+        call register_restart_field(ORO_restart, 'oa1', Atm%inline_gwd%oa(:,:,1), dim_names_2d)
+        call register_restart_field(ORO_restart, 'oa2', Atm%inline_gwd%oa(:,:,2), dim_names_2d)
+        call register_restart_field(ORO_restart, 'oa3', Atm%inline_gwd%oa(:,:,3), dim_names_2d)
+        call register_restart_field(ORO_restart, 'oa4', Atm%inline_gwd%oa(:,:,4), dim_names_2d)
+        call register_restart_field(ORO_restart, 'ol1', Atm%inline_gwd%ol(:,:,1), dim_names_2d)
+        call register_restart_field(ORO_restart, 'ol2', Atm%inline_gwd%ol(:,:,2), dim_names_2d)
+        call register_restart_field(ORO_restart, 'ol3', Atm%inline_gwd%ol(:,:,3), dim_names_2d)
+        call register_restart_field(ORO_restart, 'ol4', Atm%inline_gwd%ol(:,:,4), dim_names_2d)
+        call register_restart_field(ORO_restart, 'theta', Atm%inline_gwd%theta, dim_names_2d)
+        call register_restart_field(ORO_restart, 'sigma', Atm%inline_gwd%sigma, dim_names_2d)
+        call register_restart_field(ORO_restart, 'gamma', Atm%inline_gwd%gamma, dim_names_2d)
+        call register_restart_field(ORO_restart, 'elvmax', Atm%inline_gwd%elvmax, dim_names_2d)
       endif
 
       if ( Atm%flagstruct%fv_land ) then
@@ -1760,6 +1814,7 @@ contains
                  0.97771,       0.98608,       0.99347,  1./
 
       character(len=128) :: fname
+      character(len=8), allocatable  :: dim_names_alloc(:)
       character(len=8), dimension(2) :: dim_names_2d
       character(len=8), dimension(3) :: dim_names_3d3, dim_names_3d4
       real, allocatable:: wk2(:,:)
@@ -1797,14 +1852,15 @@ contains
       real(kind=R_GRID), dimension(3):: e1, e2, ex, ey
       real, allocatable:: ps_gfs(:,:), zh_gfs(:,:,:), o3mr_gfs(:,:,:)
       real, allocatable:: ak_gfs(:), bk_gfs(:)
-      integer :: id_res, ntprog, ntracers, ks, iq, nt, levsp
+      integer :: id_res, ntprog, ntracers, ks, iq, nt, levsp, naxis_dims
       character(len=64) :: tracer_name
       integer :: levp_gfs = 64
-      type(FmsNetcdfDomainFile_t) :: ORO_restart, GFS_restart
+      type(FmsNetcdfDomainFile_t) :: ORO_restart, GFS_restart, SFC_restart
       type(FmsNetcdfFile_t) :: Gfs_ctl
       integer, allocatable, dimension(:) :: pes !< Array of the pes in the current pelist
       character(len=64) :: fn_oro_ics = 'INPUT/oro_data.nc'
       character(len=64) :: fn_gfs_ics = 'INPUT/gfs_data.nc'
+      character(len=64) :: fn_sfc_ics = 'INPUT/sfc_data.nc'
       character(len=64) :: fn_gfs_ctl = 'INPUT/gfs_ctrl.nc'
       character(len=20) :: suffix
       character(len=1) :: tile_num
@@ -1877,6 +1933,57 @@ contains
       dim_names_3d4 = dim_names_3d3
       dim_names_3d4(1) = "levp"
 
+      if ( Atm%flagstruct%do_inline_pbl ) then
+         if( open_file(SFC_restart, fn_sfc_ics, "read", Atm%domain_for_read, is_restart=.true., dont_add_res_to_filename=.true.) ) then
+            naxis_dims = get_variable_num_dimensions(SFC_restart, 'slmsk')
+            allocate (dim_names_alloc(naxis_dims))
+            call get_variable_dimension_names(SFC_restart, 'slmsk', dim_names_alloc)
+            call register_axis(SFC_restart, dim_names_alloc(2), "y")
+            call register_axis(SFC_restart, dim_names_alloc(1), "x")
+            call register_restart_field(SFC_restart, 'slmsk', Atm%inline_pbl%lsm, dim_names_alloc)
+            call register_restart_field(SFC_restart, 'zorl', Atm%inline_pbl%zorl, dim_names_alloc)
+            !call register_restart_field(SFC_restart, 'ztrl', Atm%inline_pbl%ztrl, dim_names_alloc)
+            call register_restart_field(SFC_restart, 'ffmm', Atm%inline_pbl%ffmm, dim_names_alloc)
+            call register_restart_field(SFC_restart, 'ffhh', Atm%inline_pbl%ffhh, dim_names_alloc)
+            Atm%inline_pbl%tsfc = Atm%ts
+            call register_restart_field(SFC_restart, 'shdmax', Atm%inline_pbl%shdmax, dim_names_alloc)
+            call register_restart_field(SFC_restart, 'vtype', Atm%inline_pbl%vtype, dim_names_alloc)
+            call register_restart_field(SFC_restart, 'vfrac', Atm%inline_pbl%vfrac, dim_names_alloc)
+            call register_restart_field(SFC_restart, 'snwdph', Atm%inline_pbl%snowd, dim_names_alloc)
+            call register_restart_field(SFC_restart, 'uustar', Atm%inline_pbl%uustar, dim_names_alloc)
+            call register_restart_field(SFC_restart, 'srflag', Atm%inline_pbl%srflag, dim_names_alloc)
+            call register_restart_field(SFC_restart, 'hice', Atm%inline_pbl%hice, dim_names_alloc)
+            call register_restart_field(SFC_restart, 'fice', Atm%inline_pbl%fice, dim_names_alloc)
+            call register_restart_field(SFC_restart, 'tisfc', Atm%inline_pbl%tice, dim_names_alloc)
+            call register_restart_field(SFC_restart, 'sheleg', Atm%inline_pbl%weasd, dim_names_alloc)
+            call register_restart_field(SFC_restart, 'tprcp', Atm%inline_pbl%tprcp, dim_names_alloc)
+            call read_restart(SFC_restart)
+            call close_file(SFC_restart)
+            deallocate (dim_names_alloc)
+         else
+            call mpp_error(FATAL,'==> Error in External_ic::get_ecmwf_ic: tiled file '//trim(fn_sfc_ics)//' for ECMWF IC does not exist')
+         endif
+      endif
+
+      if ( Atm%flagstruct%do_inline_pbl ) then
+        if( open_file(SFC_restart, fn_sfc_ics, "read", Atm%domain_for_read, is_restart=.true., dont_add_res_to_filename=.true.) ) then
+            naxis_dims = get_variable_num_dimensions(SFC_restart, 'stc')
+            allocate (dim_names_alloc(naxis_dims))
+            call get_variable_dimension_names(SFC_restart, 'stc', dim_names_alloc)
+            call register_axis(SFC_restart, dim_names_alloc(3), size(Atm%inline_pbl%stc,3))
+            call register_axis(SFC_restart, dim_names_alloc(2), "y")
+            call register_axis(SFC_restart, dim_names_alloc(1), "x")
+            call register_restart_field(SFC_restart, 'stc', Atm%inline_pbl%stc, dim_names_alloc)
+            call read_restart(SFC_restart)
+            call close_file(SFC_restart)
+            deallocate (dim_names_alloc)
+        else
+          call mpp_error(FATAL,'==> Error in External_ic::get_ecmwf_ic: tiled file '//trim(fn_sfc_ics)//' for ECMWF IC does not exist')
+        endif
+      endif
+
+      call mpp_error(NOTE,'==> External_ic::get_ecmwf_ic: using tiled data file '//trim(fn_sfc_ics)//' for ECMWF IC')
+
 !! Read in model terrain from oro_data.tile?.nc
       if( open_file(ORO_restart, fn_oro_ics, "read", Atm%domain_for_read, is_restart=.true., dont_add_res_to_filename=.true.) ) then
         call register_axis(ORO_restart, "lat", "y")
@@ -1886,9 +1993,30 @@ contains
           elseif (.not. filtered_terrain) then
             call register_restart_field(ORO_restart, 'orog_raw', Atm%phis, dim_names_2d)
         endif
+        if ( Atm%flagstruct%do_inline_gwd ) then
+          call register_restart_field(ORO_restart, 'stddev', Atm%inline_gwd%hprime, dim_names_2d)
+          call register_restart_field(ORO_restart, 'convexity', Atm%inline_gwd%oc, dim_names_2d)
+          call register_restart_field(ORO_restart, 'oa1', Atm%inline_gwd%oa(:,:,1), dim_names_2d)
+          call register_restart_field(ORO_restart, 'oa2', Atm%inline_gwd%oa(:,:,2), dim_names_2d)
+          call register_restart_field(ORO_restart, 'oa3', Atm%inline_gwd%oa(:,:,3), dim_names_2d)
+          call register_restart_field(ORO_restart, 'oa4', Atm%inline_gwd%oa(:,:,4), dim_names_2d)
+          call register_restart_field(ORO_restart, 'ol1', Atm%inline_gwd%ol(:,:,1), dim_names_2d)
+          call register_restart_field(ORO_restart, 'ol2', Atm%inline_gwd%ol(:,:,2), dim_names_2d)
+          call register_restart_field(ORO_restart, 'ol3', Atm%inline_gwd%ol(:,:,3), dim_names_2d)
+          call register_restart_field(ORO_restart, 'ol4', Atm%inline_gwd%ol(:,:,4), dim_names_2d)
+          call register_restart_field(ORO_restart, 'theta', Atm%inline_gwd%theta, dim_names_2d)
+          call register_restart_field(ORO_restart, 'sigma', Atm%inline_gwd%sigma, dim_names_2d)
+          call register_restart_field(ORO_restart, 'gamma', Atm%inline_gwd%gamma, dim_names_2d)
+          call register_restart_field(ORO_restart, 'elvmax', Atm%inline_gwd%elvmax, dim_names_2d)
+        endif
         call read_restart(ORO_restart)
         call close_file(ORO_restart)
+      else
+        call mpp_error(FATAL,'==> Error in External_ic::get_ecmwf_ic: tiled file '//trim(fn_oro_ics)//' for ECMWF IC does not exist')
       endif
+
+      call mpp_error(NOTE,'==> External_ic::get_ecmwf_ic: using tiled data file '//trim(fn_oro_ics)//' for ECMWF IC')
+
       Atm%phis = Atm%phis*grav
       if(is_master()) write(*,*) 'done reading model terrain from oro_data.nc'
       call mpp_update_domains( Atm%phis, Atm%domain )
@@ -1912,7 +2040,11 @@ contains
             call register_restart_field(GFS_restart, 'zh', zh_gfs, dim_names_3d4)
             call read_restart(GFS_restart)
             call close_file(GFS_restart)
+          else
+            call mpp_error(FATAL,'==> Error in External_ic::get_ecmwf_ic: file '//trim(fn_gfs_ctl)//' for ECMWF IC does not exist')
           endif
+
+          call mpp_error(NOTE,'==> External_ic::get_ecmwf_ic: using tiled data file '//trim(fn_gfs_ctl)//' for ECMWF IC')
 
           ! Get GFS ak, bk for o3mr vertical interpolation
           allocate (wk2(levp_gfs+1,2))
