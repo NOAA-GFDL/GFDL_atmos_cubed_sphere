@@ -1303,7 +1303,7 @@ contains
 ! direct explicit molecular diffusion
 ! -----------------------------------------------------
        call molecular_diffusion_run(u, v, w, delp, pt, pkz, cappa, q, bd,   &
-                 gridstruct, flagstruct, domain, i_pack, npx, npy, npz, nq, dt, it, akap, zvir, cv_air)
+                 gridstruct, flagstruct, domain, npx, npy, npz, nq, dt, it, akap, zvir, cv_air)
     endif
 ! -------------------------------------------------
 
@@ -3154,7 +3154,7 @@ do 1000 j=jfirst,jlast
  end subroutine gz_bc
 
  subroutine molecular_diffusion_run(u,v,w,delp,pt,pkz,cappa,q,bd,   &
-                            gridstruct,flagstruct,domain,i_pack,npx,npy,npz, &
+                            gridstruct,flagstruct,domain,npx,npy,npz, &
                             nq,dt,it,akap,zvir,cv_air)
   type(fv_grid_bounds_type), intent(IN) :: bd
   real, intent(inout):: pkz(bd%is:bd%ie,bd%js:bd%je,npz)
@@ -3171,7 +3171,7 @@ do 1000 j=jfirst,jlast
   type(fv_grid_type),  intent(INOUT), target :: gridstruct
   type(fv_flags_type), intent(IN),    target :: flagstruct
   type(domain2d), intent(inout) :: domain
-  type(group_halo_update_type), intent(inout) :: i_pack(*)
+  type(group_halo_update_type):: i_pack(7)
 
   real :: pkzf(bd%isd:bd%ied,bd%jsd:bd%jed,npz)
   real, dimension (bd%isd:bd%ied,bd%jsd:bd%jed) :: p, t, e
@@ -3201,31 +3201,32 @@ do 1000 j=jfirst,jlast
     enddo
 
                              call timing_on('COMM_TOTAL')
-    call start_group_halo_update(i_pack(1),delp,  domain, complete=.false.)
-    call start_group_halo_update(i_pack(1), pt,   domain, complete=.true.)
-    call start_group_halo_update(i_pack(6),pkzf,  domain)
-    call start_group_halo_update(i_pack(7), w, domain)
-    call start_group_halo_update(i_pack(8), u, v, domain, gridtype=DGRID_NE)
+    call start_group_halo_update(i_pack(1),delp,  domain)
+    call start_group_halo_update(i_pack(2), pt,   domain)
+    call start_group_halo_update(i_pack(3),pkzf,  domain)
+    call start_group_halo_update(i_pack(4), w, domain)
+    call start_group_halo_update(i_pack(5), u, v, domain, gridtype=DGRID_NE)
     if ( nq > 0 ) then
                                        call timing_on('COMM_TRACER')
-                    call start_group_halo_update(i_pack(10), q, domain)
+                    call start_group_halo_update(i_pack(6), q, domain)
                                        call timing_off('COMM_TRACER')
     endif
 #ifdef MOIST_CAPPA
-    call start_group_halo_update(i_pack(12), cappa, domain)
+    call start_group_halo_update(i_pack(7), cappa, domain)
 #endif
 
-    call complete_group_halo_update(i_pack(1), domain)  ! delp. pt
-    call complete_group_halo_update(i_pack(6), domain)  ! pkzf
-    call complete_group_halo_update(i_pack(7), domain)  ! w
-    call complete_group_halo_update(i_pack(8), domain)
+    call complete_group_halo_update(i_pack(1), domain)  ! delp
+    call complete_group_halo_update(i_pack(2), domain)  ! pt
+    call complete_group_halo_update(i_pack(3), domain)  ! pkzf
+    call complete_group_halo_update(i_pack(4), domain)  ! w
+    call complete_group_halo_update(i_pack(5), domain)
     if ( nq>0 ) then
                                        call timing_on('COMM_TRACER')
-         call complete_group_halo_update(i_pack(10), domain)
+         call complete_group_halo_update(i_pack(6), domain)
                                        call timing_off('COMM_TRACER')
     endif
 #ifdef MOIST_CAPPA
-    call complete_group_halo_update(i_pack(12), domain)
+    call complete_group_halo_update(i_pack(7), domain)
 #endif
                              call timing_off('COMM_TOTAL')
 
