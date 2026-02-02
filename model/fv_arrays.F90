@@ -66,15 +66,6 @@ module fv_arrays_mod
      real :: efx(max_step), efx_sum, efx_nest(max_step), efx_sum_nest, mtq(max_step), mtq_sum
      integer :: steps
 
-! Integrated physics diagnostics
-     integer :: id_inline_mp_fast_te_a_chg, id_inline_mp_fast_te_b_chg, id_inline_mp_fast_tw_a_chg, id_inline_mp_fast_tw_b_chg
-     integer :: id_inline_mp_intm_te_a_chg, id_inline_mp_intm_te_b_chg, id_inline_mp_intm_tw_a_chg, id_inline_mp_intm_tw_b_chg
-     integer :: id_inline_pbl_fast_te_a_chg, id_inline_pbl_fast_te_b_chg, id_inline_pbl_fast_tw_a_chg, id_inline_pbl_fast_tw_b_chg
-     integer :: id_inline_pbl_intm_te_a_chg, id_inline_pbl_intm_te_b_chg, id_inline_pbl_intm_tw_a_chg, id_inline_pbl_intm_tw_b_chg
-     integer :: id_inline_cnv_intm_te_a_chg, id_inline_cnv_intm_te_b_chg, id_inline_cnv_intm_tw_a_chg, id_inline_cnv_intm_tw_b_chg
-     integer :: id_inline_gwd_fast_te_a_chg, id_inline_gwd_fast_te_b_chg, id_inline_gwd_fast_tw_a_chg, id_inline_gwd_fast_tw_b_chg
-     integer :: id_inline_gwd_intm_te_a_chg, id_inline_gwd_intm_te_b_chg, id_inline_gwd_intm_tw_a_chg, id_inline_gwd_intm_tw_b_chg
-
   end type fv_diag_type
 
 
@@ -376,24 +367,9 @@ module fv_arrays_mod
    logical :: do_intermediate_phys = .true.!< Controls intermediate physics, in which the GFDL MP, SA-SAS and part of the GWD are
                                     !< within the remapping time step of FV3. If .false. disabling the GFDL MP, SA-SAS
                                     !< and part of the GWD in the intermediate physics.
-   logical :: do_inline_mp = .false.!< Controls inline microphysics, in which the full microphysics is
+   logical :: do_inline_mp = .false.!< Controls Inline GFDL cloud microphysics, in which the full microphysics is
                                     !< called entirely within FV3. If .true. disabling microphysics within the physics
                                     !< is very strongly recommended. .false. by default.
-   logical :: do_inline_pbl = .false.!< Controls inline planetary boundary layer, in which the planetary boundary layer is
-                                    !< called entirely within FV3. If .true. disabling planetary boundary layer within the physics
-                                    !< is very strongly recommended. .false. by default.
-   logical :: do_inline_cnv = .false.!< Controls inline convection, in which the convection is
-                                    !< called entirely within FV3. If .true. disabling convection within the physics
-                                    !< is very strongly recommended. .false. by default.
-   logical :: do_inline_gwd = .false.!< Controls inline gravity wave drag, in which the gravity wave drag is
-                                    !< called entirely within FV3. If .true. disabling gravity wave drag within the physics
-                                    !< is very strongly recommended. .false. by default.
-   integer :: inline_cnv_flag = 1   !< inline convection scheme
-                                    !< 1: Scale-Aware Simplified-Arakawa-Schubert (SA-SAS) Convection Scheme
-                                    !< 2: Scale-Aware Aerosol-Aware Mass-Flux (SA-AAMP) Convection Scheme
-   integer :: inline_pbl_flag = 1   !< inline pbl scheme
-                                    !< 1: Scale-Aware Turbulent-Kinetic-Energy based Moist-Eddy-Diffusivity-Mass-Flux scheme
-                                    !< 2: A New Scale-Aware Turbulent-Kinetic-Energy based Moist-Eddy-Diffusivity-Mass-Flux scheme
    logical :: do_aerosol = .false.  !< Controls climatological aerosol data used in the GFDL cloud microphyiscs.
                                     !< .false. by default.
    logical :: do_cosp = .false.     !< Controls COSP
@@ -1069,15 +1045,6 @@ module fv_arrays_mod
     real, _ALLOCATABLE :: u_dt(:,:,:)
     real, _ALLOCATABLE :: v_dt(:,:,:)
 
-    real, _ALLOCATABLE :: fast_te_a_chg(:,:)     _NULL
-    real, _ALLOCATABLE :: fast_tw_a_chg(:,:)     _NULL
-    real, _ALLOCATABLE :: fast_te_b_chg(:,:)     _NULL
-    real, _ALLOCATABLE :: fast_tw_b_chg(:,:)     _NULL
-    real, _ALLOCATABLE :: intm_te_a_chg(:,:)     _NULL
-    real, _ALLOCATABLE :: intm_tw_a_chg(:,:)     _NULL
-    real, _ALLOCATABLE :: intm_te_b_chg(:,:)     _NULL
-    real, _ALLOCATABLE :: intm_tw_b_chg(:,:)     _NULL
-
     real, _ALLOCATABLE :: qcw(:,:,:)
     real, _ALLOCATABLE :: qci(:,:,:)
     real, _ALLOCATABLE :: qcr(:,:,:)
@@ -1120,97 +1087,6 @@ module fv_arrays_mod
     real, _ALLOCATABLE :: mppxg(:,:)     _NULL
 
   end type inline_mp_type
-
-  type inline_pbl_type
-
-    integer, _ALLOCATABLE :: lsm(:,:)     _NULL
-    real, _ALLOCATABLE :: zorl(:,:)     _NULL
-    real, _ALLOCATABLE :: ztrl(:,:)     _NULL
-    real, _ALLOCATABLE :: ffmm(:,:)     _NULL
-    real, _ALLOCATABLE :: ffhh(:,:)     _NULL
-    real, _ALLOCATABLE :: tsfc(:,:)     _NULL
-    real, _ALLOCATABLE :: shdmax(:,:)     _NULL
-    real, _ALLOCATABLE :: vtype(:,:)     _NULL
-    real, _ALLOCATABLE :: vfrac(:,:)     _NULL
-    real, _ALLOCATABLE :: snowd(:,:)     _NULL
-    real, _ALLOCATABLE :: uustar(:,:)     _NULL
-    real, _ALLOCATABLE :: radh(:,:,:)     _NULL
-    real, _ALLOCATABLE :: hflx(:,:)     _NULL
-    real, _ALLOCATABLE :: evap(:,:)     _NULL
-    real, _ALLOCATABLE :: sfcemis(:,:)     _NULL
-    real, _ALLOCATABLE :: dlwflx(:,:)     _NULL
-    real, _ALLOCATABLE :: sfcnsw(:,:)     _NULL
-    real, _ALLOCATABLE :: sfcdsw(:,:)     _NULL
-    real, _ALLOCATABLE :: srflag(:,:)     _NULL
-    real, _ALLOCATABLE :: hice(:,:)     _NULL
-    real, _ALLOCATABLE :: fice(:,:)     _NULL
-    real, _ALLOCATABLE :: tice(:,:)     _NULL
-    real, _ALLOCATABLE :: weasd(:,:)     _NULL
-    real, _ALLOCATABLE :: tprcp(:,:)     _NULL
-    real, _ALLOCATABLE :: stc(:,:,:)     _NULL
-    real, _ALLOCATABLE :: qsurf(:,:)     _NULL
-    real, _ALLOCATABLE :: cmm(:,:)     _NULL
-    real, _ALLOCATABLE :: chh(:,:)     _NULL
-    real, _ALLOCATABLE :: gflux(:,:)     _NULL
-    real, _ALLOCATABLE :: ep(:,:)     _NULL
-    real, _ALLOCATABLE :: hpbl(:,:)     _NULL
-    integer, _ALLOCATABLE :: kpbl(:,:)     _NULL
-    real, _ALLOCATABLE :: dtsfc(:,:)     _NULL
-    real, _ALLOCATABLE :: dqsfc(:,:)     _NULL
-    real, _ALLOCATABLE :: dqvsfc(:,:)     _NULL
-    real, _ALLOCATABLE :: dqlsfc(:,:)     _NULL
-    real, _ALLOCATABLE :: dqisfc(:,:)     _NULL
-    real, _ALLOCATABLE :: dqrsfc(:,:)     _NULL
-    real, _ALLOCATABLE :: dqssfc(:,:)     _NULL
-    real, _ALLOCATABLE :: dqgsfc(:,:)     _NULL
-    real, _ALLOCATABLE :: dusfc(:,:)     _NULL
-    real, _ALLOCATABLE :: dvsfc(:,:)     _NULL
-    real, _ALLOCATABLE :: dksfc(:,:)     _NULL
-    real, _ALLOCATABLE :: fast_te_a_chg(:,:)     _NULL
-    real, _ALLOCATABLE :: fast_tw_a_chg(:,:)     _NULL
-    real, _ALLOCATABLE :: fast_te_b_chg(:,:)     _NULL
-    real, _ALLOCATABLE :: fast_tw_b_chg(:,:)     _NULL
-    real, _ALLOCATABLE :: intm_te_a_chg(:,:)     _NULL
-    real, _ALLOCATABLE :: intm_tw_a_chg(:,:)     _NULL
-    real, _ALLOCATABLE :: intm_te_b_chg(:,:)     _NULL
-    real, _ALLOCATABLE :: intm_tw_b_chg(:,:)     _NULL
-
-  end type inline_pbl_type
-
-  type inline_cnv_type
-
-    real, _ALLOCATABLE :: prec(:,:)     _NULL
-    real, _ALLOCATABLE :: cumabs(:,:)     _NULL
-    integer, _ALLOCATABLE :: ktop(:,:)     _NULL
-    integer, _ALLOCATABLE :: kbot(:,:)     _NULL
-    integer, _ALLOCATABLE :: kcnv(:,:)     _NULL
-    real, _ALLOCATABLE :: intm_te_a_chg(:,:)     _NULL
-    real, _ALLOCATABLE :: intm_tw_a_chg(:,:)     _NULL
-    real, _ALLOCATABLE :: intm_te_b_chg(:,:)     _NULL
-    real, _ALLOCATABLE :: intm_tw_b_chg(:,:)     _NULL
-
-  end type inline_cnv_type
-
-  type inline_gwd_type
-
-    real, _ALLOCATABLE :: hprime(:,:)
-    real, _ALLOCATABLE :: oc(:,:)
-    real, _ALLOCATABLE :: oa(:,:,:)
-    real, _ALLOCATABLE :: ol(:,:,:)
-    real, _ALLOCATABLE :: theta(:,:)
-    real, _ALLOCATABLE :: sigma(:,:)
-    real, _ALLOCATABLE :: gamma(:,:)
-    real, _ALLOCATABLE :: elvmax(:,:)
-    real, _ALLOCATABLE :: fast_te_a_chg(:,:)     _NULL
-    real, _ALLOCATABLE :: fast_tw_a_chg(:,:)     _NULL
-    real, _ALLOCATABLE :: fast_te_b_chg(:,:)     _NULL
-    real, _ALLOCATABLE :: fast_tw_b_chg(:,:)     _NULL
-    real, _ALLOCATABLE :: intm_te_a_chg(:,:)     _NULL
-    real, _ALLOCATABLE :: intm_tw_a_chg(:,:)     _NULL
-    real, _ALLOCATABLE :: intm_te_b_chg(:,:)     _NULL
-    real, _ALLOCATABLE :: intm_tw_b_chg(:,:)     _NULL
-
-  end type inline_gwd_type
 
   type phys_diag_type
 
@@ -1512,8 +1388,7 @@ module fv_arrays_mod
 !!!!!!!!!!!!!!
      type(FmsNetcdfFile_t) :: Fv_restart
      type(FmsNetcdfDomainFile_t) :: SST_restart, Fv_restart_tile, &
-          Rsf_restart, Mg_restart, Lnd_restart, Tra_restart, &
-          Oro_restart, Phy_restart, Sfc_restart, Soi_restart
+          Rsf_restart, Mg_restart, Lnd_restart, Tra_restart
      logical :: Fv_restart_is_open=.false.
      logical :: SST_restart_is_open=.false.
      logical :: Fv_restart_tile_is_open=.false.
@@ -1521,10 +1396,6 @@ module fv_arrays_mod
      logical :: Mg_restart_is_open=.false.
      logical :: Lnd_restart_is_open=.false.
      logical :: Tra_restart_is_open=.false.
-     logical :: Oro_restart_is_open=.false.
-     logical :: Phy_restart_is_open=.false.
-     logical :: Sfc_restart_is_open=.false.
-     logical :: Soi_restart_is_open=.false.
      type(fv_nest_type) :: neststruct
 
      !Hold on to coarse-grid global grid, so we don't have to waste processor time getting it again when starting to do grid nesting
@@ -1533,9 +1404,6 @@ module fv_arrays_mod
      integer :: atmos_axes(4)
 
      type(inline_mp_type) :: inline_mp
-     type(inline_pbl_type) :: inline_pbl
-     type(inline_cnv_type) :: inline_cnv
-     type(inline_gwd_type) :: inline_gwd
      type(phys_diag_type) :: phys_diag
      type(nudge_diag_type) :: nudge_diag
      type(sg_diag_type) :: sg_diag
@@ -1708,107 +1576,6 @@ contains
        allocate ( Atm%inline_mp%prefluxi(is:ie,js:je,npz) )
        allocate ( Atm%inline_mp%prefluxs(is:ie,js:je,npz) )
        allocate ( Atm%inline_mp%prefluxg(is:ie,js:je,npz) )
-       if (Atm%flagstruct%consv_checker) then
-          allocate ( Atm%inline_mp%fast_te_a_chg(is:ie,js:je) )
-          allocate ( Atm%inline_mp%fast_tw_a_chg(is:ie,js:je) )
-          allocate ( Atm%inline_mp%fast_te_b_chg(is:ie,js:je) )
-          allocate ( Atm%inline_mp%fast_tw_b_chg(is:ie,js:je) )
-          allocate ( Atm%inline_mp%intm_te_a_chg(is:ie,js:je) )
-          allocate ( Atm%inline_mp%intm_tw_a_chg(is:ie,js:je) )
-          allocate ( Atm%inline_mp%intm_te_b_chg(is:ie,js:je) )
-          allocate ( Atm%inline_mp%intm_tw_b_chg(is:ie,js:je) )
-       endif
-    endif
-
-    if (Atm%flagstruct%do_inline_pbl) then
-       allocate ( Atm%inline_pbl%lsm(is:ie,js:je) )
-       allocate ( Atm%inline_pbl%zorl(is:ie,js:je) )
-       allocate ( Atm%inline_pbl%ztrl(is:ie,js:je) )
-       allocate ( Atm%inline_pbl%ffmm(is:ie,js:je) )
-       allocate ( Atm%inline_pbl%ffhh(is:ie,js:je) )
-       allocate ( Atm%inline_pbl%tsfc(is:ie,js:je) )
-       allocate ( Atm%inline_pbl%shdmax(is:ie,js:je) )
-       allocate ( Atm%inline_pbl%vtype(is:ie,js:je) )
-       allocate ( Atm%inline_pbl%vfrac(is:ie,js:je) )
-       allocate ( Atm%inline_pbl%snowd(is:ie,js:je) )
-       allocate ( Atm%inline_pbl%uustar(is:ie,js:je) )
-       allocate ( Atm%inline_pbl%radh(is:ie,js:je,npz) )
-       allocate ( Atm%inline_pbl%hflx(is:ie,js:je) )
-       allocate ( Atm%inline_pbl%evap(is:ie,js:je) )
-       allocate ( Atm%inline_pbl%sfcemis(is:ie,js:je) )
-       allocate ( Atm%inline_pbl%dlwflx(is:ie,js:je) )
-       allocate ( Atm%inline_pbl%sfcnsw(is:ie,js:je) )
-       allocate ( Atm%inline_pbl%sfcdsw(is:ie,js:je) )
-       allocate ( Atm%inline_pbl%srflag(is:ie,js:je) )
-       allocate ( Atm%inline_pbl%hice(is:ie,js:je) )
-       allocate ( Atm%inline_pbl%fice(is:ie,js:je) )
-       allocate ( Atm%inline_pbl%tice(is:ie,js:je) )
-       allocate ( Atm%inline_pbl%weasd(is:ie,js:je) )
-       allocate ( Atm%inline_pbl%tprcp(is:ie,js:je) )
-       allocate ( Atm%inline_pbl%stc(is:ie,js:je,4) )
-       allocate ( Atm%inline_pbl%qsurf(is:ie,js:je) )
-       allocate ( Atm%inline_pbl%cmm(is:ie,js:je) )
-       allocate ( Atm%inline_pbl%chh(is:ie,js:je) )
-       allocate ( Atm%inline_pbl%gflux(is:ie,js:je) )
-       allocate ( Atm%inline_pbl%ep(is:ie,js:je) )
-       allocate ( Atm%inline_pbl%hpbl(is:ie,js:je) )
-       allocate ( Atm%inline_pbl%kpbl(is:ie,js:je) )
-       allocate ( Atm%inline_pbl%dtsfc(is:ie,js:je) )
-       allocate ( Atm%inline_pbl%dqsfc(is:ie,js:je) )
-       allocate ( Atm%inline_pbl%dqvsfc(is:ie,js:je) )
-       allocate ( Atm%inline_pbl%dqlsfc(is:ie,js:je) )
-       allocate ( Atm%inline_pbl%dqisfc(is:ie,js:je) )
-       allocate ( Atm%inline_pbl%dqrsfc(is:ie,js:je) )
-       allocate ( Atm%inline_pbl%dqssfc(is:ie,js:je) )
-       allocate ( Atm%inline_pbl%dqgsfc(is:ie,js:je) )
-       allocate ( Atm%inline_pbl%dusfc(is:ie,js:je) )
-       allocate ( Atm%inline_pbl%dvsfc(is:ie,js:je) )
-       allocate ( Atm%inline_pbl%dksfc(is:ie,js:je) )
-       if (Atm%flagstruct%consv_checker) then
-          allocate ( Atm%inline_pbl%fast_te_a_chg(is:ie,js:je) )
-          allocate ( Atm%inline_pbl%fast_tw_a_chg(is:ie,js:je) )
-          allocate ( Atm%inline_pbl%fast_te_b_chg(is:ie,js:je) )
-          allocate ( Atm%inline_pbl%fast_tw_b_chg(is:ie,js:je) )
-          allocate ( Atm%inline_pbl%intm_te_a_chg(is:ie,js:je) )
-          allocate ( Atm%inline_pbl%intm_tw_a_chg(is:ie,js:je) )
-          allocate ( Atm%inline_pbl%intm_te_b_chg(is:ie,js:je) )
-          allocate ( Atm%inline_pbl%intm_tw_b_chg(is:ie,js:je) )
-       endif
-    endif
-
-    if (Atm%flagstruct%do_inline_cnv) then
-       allocate ( Atm%inline_cnv%prec(is:ie,js:je) )
-       allocate ( Atm%inline_cnv%cumabs(is:ie,js:je) )
-       allocate ( Atm%inline_cnv%ktop(is:ie,js:je) )
-       allocate ( Atm%inline_cnv%kbot(is:ie,js:je) )
-       allocate ( Atm%inline_cnv%kcnv(is:ie,js:je) )
-       if (Atm%flagstruct%consv_checker) then
-          allocate ( Atm%inline_cnv%intm_te_a_chg(is:ie,js:je) )
-          allocate ( Atm%inline_cnv%intm_tw_a_chg(is:ie,js:je) )
-          allocate ( Atm%inline_cnv%intm_te_b_chg(is:ie,js:je) )
-          allocate ( Atm%inline_cnv%intm_tw_b_chg(is:ie,js:je) )
-       endif
-    endif
-
-    if (Atm%flagstruct%do_inline_gwd) then
-       allocate ( Atm%inline_gwd%hprime(is:ie,js:je) )
-       allocate ( Atm%inline_gwd%oc(is:ie,js:je) )
-       allocate ( Atm%inline_gwd%oa(is:ie,js:je,4) )
-       allocate ( Atm%inline_gwd%ol(is:ie,js:je,4) )
-       allocate ( Atm%inline_gwd%theta(is:ie,js:je) )
-       allocate ( Atm%inline_gwd%sigma(is:ie,js:je) )
-       allocate ( Atm%inline_gwd%gamma(is:ie,js:je) )
-       allocate ( Atm%inline_gwd%elvmax(is:ie,js:je) )
-       if (Atm%flagstruct%consv_checker) then
-          allocate ( Atm%inline_gwd%fast_te_a_chg(is:ie,js:je) )
-          allocate ( Atm%inline_gwd%fast_tw_a_chg(is:ie,js:je) )
-          allocate ( Atm%inline_gwd%fast_te_b_chg(is:ie,js:je) )
-          allocate ( Atm%inline_gwd%fast_tw_b_chg(is:ie,js:je) )
-          allocate ( Atm%inline_gwd%intm_te_a_chg(is:ie,js:je) )
-          allocate ( Atm%inline_gwd%intm_tw_a_chg(is:ie,js:je) )
-          allocate ( Atm%inline_gwd%intm_te_b_chg(is:ie,js:je) )
-          allocate ( Atm%inline_gwd%intm_tw_b_chg(is:ie,js:je) )
-       endif
     endif
     allocate ( Atm%inline_mp%mppcw(is:ie,js:je) )
     allocate ( Atm%inline_mp%mppew(is:ie,js:je) )
@@ -1937,135 +1704,6 @@ contains
               Atm%inline_mp%prefluxg(i,j,:) = real_big
            enddo
         enddo
-        if (Atm%flagstruct%consv_checker) then
-           do j=js, je
-              do i=is, ie
-                 Atm%inline_mp%fast_te_a_chg(i,j) = real_big
-                 Atm%inline_mp%fast_tw_a_chg(i,j) = real_big
-                 Atm%inline_mp%fast_te_b_chg(i,j) = real_big
-                 Atm%inline_mp%fast_tw_b_chg(i,j) = real_big
-                 Atm%inline_mp%intm_te_a_chg(i,j) = real_big
-                 Atm%inline_mp%intm_tw_a_chg(i,j) = real_big
-                 Atm%inline_mp%intm_te_b_chg(i,j) = real_big
-                 Atm%inline_mp%intm_tw_b_chg(i,j) = real_big
-              enddo
-           enddo
-        endif
-     endif
-
-     if (Atm%flagstruct%do_inline_pbl) then
-        do j=js, je
-           do i=is, ie
-              Atm%inline_pbl%lsm(i,j) = 0
-              Atm%inline_pbl%zorl(i,j) = 0
-              Atm%inline_pbl%ztrl(i,j) = 0
-              Atm%inline_pbl%ffmm(i,j) = real_big
-              Atm%inline_pbl%ffhh(i,j) = real_big
-              Atm%inline_pbl%tsfc(i,j) = real_big
-              Atm%inline_pbl%shdmax(i,j) = real_big
-              Atm%inline_pbl%vtype(i,j) = real_big
-              Atm%inline_pbl%vfrac(i,j) = real_big
-              Atm%inline_pbl%snowd(i,j) = real_big
-              Atm%inline_pbl%uustar(i,j) = real_big
-              Atm%inline_pbl%radh(i,j,:) = 0.0
-              Atm%inline_pbl%hflx(i,j) = 0.0
-              Atm%inline_pbl%evap(i,j) = 0.0
-              Atm%inline_pbl%sfcemis(i,j) = 0.0
-              Atm%inline_pbl%dlwflx(i,j) = 0.0
-              Atm%inline_pbl%sfcnsw(i,j) = 0.0
-              Atm%inline_pbl%sfcdsw(i,j) = 0.0
-              Atm%inline_pbl%srflag(i,j) = real_big
-              Atm%inline_pbl%hice(i,j) = real_big
-              Atm%inline_pbl%fice(i,j) = real_big
-              Atm%inline_pbl%tice(i,j) = real_big
-              Atm%inline_pbl%weasd(i,j) = real_big
-              Atm%inline_pbl%tprcp(i,j) = real_big
-              Atm%inline_pbl%stc(i,j,:) = real_big
-              Atm%inline_pbl%qsurf(i,j) = real_big
-              Atm%inline_pbl%cmm(i,j) = real_big
-              Atm%inline_pbl%chh(i,j) = real_big
-              Atm%inline_pbl%gflux(i,j) = real_big
-              Atm%inline_pbl%ep(i,j) = real_big
-              Atm%inline_pbl%hpbl(i,j) = real_big
-              Atm%inline_pbl%kpbl(i,j) = 1
-              Atm%inline_pbl%dtsfc(i,j) = real_big
-              Atm%inline_pbl%dqsfc(i,j) = real_big
-              Atm%inline_pbl%dqvsfc(i,j) = real_big
-              Atm%inline_pbl%dqlsfc(i,j) = real_big
-              Atm%inline_pbl%dqisfc(i,j) = real_big
-              Atm%inline_pbl%dqrsfc(i,j) = real_big
-              Atm%inline_pbl%dqssfc(i,j) = real_big
-              Atm%inline_pbl%dqgsfc(i,j) = real_big
-              Atm%inline_pbl%dusfc(i,j) = real_big
-              Atm%inline_pbl%dvsfc(i,j) = real_big
-              Atm%inline_pbl%dksfc(i,j) = real_big
-           enddo
-        enddo
-        if (Atm%flagstruct%consv_checker) then
-           do j=js, je
-              do i=is, ie
-                 Atm%inline_pbl%fast_te_a_chg(i,j) = real_big
-                 Atm%inline_pbl%fast_tw_a_chg(i,j) = real_big
-                 Atm%inline_pbl%fast_te_b_chg(i,j) = real_big
-                 Atm%inline_pbl%fast_tw_b_chg(i,j) = real_big
-                 Atm%inline_pbl%intm_te_a_chg(i,j) = real_big
-                 Atm%inline_pbl%intm_tw_a_chg(i,j) = real_big
-                 Atm%inline_pbl%intm_te_b_chg(i,j) = real_big
-                 Atm%inline_pbl%intm_tw_b_chg(i,j) = real_big
-              enddo
-           enddo
-        endif
-     endif
-
-     if (Atm%flagstruct%do_inline_cnv) then
-        do j=js, je
-           do i=is, ie
-              Atm%inline_cnv%prec(i,j) = real_big
-              Atm%inline_cnv%cumabs(i,j) = real_big
-              Atm%inline_cnv%ktop(i,j) = 1
-              Atm%inline_cnv%kbot(i,j) = npz
-              Atm%inline_cnv%kcnv(i,j) = 0
-           enddo
-        enddo
-        if (Atm%flagstruct%consv_checker) then
-           do j=js, je
-              do i=is, ie
-                 Atm%inline_cnv%intm_te_a_chg(i,j) = real_big
-                 Atm%inline_cnv%intm_tw_a_chg(i,j) = real_big
-                 Atm%inline_cnv%intm_te_b_chg(i,j) = real_big
-                 Atm%inline_cnv%intm_tw_b_chg(i,j) = real_big
-              enddo
-           enddo
-        endif
-     endif
-
-     if (Atm%flagstruct%do_inline_gwd) then
-        do j=js, je
-           do i=is, ie
-              Atm%inline_gwd%hprime(i,j) = real_big
-              Atm%inline_gwd%oc(i,j) = real_big
-              Atm%inline_gwd%oa(i,j,4) = real_big
-              Atm%inline_gwd%ol(i,j,4) = real_big
-              Atm%inline_gwd%theta(i,j) = real_big
-              Atm%inline_gwd%sigma(i,j) = real_big
-              Atm%inline_gwd%gamma(i,j) = real_big
-              Atm%inline_gwd%elvmax(i,j) = real_big
-           enddo
-        enddo
-        if (Atm%flagstruct%consv_checker) then
-           do j=js, je
-              do i=is, ie
-                 Atm%inline_gwd%fast_te_a_chg(i,j) = real_big
-                 Atm%inline_gwd%fast_tw_a_chg(i,j) = real_big
-                 Atm%inline_gwd%fast_te_b_chg(i,j) = real_big
-                 Atm%inline_gwd%fast_tw_b_chg(i,j) = real_big
-                 Atm%inline_gwd%intm_te_a_chg(i,j) = real_big
-                 Atm%inline_gwd%intm_tw_a_chg(i,j) = real_big
-                 Atm%inline_gwd%intm_te_b_chg(i,j) = real_big
-                 Atm%inline_gwd%intm_tw_b_chg(i,j) = real_big
-              enddo
-           enddo
-        endif
      endif
      do j=js, je
         do i=is, ie
@@ -2366,107 +2004,6 @@ contains
        deallocate ( Atm%inline_mp%prefluxi )
        deallocate ( Atm%inline_mp%prefluxs )
        deallocate ( Atm%inline_mp%prefluxg )
-       if (Atm%flagstruct%consv_checker) then
-          deallocate ( Atm%inline_mp%fast_te_a_chg )
-          deallocate ( Atm%inline_mp%fast_tw_a_chg )
-          deallocate ( Atm%inline_mp%fast_te_b_chg )
-          deallocate ( Atm%inline_mp%fast_tw_b_chg )
-          deallocate ( Atm%inline_mp%intm_te_a_chg )
-          deallocate ( Atm%inline_mp%intm_tw_a_chg )
-          deallocate ( Atm%inline_mp%intm_te_b_chg )
-          deallocate ( Atm%inline_mp%intm_tw_b_chg )
-       endif
-    endif
-
-    if (Atm%flagstruct%do_inline_pbl) then
-       deallocate ( Atm%inline_pbl%lsm )
-       deallocate ( Atm%inline_pbl%zorl )
-       deallocate ( Atm%inline_pbl%ztrl )
-       deallocate ( Atm%inline_pbl%ffmm )
-       deallocate ( Atm%inline_pbl%ffhh )
-       deallocate ( Atm%inline_pbl%tsfc )
-       deallocate ( Atm%inline_pbl%shdmax )
-       deallocate ( Atm%inline_pbl%vtype )
-       deallocate ( Atm%inline_pbl%vfrac )
-       deallocate ( Atm%inline_pbl%snowd )
-       deallocate ( Atm%inline_pbl%uustar )
-       deallocate ( Atm%inline_pbl%radh )
-       deallocate ( Atm%inline_pbl%hflx )
-       deallocate ( Atm%inline_pbl%evap )
-       deallocate ( Atm%inline_pbl%sfcemis )
-       deallocate ( Atm%inline_pbl%dlwflx )
-       deallocate ( Atm%inline_pbl%sfcnsw )
-       deallocate ( Atm%inline_pbl%sfcdsw )
-       deallocate ( Atm%inline_pbl%srflag )
-       deallocate ( Atm%inline_pbl%hice )
-       deallocate ( Atm%inline_pbl%fice )
-       deallocate ( Atm%inline_pbl%tice )
-       deallocate ( Atm%inline_pbl%weasd )
-       deallocate ( Atm%inline_pbl%tprcp )
-       deallocate ( Atm%inline_pbl%stc )
-       deallocate ( Atm%inline_pbl%qsurf )
-       deallocate ( Atm%inline_pbl%cmm )
-       deallocate ( Atm%inline_pbl%chh )
-       deallocate ( Atm%inline_pbl%gflux )
-       deallocate ( Atm%inline_pbl%ep )
-       deallocate ( Atm%inline_pbl%hpbl )
-       deallocate ( Atm%inline_pbl%kpbl )
-       deallocate ( Atm%inline_pbl%dtsfc )
-       deallocate ( Atm%inline_pbl%dqsfc )
-       deallocate ( Atm%inline_pbl%dqvsfc )
-       deallocate ( Atm%inline_pbl%dqlsfc )
-       deallocate ( Atm%inline_pbl%dqisfc )
-       deallocate ( Atm%inline_pbl%dqrsfc )
-       deallocate ( Atm%inline_pbl%dqssfc )
-       deallocate ( Atm%inline_pbl%dqgsfc )
-       deallocate ( Atm%inline_pbl%dusfc )
-       deallocate ( Atm%inline_pbl%dvsfc )
-       deallocate ( Atm%inline_pbl%dksfc )
-       if (Atm%flagstruct%consv_checker) then
-          deallocate ( Atm%inline_pbl%fast_te_a_chg )
-          deallocate ( Atm%inline_pbl%fast_tw_a_chg )
-          deallocate ( Atm%inline_pbl%fast_te_b_chg )
-          deallocate ( Atm%inline_pbl%fast_tw_b_chg )
-          deallocate ( Atm%inline_pbl%intm_te_a_chg )
-          deallocate ( Atm%inline_pbl%intm_tw_a_chg )
-          deallocate ( Atm%inline_pbl%intm_te_b_chg )
-          deallocate ( Atm%inline_pbl%intm_tw_b_chg )
-       endif
-    endif
-
-    if (Atm%flagstruct%do_inline_cnv) then
-       deallocate ( Atm%inline_cnv%prec )
-       deallocate ( Atm%inline_cnv%cumabs )
-       deallocate ( Atm%inline_cnv%ktop )
-       deallocate ( Atm%inline_cnv%kbot )
-       deallocate ( Atm%inline_cnv%kcnv )
-       if (Atm%flagstruct%consv_checker) then
-          deallocate ( Atm%inline_cnv%intm_te_a_chg )
-          deallocate ( Atm%inline_cnv%intm_tw_a_chg )
-          deallocate ( Atm%inline_cnv%intm_te_b_chg )
-          deallocate ( Atm%inline_cnv%intm_tw_b_chg )
-       endif
-    endif
-
-    if (Atm%flagstruct%do_inline_gwd) then
-       deallocate ( Atm%inline_gwd%hprime )
-       deallocate ( Atm%inline_gwd%oc )
-       deallocate ( Atm%inline_gwd%oa )
-       deallocate ( Atm%inline_gwd%ol )
-       deallocate ( Atm%inline_gwd%theta )
-       deallocate ( Atm%inline_gwd%sigma )
-       deallocate ( Atm%inline_gwd%gamma )
-       deallocate ( Atm%inline_gwd%elvmax )
-       if (Atm%flagstruct%consv_checker) then
-          deallocate ( Atm%inline_gwd%fast_te_a_chg )
-          deallocate ( Atm%inline_gwd%fast_tw_a_chg )
-          deallocate ( Atm%inline_gwd%fast_te_b_chg )
-          deallocate ( Atm%inline_gwd%fast_tw_b_chg )
-          deallocate ( Atm%inline_gwd%intm_te_a_chg )
-          deallocate ( Atm%inline_gwd%intm_tw_a_chg )
-          deallocate ( Atm%inline_gwd%intm_te_b_chg )
-          deallocate ( Atm%inline_gwd%intm_tw_b_chg )
-       endif
     endif
     deallocate ( Atm%inline_mp%mppcw )
     deallocate ( Atm%inline_mp%mppew )
