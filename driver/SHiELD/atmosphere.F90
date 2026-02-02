@@ -90,11 +90,6 @@ use fv_grid_utils_mod,  only: g_sum
 
 use mpp_domains_mod, only:  mpp_get_data_domain, mpp_get_compute_domain
 use gfdl_mp_mod,        only: gfdl_mp_init, gfdl_mp_end
-use sa_tke_edmf_mod,    only: sa_tke_edmf_init
-use sa_tke_edmf_new_mod,only: sa_tke_edmf_new_init
-use sa_sas_mod,         only: sa_sas_init
-use sa_aamf_mod,        only: sa_aamf_init
-use sa_gwd_mod,         only: sa_gwd_init
 use diag_manager_mod,   only: send_data
 use external_aero_mod,  only: load_aero, read_aero, clean_aero
 use coarse_graining_mod, only: coarse_graining_init
@@ -336,15 +331,6 @@ contains
    allocate(pref(npz+1,2), dum1d(npz+1))
 
    call gfdl_mp_init(input_nml_file, stdlog(), Atm(mygrid)%flagstruct%hydrostatic)
-   if (Atm(mygrid)%flagstruct%do_inline_pbl) then
-     if (Atm(mygrid)%flagstruct%inline_pbl_flag .eq. 1) call sa_tke_edmf_init(input_nml_file, stdlog())
-     if (Atm(mygrid)%flagstruct%inline_pbl_flag .eq. 2) call sa_tke_edmf_new_init(input_nml_file, stdlog())
-   endif
-   if (Atm(mygrid)%flagstruct%do_inline_cnv) then
-     if (Atm(mygrid)%flagstruct%inline_cnv_flag .eq. 1) call sa_sas_init(input_nml_file, stdlog())
-     if (Atm(mygrid)%flagstruct%inline_cnv_flag .eq. 2) call sa_aamf_init(input_nml_file, stdlog())
-   endif
-   if (Atm(mygrid)%flagstruct%do_inline_gwd) call sa_gwd_init(input_nml_file, stdlog())
 
    call timing_on('FV_RESTART')
    call fv_restart(Atm(mygrid)%domain, Atm, dt_atmos, seconds, days, cold_start, &
@@ -559,7 +545,6 @@ if ( is_master() ) write(*,*) 'CALL atmos_global_diag_init'
                       Atm(n)%flagstruct, Atm(n)%neststruct,                &
                       Atm(n)%thermostruct, Atm(n)%idiag, Atm(n)%bd,        &
                       Atm(n)%parent_grid, Atm(n)%domain, Atm(n)%inline_mp, &
-                      Atm(n)%inline_pbl, Atm(n)%inline_cnv, Atm(n)%inline_gwd, &
                       Atm(n)%heat_source,Atm(n)%diss_est,time_total=time_total)
 
      call timing_off('FV_DYNAMICS')
@@ -737,11 +722,11 @@ if ( is_master() ) write(*,*) 'CALL atmos_global_diag_init'
  end subroutine atmosphere_resolution
 
  subroutine atmosphere_control_data (i1, i2, j1, j2, kt, p_hydro, hydro, tile_num, &
-                                     do_inline_mp, do_inline_cnv, do_inline_pbl, do_inline_gwd, do_cosp)
+                                     do_inline_mp, do_cosp)
    integer, intent(out)           :: i1, i2, j1, j2, kt
    logical, intent(out), optional :: p_hydro, hydro
    integer, intent(out), optional :: tile_num
-   logical, intent(out), optional :: do_inline_mp, do_inline_cnv, do_inline_pbl, do_inline_gwd, do_cosp
+   logical, intent(out), optional :: do_inline_mp, do_cosp
    i1 = Atm(mygrid)%bd%isc
    i2 = Atm(mygrid)%bd%iec
    j1 = Atm(mygrid)%bd%jsc
@@ -752,9 +737,6 @@ if ( is_master() ) write(*,*) 'CALL atmos_global_diag_init'
    if (present(  hydro))   hydro = Atm(mygrid)%flagstruct%hydrostatic
    if (present(tile_num)) tile_num = Atm(mygrid)%global_tile
    if (present(do_inline_mp)) do_inline_mp = Atm(mygrid)%flagstruct%do_inline_mp
-   if (present(do_inline_cnv)) do_inline_cnv = Atm(mygrid)%flagstruct%do_inline_cnv
-   if (present(do_inline_pbl)) do_inline_pbl = Atm(mygrid)%flagstruct%do_inline_pbl
-   if (present(do_inline_gwd)) do_inline_gwd = Atm(mygrid)%flagstruct%do_inline_gwd
    if (present(do_cosp)) do_cosp = Atm(mygrid)%flagstruct%do_cosp
 
  end subroutine atmosphere_control_data
@@ -1218,45 +1200,8 @@ if ( is_master() ) write(*,*) 'CALL atmos_global_diag_init'
          Atm(n)%delp(i,j,k1) = q0
          Atm(n)%q(i,j,k1,1:nq_adv) = qwat(1:nq_adv) / q0
          if (dnats .gt. 0) Atm(n)%q(i,j,k1,nq_adv+1:nq) = IPD_Data(nb)%Stateout%gq0(ix,k,nq_adv+1:nq)
-         if (Atm(n)%flagstruct%do_inline_pbl) Atm(n)%inline_pbl%radh(i,j,k1) = IPD_Data(nb)%Stateout%radh(ix,k)
        enddo
      enddo
-
-     if (Atm(n)%flagstruct%do_inline_pbl) then
-       do ix = 1, blen
-         i = Atm_block%index(nb)%ii(ix)
-         j = Atm_block%index(nb)%jj(ix)
-         Atm(n)%inline_pbl%lsm(i,j) = IPD_Data(nb)%Stateout%lsm(ix)
-         Atm(n)%inline_pbl%hflx(i,j) = IPD_Data(nb)%Stateout%hflx(ix)
-         Atm(n)%inline_pbl%evap(i,j) = IPD_Data(nb)%Stateout%evap(ix)
-         Atm(n)%inline_pbl%tsfc(i,j) = IPD_Data(nb)%Stateout%tsfc(ix)
-         Atm(n)%inline_pbl%vfrac(i,j) = IPD_Data(nb)%Stateout%vfrac(ix)
-         Atm(n)%inline_pbl%vtype(i,j) = IPD_Data(nb)%Stateout%vtype(ix)
-         Atm(n)%inline_pbl%ffmm(i,j) = IPD_Data(nb)%Stateout%ffmm(ix)
-         Atm(n)%inline_pbl%ffhh(i,j) = IPD_Data(nb)%Stateout%ffhh(ix)
-         Atm(n)%inline_pbl%snowd(i,j) = IPD_Data(nb)%Stateout%snowd(ix)
-         Atm(n)%inline_pbl%zorl(i,j) = IPD_Data(nb)%Stateout%zorl(ix)
-         Atm(n)%inline_pbl%ztrl(i,j) = IPD_Data(nb)%Stateout%ztrl(ix)
-         Atm(n)%inline_pbl%uustar(i,j) = IPD_Data(nb)%Stateout%uustar(ix)
-         Atm(n)%inline_pbl%shdmax(i,j) = IPD_Data(nb)%Stateout%shdmax(ix)
-         Atm(n)%inline_pbl%sfcemis(i,j) = IPD_Data(nb)%Stateout%sfcemis(ix)
-         Atm(n)%inline_pbl%dlwflx(i,j) = IPD_Data(nb)%Stateout%dlwflx(ix)
-         Atm(n)%inline_pbl%sfcnsw(i,j) = IPD_Data(nb)%Stateout%sfcnsw(ix)
-         Atm(n)%inline_pbl%sfcdsw(i,j) = IPD_Data(nb)%Stateout%sfcdsw(ix)
-         Atm(n)%inline_pbl%srflag(i,j) = IPD_Data(nb)%Stateout%srflag(ix)
-         Atm(n)%inline_pbl%hice(i,j) = IPD_Data(nb)%Stateout%hice(ix)
-         Atm(n)%inline_pbl%fice(i,j) = IPD_Data(nb)%Stateout%fice(ix)
-         Atm(n)%inline_pbl%tice(i,j) = IPD_Data(nb)%Stateout%tice(ix)
-         Atm(n)%inline_pbl%weasd(i,j) = IPD_Data(nb)%Stateout%weasd(ix)
-         Atm(n)%inline_pbl%qsurf(i,j) = IPD_Data(nb)%Stateout%qsurf(ix)
-         Atm(n)%inline_pbl%cmm(i,j) = IPD_Data(nb)%Stateout%cmm(ix)
-         Atm(n)%inline_pbl%chh(i,j) = IPD_Data(nb)%Stateout%chh(ix)
-         Atm(n)%inline_pbl%gflux(i,j) = IPD_Data(nb)%Stateout%gflux(ix)
-         Atm(n)%inline_pbl%ep(i,j) = IPD_Data(nb)%Stateout%ep(ix)
-         Atm(n)%inline_pbl%tprcp(i,j) = IPD_Data(nb)%Stateout%tprcp(ix)
-         Atm(n)%inline_pbl%stc(i,j,:) = IPD_Data(nb)%Stateout%stc(ix,:)
-       enddo
-     endif
 
 !GFDL     if ( dnats > 0 ) then
 !GFDL       do iq = nq-dnats+1, nq
@@ -1529,8 +1474,7 @@ if ( is_master() ) write(*,*) 'CALL atmos_global_diag_init'
                      Atm(mygrid)%cx, Atm(mygrid)%cy, Atm(mygrid)%ze0, Atm(mygrid)%flagstruct%hybrid_z,    &
                      Atm(mygrid)%gridstruct, Atm(mygrid)%flagstruct, Atm(mygrid)%neststruct,                &
                      Atm(mygrid)%thermostruct, Atm(mygrid)%idiag, Atm(mygrid)%bd, Atm(mygrid)%parent_grid,  &
-                     Atm(mygrid)%domain, Atm(mygrid)%inline_mp, Atm(mygrid)%inline_pbl,                  &
-                     Atm(mygrid)%inline_cnv, Atm(mygrid)%inline_gwd, Atm(mygrid)%heat_source,Atm(mygrid)%diss_est)
+                     Atm(mygrid)%domain, Atm(mygrid)%inline_mp, Atm(mygrid)%heat_source,Atm(mygrid)%diss_est)
 ! Backward
     call fv_dynamics(Atm(mygrid)%npx, Atm(mygrid)%npy, npz,  nq, Atm(mygrid)%ng, -dt_atmos, 0.,      &
                      Atm(mygrid)%flagstruct%fill, Atm(mygrid)%flagstruct%reproduce_sum, kappa, cp_air, zvir,  &
@@ -1544,8 +1488,7 @@ if ( is_master() ) write(*,*) 'CALL atmos_global_diag_init'
                      Atm(mygrid)%cx, Atm(mygrid)%cy, Atm(mygrid)%ze0, Atm(mygrid)%flagstruct%hybrid_z,    &
                      Atm(mygrid)%gridstruct, Atm(mygrid)%flagstruct, Atm(mygrid)%neststruct,               &
                      Atm(mygrid)%thermostruct, Atm(mygrid)%idiag, Atm(mygrid)%bd, Atm(mygrid)%parent_grid,  &
-                     Atm(mygrid)%domain, Atm(mygrid)%inline_mp, Atm(mygrid)%inline_pbl,                  &
-                     Atm(mygrid)%inline_cnv, Atm(mygrid)%inline_gwd, Atm(mygrid)%heat_source,Atm(mygrid)%diss_est)
+                     Atm(mygrid)%domain, Atm(mygrid)%inline_mp, Atm(mygrid)%heat_source,Atm(mygrid)%diss_est)
 ! Nudging back to IC
 !$omp parallel do default (none) &
 !$omp              shared (pref, npz, jsc, jec, isc, iec, n, sphum, Atm, u0, v0, t0, dp0, xt, zvir, mygrid, nudge_dz, dz0) &
@@ -1617,8 +1560,7 @@ if ( is_master() ) write(*,*) 'CALL atmos_global_diag_init'
                      Atm(mygrid)%cx, Atm(mygrid)%cy, Atm(mygrid)%ze0, Atm(mygrid)%flagstruct%hybrid_z,    &
                      Atm(mygrid)%gridstruct, Atm(mygrid)%flagstruct, Atm(mygrid)%neststruct, &
                      Atm(mygrid)%thermostruct, Atm(mygrid)%idiag, Atm(mygrid)%bd, Atm(mygrid)%parent_grid,  &
-                     Atm(mygrid)%domain, Atm(mygrid)%inline_mp, Atm(mygrid)%inline_pbl,                  &
-                     Atm(mygrid)%inline_cnv, Atm(mygrid)%inline_gwd, Atm(mygrid)%heat_source,Atm(mygrid)%diss_est)
+                     Atm(mygrid)%domain, Atm(mygrid)%inline_mp, Atm(mygrid)%heat_source,Atm(mygrid)%diss_est)
 ! Forward call
     call fv_dynamics(Atm(mygrid)%npx, Atm(mygrid)%npy, npz,  nq, Atm(mygrid)%ng, dt_atmos, 0.,      &
                      Atm(mygrid)%flagstruct%fill, Atm(mygrid)%flagstruct%reproduce_sum, kappa, cp_air, zvir,  &
@@ -1632,8 +1574,7 @@ if ( is_master() ) write(*,*) 'CALL atmos_global_diag_init'
                      Atm(mygrid)%cx, Atm(mygrid)%cy, Atm(mygrid)%ze0, Atm(mygrid)%flagstruct%hybrid_z,    &
                      Atm(mygrid)%gridstruct, Atm(mygrid)%flagstruct, Atm(mygrid)%neststruct,              &
                      Atm(mygrid)%thermostruct, Atm(mygrid)%idiag, Atm(mygrid)%bd, Atm(mygrid)%parent_grid,  &
-                     Atm(mygrid)%domain, Atm(mygrid)%inline_mp, Atm(mygrid)%inline_pbl,                  &
-                     Atm(mygrid)%inline_cnv, Atm(mygrid)%inline_gwd, Atm(mygrid)%heat_source,Atm(mygrid)%diss_est)
+                     Atm(mygrid)%domain, Atm(mygrid)%inline_mp, Atm(mygrid)%heat_source,Atm(mygrid)%diss_est)
 ! Nudging back to IC
 !$omp parallel do default (none) &
 !$omp              shared (nudge_dz,npz, jsc, jec, isc, iec, n, sphum, Atm, u0, v0, t0, dz0, dp0, xt, zvir, mygrid) &
@@ -1753,56 +1694,6 @@ if ( is_master() ) write(*,*) 'CALL atmos_global_diag_init'
                IPD_Data(nb)%Statein%prefluxg(ix,k) = _DBL_(Atm(mygrid)%inline_mp%prefluxg(i,j,k1))
              enddo
            endif
-         enddo
-     endif
-
-     if (Atm(mygrid)%flagstruct%do_inline_cnv) then
-         do ix = 1, blen
-           i = Atm_block%index(nb)%ii(ix)
-           j = Atm_block%index(nb)%jj(ix)
-           IPD_Data(nb)%Statein%prec(ix) = _DBL_(_RL_(Atm(mygrid)%inline_cnv%prec(i,j)))
-           IPD_Data(nb)%Statein%ktop(ix) = _DBL_(_RL_(Atm(mygrid)%inline_cnv%ktop(i,j)))
-           IPD_Data(nb)%Statein%kbot(ix) = _DBL_(_RL_(Atm(mygrid)%inline_cnv%kbot(i,j)))
-           IPD_Data(nb)%Statein%kcnv(ix) = _DBL_(_RL_(Atm(mygrid)%inline_cnv%kcnv(i,j)))
-           IPD_Data(nb)%Statein%cumabs(ix) = _DBL_(_RL_(Atm(mygrid)%inline_cnv%cumabs(i,j)))
-         enddo
-     endif
-
-     if (Atm(mygrid)%flagstruct%do_inline_pbl) then
-         do ix = 1, blen
-           i = Atm_block%index(nb)%ii(ix)
-           j = Atm_block%index(nb)%jj(ix)
-           IPD_Data(nb)%Statein%hpbl(ix) = _DBL_(_RL_(Atm(mygrid)%inline_pbl%hpbl(i,j)))
-           IPD_Data(nb)%Statein%kpbl(ix) = Atm(mygrid)%inline_pbl%kpbl(i,j)
-           IPD_Data(nb)%Statein%dusfc(ix) = _DBL_(_RL_(Atm(mygrid)%inline_pbl%dusfc(i,j)))
-           IPD_Data(nb)%Statein%dvsfc(ix) = _DBL_(_RL_(Atm(mygrid)%inline_pbl%dvsfc(i,j)))
-           IPD_Data(nb)%Statein%dtsfc(ix) = _DBL_(_RL_(Atm(mygrid)%inline_pbl%dtsfc(i,j)))
-           IPD_Data(nb)%Statein%dqsfc(ix) = _DBL_(_RL_(Atm(mygrid)%inline_pbl%dqsfc(i,j)))
-           IPD_Data(nb)%Statein%lsm(ix) = Atm(mygrid)%inline_pbl%lsm(i,j)
-           IPD_Data(nb)%Statein%hflx(ix) = _DBL_(_RL_(Atm(mygrid)%inline_pbl%hflx(i,j)))
-           IPD_Data(nb)%Statein%evap(ix) = _DBL_(_RL_(Atm(mygrid)%inline_pbl%evap(i,j)))
-           IPD_Data(nb)%Statein%tsfc(ix) = _DBL_(_RL_(Atm(mygrid)%inline_pbl%tsfc(i,j)))
-           IPD_Data(nb)%Statein%vfrac(ix) = _DBL_(_RL_(Atm(mygrid)%inline_pbl%vfrac(i,j)))
-           IPD_Data(nb)%Statein%vtype(ix) = _DBL_(_RL_(Atm(mygrid)%inline_pbl%vtype(i,j)))
-           IPD_Data(nb)%Statein%ffmm(ix) = _DBL_(_RL_(Atm(mygrid)%inline_pbl%ffmm(i,j)))
-           IPD_Data(nb)%Statein%ffhh(ix) = _DBL_(_RL_(Atm(mygrid)%inline_pbl%ffhh(i,j)))
-           IPD_Data(nb)%Statein%snowd(ix) = _DBL_(_RL_(Atm(mygrid)%inline_pbl%snowd(i,j)))
-           IPD_Data(nb)%Statein%zorl(ix) = _DBL_(_RL_(Atm(mygrid)%inline_pbl%zorl(i,j)))
-           IPD_Data(nb)%Statein%ztrl(ix) = _DBL_(_RL_(Atm(mygrid)%inline_pbl%ztrl(i,j)))
-           IPD_Data(nb)%Statein%uustar(ix) = _DBL_(_RL_(Atm(mygrid)%inline_pbl%uustar(i,j)))
-           IPD_Data(nb)%Statein%shdmax(ix) = _DBL_(_RL_(Atm(mygrid)%inline_pbl%shdmax(i,j)))
-           IPD_Data(nb)%Statein%srflag(ix) = _DBL_(_RL_(Atm(mygrid)%inline_pbl%srflag(i,j)))
-           IPD_Data(nb)%Statein%hice(ix) = _DBL_(_RL_(Atm(mygrid)%inline_pbl%hice(i,j)))
-           IPD_Data(nb)%Statein%fice(ix) = _DBL_(_RL_(Atm(mygrid)%inline_pbl%fice(i,j)))
-           IPD_Data(nb)%Statein%tice(ix) = _DBL_(_RL_(Atm(mygrid)%inline_pbl%tice(i,j)))
-           IPD_Data(nb)%Statein%weasd(ix) = _DBL_(_RL_(Atm(mygrid)%inline_pbl%weasd(i,j)))
-           IPD_Data(nb)%Statein%qsurf(ix) = _DBL_(_RL_(Atm(mygrid)%inline_pbl%qsurf(i,j)))
-           IPD_Data(nb)%Statein%cmm(ix) = _DBL_(_RL_(Atm(mygrid)%inline_pbl%cmm(i,j)))
-           IPD_Data(nb)%Statein%chh(ix) = _DBL_(_RL_(Atm(mygrid)%inline_pbl%chh(i,j)))
-           IPD_Data(nb)%Statein%gflux(ix) = _DBL_(_RL_(Atm(mygrid)%inline_pbl%gflux(i,j)))
-           IPD_Data(nb)%Statein%ep(ix) = _DBL_(_RL_(Atm(mygrid)%inline_pbl%ep(i,j)))
-           IPD_Data(nb)%Statein%tprcp(ix) = _DBL_(_RL_(Atm(mygrid)%inline_pbl%tprcp(i,j)))
-           IPD_Data(nb)%Statein%stc(ix,:) = _DBL_(_RL_(Atm(mygrid)%inline_pbl%stc(i,j,:)))
          enddo
      endif
 

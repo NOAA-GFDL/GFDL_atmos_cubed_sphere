@@ -51,7 +51,6 @@ module fv_dynamics_mod
    use boundary_mod,        only: nested_grid_BC_apply_intT
    use fv_arrays_mod,       only: fv_grid_type, fv_flags_type, fv_atmos_type, fv_nest_type
    use fv_arrays_mod,       only: fv_diag_type, fv_grid_bounds_type, inline_mp_type, fv_thermo_type
-   use fv_arrays_mod,       only: inline_pbl_type, inline_cnv_type, inline_gwd_type
    use fv_nwp_nudge_mod,    only: do_adiabatic_init
 
 implicit none
@@ -83,8 +82,7 @@ contains
                         ps, pe, pk, peln, pkz, phis, q_con, omga, ua, va, uc, vc,          &
                         ak, bk, mfx, mfy, cx, cy, ze0, hybrid_z, &
                         gridstruct, flagstruct, neststruct, thermostruct, idiag, bd, &
-                        parent_grid, domain, inline_mp, inline_pbl, inline_cnv, &
-                        inline_gwd, heat_source, diss_est, time_total)
+                        parent_grid, domain, inline_mp, heat_source, diss_est, time_total)
 
     real, intent(IN) :: bdt  ! Large time-step
     real, intent(IN) :: consv_te
@@ -145,9 +143,6 @@ contains
     real, intent(in),    dimension(npz+1):: ak, bk
 
     type(inline_mp_type), intent(inout) :: inline_mp
-    type(inline_pbl_type), intent(inout) :: inline_pbl
-    type(inline_cnv_type), intent(inout) :: inline_cnv
-    type(inline_gwd_type), intent(inout) :: inline_gwd
 
 ! Accumulated Mass flux arrays: the "Flux Capacitor"
     real, intent(inout) ::  mfx(bd%is:bd%ie+1, bd%js:bd%je,   npz)
@@ -459,9 +454,6 @@ contains
       inline_mp%mppxs = 0.0
       inline_mp%mppxg = 0.0
   endif
-  if (flagstruct%do_inline_cnv) then
-      inline_cnv%prec = 0.0
-  endif
 
   call timing_on('FV_DYN_LOOP')
 
@@ -503,7 +495,7 @@ contains
                     uc, vc, mfx, mfy, cx, cy, pkz, peln, q_con, ak, bk, ks, &
                     gridstruct, flagstruct, neststruct, thermostruct, idiag, bd, &
                     domain, n_map==1, i_pack, last_step, heat_source, diss_est, &
-                    consv_te, te_2d, inline_pbl, inline_gwd, time_total)
+                    consv_te, te_2d, time_total)
       call timing_off('DYN_CORE')
 
 #ifdef SW_DYNAMICS
@@ -617,14 +609,14 @@ contains
                      nr, nwat, sphum, q_con, u,  v, w, delz, pt, q, phis,    &
                      zvir, cp_air, flagstruct%te_err, flagstruct%tw_err, akap, cappa, flagstruct%kord_mt, flagstruct%kord_wz, &
                      kord_tracer, flagstruct%kord_tm, flagstruct%remap_te, peln, te_2d, &
-                     ng, ua, va, omga, dp1, ws, fill, reproduce_sum, idiag, &
+                     ng, ua, va, omga, dp1, ws, fill, reproduce_sum,             &
                      ptop, ak, bk, pfull, gridstruct, thermostruct, domain,   &
-                     flagstruct%do_sat_adj, fv_time, hydrostatic, hybrid_z,     &
+                     flagstruct%do_sat_adj, hydrostatic, &
+                     hybrid_z,     &
                      flagstruct%adiabatic, do_adiabatic_init, flagstruct%do_inline_mp, &
-                     flagstruct%do_inline_pbl, flagstruct%do_inline_cnv, flagstruct%do_inline_gwd, &
-                     inline_mp, inline_pbl, inline_cnv, inline_gwd, bd, flagstruct%fv_debug, &
+                     inline_mp, bd, flagstruct%fv_debug, &
                      flagstruct%do_fast_phys, flagstruct%do_intermediate_phys, &
-                     flagstruct%consv_checker, flagstruct%adj_mass_vmr, flagstruct%inline_pbl_flag, flagstruct%inline_cnv_flag)
+                     flagstruct%consv_checker, flagstruct%adj_mass_vmr)
 
      if ( flagstruct%fv_debug ) then
         if (is_master()) write(*,'(A, I3, A1, I3)') 'finished k_split ', n_map, '/', k_split
