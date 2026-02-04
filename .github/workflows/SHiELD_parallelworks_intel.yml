@@ -16,6 +16,7 @@ on:
   # run weekly on Sunday
   schedule:
     - cron: '0 0 * * 0'
+  workflow_dispatch:
 
 #this should cancel in progress ci runs for the same PR 
 #(e.g. a second commit on the same PR comes in while CI is still running)
