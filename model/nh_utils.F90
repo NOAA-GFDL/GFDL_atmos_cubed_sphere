@@ -924,14 +924,13 @@ CONTAINS
       r_hi(k) = wm(k) - ptmp1
    enddo
 
-   ktop = ks1
+   ktop = km  ! Default value if dt is not .gt. dts(k)
    do k=ks1, km
       if( dt > dts(k) ) then
           ktop = k-1
           exit
       endif
    enddo
-   ktop = km
 
  if ( ktop >= ks1 ) then
    do k=ks1, ktop
