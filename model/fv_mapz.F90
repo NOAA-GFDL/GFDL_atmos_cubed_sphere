@@ -106,7 +106,9 @@ module fv_mapz_mod
 
   implicit none
   real, parameter:: consv_min= 0.001         !< below which no correction applies
+  real, parameter:: te_min= -1.e25
   real, parameter:: t_min= 184.              !< below which applies stricter constraint
+  real, parameter:: r2=1./2., r0=0.0
   real, parameter:: r3 = 1./3., r23 = 2./3., r12 = 1./12.
   real, parameter:: cv_vap = 3.*rvgas        !< 1384.5
   real, parameter:: cv_air =  cp_air - rdgas !< = rdgas * (7/2-1) = 2.5*rdgas=717.68
@@ -139,7 +141,7 @@ contains
                       ptop, ak, bk, pfull, gridstruct, domain, do_sat_adj, &
                       hydrostatic, phys_hydrostatic, hybrid_z, adiabatic, do_adiabatic_init, &
                       do_inline_mp, inline_mp, c2l_ord, bd, fv_debug, &
-                      moist_phys)
+                      moist_phys, grav_var)
   logical, intent(in):: last_step
   logical, intent(in):: fv_debug
   real,    intent(in):: mdt                   !< remap time step
@@ -207,6 +209,7 @@ contains
   real, intent(out)::     te(isd:ied,jsd:jed,km)
 
   type(inline_mp_type), intent(inout):: inline_mp
+  real, intent(in) :: grav_var(isd:ied,jsd:jed,km)
 
 ! !DESCRIPTION:
 !
@@ -222,8 +225,8 @@ contains
   real, dimension(isd:ied,jsd:jed,km):: pe4
   real, dimension(is:ie+1,km+1):: pe0, pe3
   real, dimension(is:ie):: gsize, gz, cvm, qv
-
-  real rcp, rg, rrg, bkh, dtmp, k1k
+  real, dimension(is:ie,js:je,km) :: rrg
+  real rcp, rg, bkh, dtmp, k1k
   integer:: i,j,k
   integer:: kdelz
   integer:: nt, liq_wat, ice_wat, rainwat, snowwat, cld_amt, graupel, hailwat, ccn_cm3, iq, n, kp, k_next
@@ -232,7 +235,15 @@ contains
        k1k = rdgas/cv_air   ! akap / (1.-akap) = rg/Cv=0.4
         rg = rdgas
        rcp = 1./ cp
-       rrg = -rdgas/grav
+
+!$OMP parallel do default(none) shared(is,ie,js,je,km,rrg,grav_var)
+       do k=1,km
+         do j=js,je
+           do i=is,ie
+             rrg(i,j,k) = -rdgas/grav_var(i,j,k)
+           enddo
+         enddo
+       enddo
 
        liq_wat = get_tracer_index (MODEL_ATMOS, 'liq_wat')
        ice_wat = get_tracer_index (MODEL_ATMOS, 'ice_wat')
@@ -300,17 +311,17 @@ contains
 #else
                      cappa(i,j,k) = rdgas / ( rdgas + cvm(i)/(1.+r_vir*q(i,j,k,sphum)) )
 #endif
-                     pt(i,j,k) = pt(i,j,k)*exp(cappa(i,j,k)/(1.-cappa(i,j,k))*log(rrg*delp(i,j,k)/delz(i,j,k)*pt(i,j,k)))
+                     pt(i,j,k) = pt(i,j,k)*exp(cappa(i,j,k)/(1.-cappa(i,j,k))*log(rrg(i,j,k)*delp(i,j,k)/delz(i,j,k)*pt(i,j,k)))
                   enddo
 #else
                   do i=is,ie
 #ifdef MULTI_GASES
-                     pt(i,j,k) = pt(i,j,k)*exp(k1k*(virqd(q(i,j,k,1:num_gas))/vicvqd(q(i,j,k,1:num_gas))*log(rrg*delp(i,j,k)/delz(i,j,k)*pt(i,j,k)))
+                     pt(i,j,k) = pt(i,j,k)*exp(k1k*(virqd(q(i,j,k,1:num_gas))/vicvqd(q(i,j,k,1:num_gas))*log(rrg(i,j,k)*delp(i,j,k)/delz(i,j,k)*pt(i,j,k)))
 #else
-                     pt(i,j,k) = pt(i,j,k)*exp(k1k*log(rrg*delp(i,j,k)/delz(i,j,k)*pt(i,j,k)))
+                     pt(i,j,k) = pt(i,j,k)*exp(k1k*log(rrg(i,j,k)*delp(i,j,k)/delz(i,j,k)*pt(i,j,k)))
 #endif
 ! Using dry pressure for the definition of the virtual potential temperature
-!                    pt(i,j,k) = pt(i,j,k)*exp(k1k*log(rrg*(1.-q(i,j,k,sphum))*delp(i,j,k)/delz(i,j,k)*    &
+!                    pt(i,j,k) = pt(i,j,k)*exp(k1k*log(rrg(i,j,k)*(1.-q(i,j,k,sphum))*delp(i,j,k)/delz(i,j,k)*    &
 !                                              pt(i,j,k)/(1.+r_vir*q(i,j,k,sphum))))
                   enddo
 #endif
@@ -390,7 +401,7 @@ contains
       enddo
    enddo
 
-   if ( kord_tm<0 ) then
+  if ( kord_tm<0 ) then
 !----------------------------------
 ! Map t using logp
 !----------------------------------
@@ -551,28 +562,28 @@ contains
 #else
                cappa(i,j,k) = rdgas / ( rdgas + cvm(i)/(1.+r_vir*q(i,j,k,sphum)) )
 #endif
-               pkz(i,j,k) = exp(cappa(i,j,k)*log(rrg*delp(i,j,k)/delz(i,j,k)*pt(i,j,k)))
+               pkz(i,j,k) = exp(cappa(i,j,k)*log(rrg(i,j,k)*delp(i,j,k)/delz(i,j,k)*pt(i,j,k)))
             enddo
 #else
          if ( kord_tm < 0 ) then
            do i=is,ie
 #ifdef MULTI_GASES
-              pkz(i,j,k) = exp(akap*virqd(q(i,j,k,1:num_gas))/vicpqd(q(i,j,k,1:num_gas))*log(rrg*delp(i,j,k)/delz(i,j,k)*pt(i,j,k)))
+              pkz(i,j,k) = exp(akap*virqd(q(i,j,k,1:num_gas))/vicpqd(q(i,j,k,1:num_gas))*log(rrg(i,j,k)*delp(i,j,k)/delz(i,j,k)*pt(i,j,k)))
 #else
-              pkz(i,j,k) = exp(akap*log(rrg*delp(i,j,k)/delz(i,j,k)*pt(i,j,k)))
+              pkz(i,j,k) = exp(akap*log(rrg(i,j,k)*delp(i,j,k)/delz(i,j,k)*pt(i,j,k)))
 #endif
 ! Using dry pressure for the definition of the virtual potential temperature
-!             pkz(i,j,k) = exp(akap*log(rrg*(1.-q(i,j,k,sphum))*delp(i,j,k)/delz(i,j,k)*pt(i,j,k)/(1.+r_vir*q(i,j,k,sphum))))
+!             pkz(i,j,k) = exp(akap*log(rrg(i,j,k)*(1.-q(i,j,k,sphum))*delp(i,j,k)/delz(i,j,k)*pt(i,j,k)/(1.+r_vir*q(i,j,k,sphum))))
            enddo
          else
            do i=is,ie
 #ifdef MULTI_GASES
-              pkz(i,j,k) = exp(k1k*virqd(q(i,j,k,1:num_gas))/vicvqd(q(i,j,k,1:num_gas))*log(rrg*delp(i,j,k)/delz(i,j,k)*pt(i,j,k)))
+              pkz(i,j,k) = exp(k1k*virqd(q(i,j,k,1:num_gas))/vicvqd(q(i,j,k,1:num_gas))*log(rrg(i,j,k)*delp(i,j,k)/delz(i,j,k)*pt(i,j,k)))
 #else
-              pkz(i,j,k) = exp(k1k*log(rrg*delp(i,j,k)/delz(i,j,k)*pt(i,j,k)))
+              pkz(i,j,k) = exp(k1k*log(rrg(i,j,k)*delp(i,j,k)/delz(i,j,k)*pt(i,j,k)))
 #endif
 ! Using dry pressure for the definition of the virtual potential temperature
-!             pkz(i,j,k) = exp(k1k*log(rrg*(1.-q(i,j,k,sphum))*delp(i,j,k)/delz(i,j,k)*pt(i,j,k)/(1.+r_vir*q(i,j,k,sphum))))
+!             pkz(i,j,k) = exp(k1k*log(rrg(i,j,k)*(1.-q(i,j,k,sphum))*delp(i,j,k)/delz(i,j,k)*pt(i,j,k)/(1.+r_vir*q(i,j,k,sphum))))
            enddo
            if ( last_step .and. (.not.adiabatic) ) then
               do i=is,ie
@@ -669,7 +680,7 @@ contains
 !$OMP                               ng,gridstruct,E_Flux,pdt,dtmp,reproduce_sum,q,             &
 !$OMP                               mdt,cld_amt,cappa,dtdt,out_dt,rrg,akap,do_sat_adj,         &
 !$OMP                               kord_tm, pe4,npx,npy, ccn_cm3,                             &
-!$OMP                               u_dt,v_dt,c2l_ord,bd,dp0,ps,cdata,GFDL_interstitial)       &
+!$OMP                               u_dt,v_dt,c2l_ord,bd,dp0,ps,cdata,GFDL_interstitial,grav_var)&
 !$OMP                        shared(ccpp_suite)                                                &
 #ifdef MULTI_GASES
 !$OMP                        shared(num_gas)                                                   &
@@ -718,7 +729,7 @@ if( last_step .and. (.not.do_adiabatic_init)  ) then
            enddo
            do k=km,1,-1
               do i=is,ie
-                 phis(i,k) = phis(i,k+1) - grav*delz(i,j,k)
+                 phis(i,k) = phis(i,k+1) - grav_var(i,j,k)*delz(i,j,k)
               enddo
            enddo
 
@@ -913,7 +924,7 @@ endif        ! end last_step check
                                  u, v, w, delz, pt, delp, q, qc, pe, peln, hs, &
                                  rsin2_l, cosa_s_l, &
                                  r_vir,  cp, rg, hlv, te_2d, ua, va, teq, &
-                                 moist_phys, nwat, sphum, liq_wat, rainwat, ice_wat, snowwat, graupel, hailwat, hydrostatic, id_te)
+                                 moist_phys, nwat, sphum, liq_wat, rainwat, ice_wat, snowwat, graupel, hailwat, hydrostatic, id_te, grav_var)
 !------------------------------------------------------
 ! Compute vertically integrated total energy per column
 !------------------------------------------------------
@@ -921,7 +932,7 @@ endif        ! end last_step check
    integer,  intent(in):: km, is, ie, js, je, isd, ied, jsd, jed, id_te
    integer,  intent(in):: sphum, liq_wat, ice_wat, rainwat, snowwat, graupel, hailwat, nwat
    real, intent(inout), dimension(isd:ied,jsd:jed,km):: ua, va
-   real, intent(in), dimension(isd:ied,jsd:jed,km):: pt, delp
+   real, intent(in), dimension(isd:ied,jsd:jed,km):: pt, delp,grav_var
    real, intent(in), dimension(isd:ied,jsd:jed,km,*):: q
    real, intent(in), dimension(isd:ied,jsd:jed,km):: qc
    real, intent(inout)::  u(isd:ied,  jsd:jed+1,km)
@@ -935,6 +946,7 @@ endif        ! end last_step check
    real, intent(in) :: rsin2_l(isd:ied, jsd:jed)
    real, intent(in) :: cosa_s_l(isd:ied, jsd:jed)
    logical, intent(in):: moist_phys, hydrostatic
+!   real, intent(in) :: grav_var(isd:ied,jsd:jed,km)
 !! Output:
    real, intent(out):: te_2d(is:ie,js:je)   !< vertically integrated TE
    real, intent(out)::   teq(is:ie,js:je)   !< Moist TE
@@ -954,7 +966,7 @@ endif        ! end last_step check
 #ifdef MULTI_GASES
 !$OMP                                  num_gas,                                           &
 #endif
-!$OMP                                  q,nwat,liq_wat,rainwat,ice_wat,snowwat,graupel,hailwat,sphum)   &
+!$OMP                                  q,nwat,liq_wat,rainwat,ice_wat,snowwat,graupel,hailwat,sphum,grav_var)   &
 !$OMP                          private(phiz, tv, cvm, qd)
   do j=js,je
 
@@ -990,7 +1002,7 @@ endif        ! end last_step check
      do i=is,ie
         phiz(i,km+1) = hs(i,j)
         do k=km,1,-1
-           phiz(i,k) = phiz(i,k+1) - grav*delz(i,j,k)
+           phiz(i,k) = phiz(i,k+1) - grav_var(i,j,k)*delz(i,j,k)
         enddo
      enddo
      do i=is,ie

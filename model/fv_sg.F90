@@ -111,7 +111,7 @@ contains
 !!-one for the GFDL physics
  subroutine fv_subgrid_z( isd, ied, jsd, jed, is, ie, js, je, km, nq, dt,    &
                          tau, nwat, delp, pe, peln, pkz, ta, qa, ua, va,  &
-                         hydrostatic, w, delz, u_dt, v_dt, t_dt, k_bot )
+                         hydrostatic, w, delz, u_dt, v_dt, t_dt, k_bot, grav_var )
 ! Dry convective adjustment-mixing
 !-------------------------------------------
       integer, intent(in):: is, ie, js, je, km, nq, nwat
@@ -133,6 +133,7 @@ contains
       real, intent(inout):: qa(isd:ied,jsd:jed,km,nq)   !< Specific humidity & tracers
       real, intent(inout):: u_dt(isd:ied,jsd:jed,km)
       real, intent(inout):: v_dt(isd:ied,jsd:jed,km)
+      real, intent(in):: grav_var(isd:ied,jsd:jed,km)
       real, intent(inout):: t_dt(is:ie,js:je,km)
 !---------------------------Local variables-----------------------------
       real, dimension(is:ie,km):: u0, v0, w0, t0, hd, te, gz, tvm, pm, den
@@ -152,8 +153,6 @@ contains
       cv_air = cp_air - rdgas ! = rdgas * (7/2-1) = 2.5*rdgas=717.68
         rk = cp_air/rdgas + 1.
         cv = cp_air - rdgas
-
-      g2 = 0.5*grav
 
       rdt = 1./ dt
       im = ie-is+1
@@ -200,7 +199,7 @@ contains
    fra = dt/real(tau)
 
 !$OMP parallel do default(none) shared(im,is,ie,js,je,nq,kbot,qa,ta,sphum,ua,va,delp,peln,   &
-!$OMP                                  hydrostatic,pe,delz,g2,w,liq_wat,rainwat,ice_wat,     &
+!$OMP                                  hydrostatic,pe,delz,grav_var,w,liq_wat,rainwat,ice_wat,     &
 !$OMP                                  snowwat,cv_air,m,graupel,hailwat,pkz,rk,rz,fra, t_max, t_min, &
 #ifdef MULTI_GASES
 !$OMP                                  u_dt,rdt,v_dt,xvir,nwat,km) &
@@ -348,13 +347,13 @@ contains
        endif
 
           do i=is,ie
-           den(i,k) = -delp(i,j,k)/(grav*delz(i,j,k))
+           den(i,k) = -delp(i,j,k)/(grav_var(i,j,k)*delz(i,j,k))
              w0(i,k) = w(i,j,k)
-             gz(i,k) = gzh(i)  - g2*delz(i,j,k)
+             gz(i,k) = gzh(i)  - grav_var(i,j,k)*delz(i,j,k)/2.0
                 tmp  = gz(i,k) + 0.5*(u0(i,k)**2+v0(i,k)**2+w0(i,k)**2)
              hd(i,k) = cpm(i)*t0(i,k) + tmp
              te(i,k) = cvm(i)*t0(i,k) + tmp
-              gzh(i) = gzh(i) - grav*delz(i,j,k)
+              gzh(i) = gzh(i) - grav_var(i,j,k)*delz(i,j,k)
           enddo
        enddo
     endif
@@ -712,7 +711,7 @@ contains
 #else
  subroutine fv_subgrid_z( isd, ied, jsd, jed, is, ie, js, je, km, nq, dt,    &
                          tau, nwat, delp, pe, peln, pkz, ta, qa, ua, va,  &
-                         hydrostatic, w, delz, u_dt, v_dt, t_dt, q_dt, k_bot )
+                         hydrostatic, w, delz, u_dt, v_dt, t_dt, q_dt, k_bot, grav_var )
 ! Dry convective adjustment-mixing
 !-------------------------------------------
       integer, intent(in):: is, ie, js, je, km, nq, nwat
@@ -734,6 +733,7 @@ contains
       real, intent(inout):: qa(isd:ied,jsd:jed,km,nq)   !< Specific humidity & tracers
       real, intent(inout):: u_dt(isd:ied,jsd:jed,km)
       real, intent(inout):: v_dt(isd:ied,jsd:jed,km)
+      real, intent(in):: grav_var(isd:ied,jsd:jed,km)
       real, intent(inout):: t_dt(is:ie,js:je,km)
       real, intent(inout):: q_dt(is:ie,js:je,km,nq)
 !---------------------------Local variables-----------------------------
@@ -754,8 +754,6 @@ contains
       cv_air = cp_air - rdgas ! = rdgas * (7/2-1) = 2.5*rdgas=717.68
         rk = cp_air/rdgas + 1.
         cv = cp_air - rdgas
-
-      g2 = 0.5*grav
 
       rdt = 1./ dt
       im = ie-is+1
@@ -791,7 +789,7 @@ contains
    fra = dt/real(tau)
 
 !$OMP parallel do default(none) shared(im,is,ie,js,je,nq,kbot,qa,ta,sphum,ua,va,delp,peln,     &
-!$OMP                                  hydrostatic,pe,delz,g2,w,liq_wat,rainwat,ice_wat,  &
+!$OMP                                  hydrostatic,pe,delz,grav_var,w,liq_wat,rainwat,ice_wat,  &
 !$OMP                                  snowwat,cv_air,m,graupel,hailwat,pkz,rk,rz,fra,cld_amt,    &
 !$OMP                                  u_dt,rdt,v_dt,xvir,nwat)                 &
 !$OMP                          private(kk,lcp2,icp2,tcp3,dh,dq,den,qs,qsw,dqsdt,qcon,q0, &
@@ -936,13 +934,13 @@ contains
        endif
 
           do i=is,ie
-           den(i,k) = -delp(i,j,k)/(grav*delz(i,j,k))
+           den(i,k) = -delp(i,j,k)/(grav_var(i,j,k)*delz(i,j,k))
              w0(i,k) = w(i,j,k)
-             gz(i,k) = gzh(i)  - g2*delz(i,j,k)
+             gz(i,k) = gzh(i)  - grav_var(i,j,k)*delz(i,j,k)/2.0
                 tmp  = gz(i,k) + 0.5*(u0(i,k)**2+v0(i,k)**2+w0(i,k)**2)
              hd(i,k) = cpm(i)*t0(i,k) + tmp
              te(i,k) = cvm(i)*t0(i,k) + tmp
-              gzh(i) = gzh(i) - grav*delz(i,j,k)
+              gzh(i) = gzh(i) - grav_var(i,j,k)*delz(i,j,k)
           enddo
        enddo
     endif
@@ -1292,7 +1290,7 @@ contains
         enddo
       else
         do i=is, ie
-           den(i,k) = -delp(i,j,k)/(grav*delz(i,j,k))
+           den(i,k) = -delp(i,j,k)/(grav_var(i,j,k)*delz(i,j,k))
            q_liq = q0(i,k,liq_wat) + q0(i,k,rainwat)
            q_sol = q0(i,k,ice_wat) + q0(i,k,snowwat) + q0(i,k,graupel)
 !               IF ( nwat == 7 ) THEN
@@ -1551,7 +1549,7 @@ contains
 #else
                      qv,                                                         &
 #endif
-                     ql, qr, qi, qs, qg, qa, check_negative)
+                     ql, qr, qi, qs, qg, grav_var, qa, check_negative)
 
 ! This is designed for 6-class micro-physics schemes
  integer, intent(in):: is, ie, js, je, ng, kbot
@@ -1559,6 +1557,7 @@ contains
  real, intent(in):: dp(is-ng:ie+ng,js-ng:je+ng,kbot)  !< total delp-p
  real, intent(in):: delz(is:,js:,1:)
  real, intent(in):: peln(is:ie,kbot+1,js:je)           !< ln(pe)
+ real, intent(in), dimension(is-ng:ie+ng,js-ng:je+ng,kbot)::grav_var
  logical, intent(in), OPTIONAL :: check_negative
 #ifdef MULTI_GASES
  real, intent(inout), dimension(is-ng:ie+ng,js-ng:je+ng,kbot,*):: qvi
@@ -1612,7 +1611,7 @@ contains
 #ifdef MULTI_GASES
 !$OMP                                  qvi, num_gas,                                   &
 #endif
-!$OMP                                  lv00, d0_vap,hydrostatic,peln,delz,cv_air,sat_adj) &
+!$OMP                                  grav_var, lv00, d0_vap,hydrostatic,peln,delz,cv_air,sat_adj) &
 !$OMP                          private(dq,dq1,qsum,dp2,p2,pt2,qv2,ql2,qi2,qs2,qg2,qr2, &
 !$OMP                                  lcpk,icpk,qsw,dwsdt,sink,q_liq,q_sol,cpm)
   do k=1, kbot
@@ -1651,11 +1650,11 @@ contains
              q_liq = max(0., ql2(i,j) + qr2(i,j))
              q_sol = max(0., qi2(i,j) + qs2(i,j))
 #ifdef MULTI_GASES
-             p2(i,j) = -dp2(i,j)/(grav*delz(i,j,k))*rdgas*pt2(i,j)*virq(qvi(i,j,k,1:num_gas))
+             p2(i,j) = -dp2(i,j)/(grav_var(i,j,k)*delz(i,j,k))*rdgas*pt2(i,j)*virq(qvi(i,j,k,1:num_gas))
              cpm = (1.-(qv2(i,j)+q_liq+q_sol))*cv_air*vicvqd_qpz(qvi(i,j,k,1:num_gas),qv2(i,j)+q_liq+q_sol) + &
                                                         qv2(i,j)*cv_vap + q_liq*c_liq + q_sol*c_ice
 #else
-             p2(i,j) = -dp2(i,j)/(grav*delz(i,j,k))*rdgas*pt2(i,j)*(1.+zvir*qv2(i,j))
+             p2(i,j) = -dp2(i,j)/(grav_var(i,j,k)*delz(i,j,k))*rdgas*pt2(i,j)*(1.+zvir*qv2(i,j))
              cpm = (1.-(qv2(i,j)+q_liq+q_sol))*cv_air + qv2(i,j)*cv_vap + q_liq*c_liq + q_sol*c_ice
 #endif
              lcpk(i,j) = (lv00+d0_vap*pt2(i,j)) / cpm
@@ -1954,7 +1953,7 @@ contains
 
 ! TAS: XXX check to make sure this doesn't need any modifications vs neg_adj2 or neg_adj3
  subroutine neg_adj4(is, ie, js, je, ng, kbot, hydrostatic,   &
-                     peln, delz, pt, dp, qv, ql, qr, qi, qs, qg, qh, qa, check_negative)
+                     peln, delz, pt, dp, qv, ql, qr, qi, qs, qg, qh, grav_var, qa, check_negative)
 
 ! This is designed for 7-class micro-physics schemes
  integer, intent(in):: is, ie, js, je, ng, kbot
@@ -1962,6 +1961,7 @@ contains
  real, intent(in):: dp(is-ng:ie+ng,js-ng:je+ng,kbot)  ! total delp-p
  real, intent(in):: delz(is:,js:,1:)
  real, intent(in):: peln(is:ie,kbot+1,js:je)           ! ln(pe)
+ real, intent(in), dimension(is-ng:ie+ng,js-ng:je+ng,kbot)::grav_var
  logical, intent(in), OPTIONAL :: check_negative
  real, intent(inout), dimension(is-ng:ie+ng,js-ng:je+ng,kbot)::    &
                                  pt, qv, ql, qr, qi, qs, qg, qh
@@ -1998,7 +1998,7 @@ real, dimension(is:ie,js:je):: pt2, qv2, ql2, qi2, qs2, qr2, qg2, qh2, dp2, p2, 
      lv00 = hlv0 - d0_vap*t_ice
 
 !$OMP parallel do default(none) shared(is,ie,js,je,kbot,qv,ql,qi,qs,qr,qg,qh,dp,pt,       &
-!$OMP                                  lv00, d0_vap,hydrostatic,peln,delz,cv_air,sat_adj) &
+!$OMP                                  grav_var, lv00, d0_vap,hydrostatic,peln,delz,cv_air,sat_adj) &
 !$OMP                          private(dq,dq1,qsum,dp2,p2,pt2,qv2,ql2,qi2,qs2,qg2,qh2,qr2, &
 !$OMP                                  lcpk,icpk,qsw,dwsdt,sink,q_liq,q_sol,cpm)
   do k=1, kbot
@@ -2030,7 +2030,7 @@ real, dimension(is:ie,js:je):: pt2, qv2, ql2, qi2, qs2, qr2, qg2, qh2, dp2, p2, 
      else
        do j=js, je
           do i=is, ie
-             p2(i,j) = -dp2(i,j)/(grav*delz(i,j,k))*rdgas*pt2(i,j)*(1.+zvir*qv2(i,j))
+             p2(i,j) = -dp2(i,j)/(grav_var(i,j,k)*delz(i,j,k))*rdgas*pt2(i,j)*(1.+zvir*qv2(i,j))
              q_liq = max(0., ql2(i,j) + qr2(i,j))
              q_sol = max(0., qi2(i,j) + qs2(i,j))
              cpm = (1.-(qv2(i,j)+q_liq+q_sol))*cv_air + qv2(i,j)*cv_vap + q_liq*c_liq + q_sol*c_ice
@@ -2311,7 +2311,7 @@ real, dimension(is:ie,js:je):: pt2, qv2, ql2, qi2, qs2, qr2, qg2, qh2, dp2, p2, 
  end subroutine neg_adj4
 
  subroutine neg_adj2(is, ie, js, je, ng, kbot, hydrostatic,   &
-                     peln, delz, pt, dp, qv, ql, qr, qi, qs, qa, check_negative)
+                     peln, delz, pt, dp, qv, ql, qr, qi, qs, grav_var, qa, check_negative)
 
 ! This is designed for 6-class micro-physics schemes
  integer, intent(in):: is, ie, js, je, ng, kbot
@@ -2319,6 +2319,7 @@ real, dimension(is:ie,js:je):: pt2, qv2, ql2, qi2, qs2, qr2, qg2, qh2, dp2, p2, 
  real,    intent(in):: dp(is-ng:ie+ng,js-ng:je+ng,kbot)  !< total delp-p
  real,    intent(in):: delz(is-ng:,js-ng:,1:)
  real,    intent(in):: peln(is:ie,kbot+1,js:je)           !< ln(pe)
+ real, intent(in), dimension(is-ng:ie+ng,js-ng:je+ng,kbot)::grav_var
  logical, intent(in), OPTIONAL :: check_negative
  real,    intent(inout), dimension(is-ng:ie+ng,js-ng:je+ng,kbot)::    &
                                  pt, qv, ql, qr, qi, qs
@@ -2353,7 +2354,7 @@ real, dimension(is:ie,js:je):: pt2, qv2, ql2, qi2, qs2, qr2, qg2, qh2, dp2, p2, 
   lv00 = hlv0 - d0_vap*t_ice
 
 !$OMP parallel do default(none) shared(is,ie,js,je,kbot,qv,ql,qi,qs,qr,dp,pt,       &
-!$OMP                                  lv00, d0_vap,hydrostatic,peln,delz,cv_air,sat_adj) &
+!$OMP                                  grav_var, lv00, d0_vap,hydrostatic,peln,delz,cv_air,sat_adj) &
 !$OMP                          private(dq,dq1,qsum,dp2,p2,pt2,qv2,ql2,qi2,qs2,qr2, &
 !$OMP                                  lcpk,icpk,qsw,dwsdt,sink,q_liq,q_sol,oneocpm)
   do k=1, kbot
@@ -2383,7 +2384,7 @@ real, dimension(is:ie,js:je):: pt2, qv2, ql2, qi2, qs2, qr2, qg2, qh2, dp2, p2, 
      else
        do j=js, je
           do i=is, ie
-             p2(i,j) = -dp2(i,j)/(grav*delz(i,j,k))*rdgas*pt2(i,j)*(1.+zvir*qv2(i,j))
+             p2(i,j) = -dp2(i,j)/(grav_var(i,j,k)*delz(i,j,k))*rdgas*pt2(i,j)*(1.+zvir*qv2(i,j))
              q_liq = max(0., ql2(i,j) + qr2(i,j))
              q_sol = max(0., qi2(i,j) + qs2(i,j))
              oneocpm = 1.0 / ((1.-(qv2(i,j)+q_liq+q_sol))*cv_air + qv2(i,j)*cv_vap + q_liq*c_liq + q_sol*c_ice)
