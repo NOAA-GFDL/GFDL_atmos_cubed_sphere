@@ -342,7 +342,6 @@ contains
       nr = nq_tot - flagstruct%dnrts
 
       call init_ijk_mem(isd,ied, jsd,jed, npz+1, grav_var_h, grav)
-      call init_ijk_mem(isd,ied, jsd,jed, npz, grav_var, grav)
 
       if(flagstruct%var_grav)then
        ! Surface

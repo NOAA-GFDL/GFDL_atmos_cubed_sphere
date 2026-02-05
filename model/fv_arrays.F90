@@ -29,6 +29,7 @@ module fv_arrays_mod
   use horiz_interp_type_mod, only: horiz_interp_type
   use mpp_mod,               only: mpp_broadcast
   use platform_mod,          only: r8_kind
+  use constants_mod,         only: grav
 
 
   public
@@ -1604,7 +1605,7 @@ contains
                 Atm%va(i,j,k) = real_big
                 Atm%pt(i,j,k) = real_big
               Atm%delp(i,j,k) = real_big
-              
+              Atm%grav_var(i,j,k) = grav
               !3D-SA-TKE (kyf) (modify for data structure)
               if ( Atm%flagstruct%sa3dtke_dyco ) then
                  Atm%sa3dtke_var%deform_1(i,j,k) = 0.
