@@ -405,53 +405,54 @@ contains
          if ( nwat.eq.2 .and. (.not.hydrostatic) ) then
             sphum = get_tracer_index (MODEL_ATMOS, 'sphum')
          endif
+         goto 911
+      endif
+
+      if ( nwat==0 ) then
+             sphum = 1
+           cld_amt = -1   ! to cause trouble if (mis)used
       else
+             sphum = get_tracer_index (MODEL_ATMOS, 'sphum')
+           liq_wat = get_tracer_index (MODEL_ATMOS, 'liq_wat')
+           ice_wat = get_tracer_index (MODEL_ATMOS, 'ice_wat')
+           rainwat = get_tracer_index (MODEL_ATMOS, 'rainwat')
+           snowwat = get_tracer_index (MODEL_ATMOS, 'snowwat')
+           graupel = get_tracer_index (MODEL_ATMOS, 'graupel')
+           hailwat = get_tracer_index (MODEL_ATMOS, 'hailwat')
+           cld_amt = get_tracer_index (MODEL_ATMOS, 'cld_amt')
+      endif
 
-         if ( nwat==0 ) then
-            sphum = 1
-            cld_amt = -1   ! to cause trouble if (mis)used
-         else
-            sphum = get_tracer_index (MODEL_ATMOS, 'sphum')
-            liq_wat = get_tracer_index (MODEL_ATMOS, 'liq_wat')
-            ice_wat = get_tracer_index (MODEL_ATMOS, 'ice_wat')
-            rainwat = get_tracer_index (MODEL_ATMOS, 'rainwat')
-            snowwat = get_tracer_index (MODEL_ATMOS, 'snowwat')
-            graupel = get_tracer_index (MODEL_ATMOS, 'graupel')
-            hailwat = get_tracer_index (MODEL_ATMOS, 'hailwat')
-            cld_amt = get_tracer_index (MODEL_ATMOS, 'cld_amt')
-         endif
-
-         theta_d = get_tracer_index (MODEL_ATMOS, 'theta_d')
+      theta_d = get_tracer_index (MODEL_ATMOS, 'theta_d')
 
 #ifdef SW_DYNAMICS
-         akap  = 1.
-         pfull(1) = 0.5*flagstruct%p_ref
+      akap  = 1.
+      pfull(1) = 0.5*flagstruct%p_ref
 #else
-         akap  = kappa
+      akap  = kappa
 
 !$OMP parallel do default(none) shared(npz,ak,bk,flagstruct,pfull) &
 !$OMP                          private(ph1, ph2,k)
-         do k=1,npz
-            ph1 = ak(k  ) + bk(k  )*flagstruct%p_ref
-            ph2 = ak(k+1) + bk(k+1)*flagstruct%p_ref
-            pfull(k) = (ph2 - ph1) / log(ph2/ph1)
-         enddo
+      do k=1,npz
+         ph1 = ak(k  ) + bk(k  )*flagstruct%p_ref
+         ph2 = ak(k+1) + bk(k+1)*flagstruct%p_ref
+         pfull(k) = (ph2 - ph1) / log(ph2/ph1)
+      enddo
 
-         if ( hydrostatic ) then
+    if ( hydrostatic ) then
 !$OMP parallel do default(none) shared(is,ie,js,je,isd,ied,jsd,jed,npz,dp1,zvir,nwat,q,q_con,sphum,liq_wat, &
 !$OMP      rainwat,ice_wat,snowwat,graupel,hailwat) private(cvm,i,j,k)
-            do k=1,npz
-               do j=js,je
+      do k=1,npz
+         do j=js,je
 #ifdef USE_COND
-                  call moist_cp(is,ie,isd,ied,jsd,jed, npz, j, k, nwat, sphum, liq_wat, rainwat,    &
+             call moist_cp(is,ie,isd,ied,jsd,jed, npz, j, k, nwat, sphum, liq_wat, rainwat,    &
                            ice_wat, snowwat, graupel, hailwat, q, q_con(is:ie,j,k), cvm)
 #endif
-                  do i=is,ie
-                     dp1(i,j,k) = zvir*q(i,j,k,sphum)
-                  enddo
-               enddo
+            do i=is,ie
+               dp1(i,j,k) = zvir*q(i,j,k,sphum)
             enddo
-         else
+         enddo
+      enddo
+    else
 !$OMP parallel do default(none) shared(is,ie,js,je,isd,ied,jsd,jed,npz,dp1,zvir,q,q_con,sphum,liq_wat, &
 !$OMP                                  rainwat,ice_wat,snowwat,graupel,hailwat,pkz,flagstruct, &
 #ifdef MULTI_GASES
@@ -459,108 +460,107 @@ contains
 #endif
 !$OMP                                  cappa,kappa,rdg,delp,pt,delz,nwat)              &
 !$OMP                          private(cvm,i,j,k)
-            do k=1,npz
-               if ( flagstruct%moist_phys ) then
-                  do j=js,je
+       do k=1,npz
+         if ( flagstruct%moist_phys ) then
+           do j=js,je
 #ifdef MOIST_CAPPA
-                     call moist_cv(is,ie,isd,ied,jsd,jed, npz, j, k, nwat, sphum, liq_wat, rainwat,    &
+             call moist_cv(is,ie,isd,ied,jsd,jed, npz, j, k, nwat, sphum, liq_wat, rainwat,    &
                            ice_wat, snowwat, graupel, hailwat, q, q_con(is:ie,j,k), cvm)
 #endif
-                     do i=is,ie
+             do i=is,ie
 #ifdef MULTI_GASES
-                        dp1(i,j,k) = virq(q(i,j,k,:))-1.
-                        kapad(i,j,k)= kappa * (virqd(q(i,j,k,:))/vicpqd(q(i,j,k,:)))
+                dp1(i,j,k) = virq(q(i,j,k,:))-1.
+                kapad(i,j,k)= kappa * (virqd(q(i,j,k,:))/vicpqd(q(i,j,k,:)))
 #else
-                        dp1(i,j,k) = zvir*q(i,j,k,sphum)
+                dp1(i,j,k) = zvir*q(i,j,k,sphum)
 #endif
 
 #ifdef MOIST_CAPPA
-                        cappa(i,j,k) = rdgas/(rdgas + cvm(i)/(1.+dp1(i,j,k)))
-                        pkz(i,j,k) = exp(cappa(i,j,k)*log(rdg*delp(i,j,k)*pt(i,j,k)*    &
+               cappa(i,j,k) = rdgas/(rdgas + cvm(i)/(1.+dp1(i,j,k)))
+               pkz(i,j,k) = exp(cappa(i,j,k)*log(rdg*delp(i,j,k)*pt(i,j,k)*    &
 #ifdef MULTI_GASES
                             (1.+dp1(i,j,k))                  /delz(i,j,k)) )
 #else
                             (1.+dp1(i,j,k))*(1.-q_con(i,j,k))/delz(i,j,k)) )
 #endif
 #else
-                        pkz(i,j,k) = exp( kappa*log(rdg*delp(i,j,k)*pt(i,j,k)*    &
+               pkz(i,j,k) = exp( kappa*log(rdg*delp(i,j,k)*pt(i,j,k)*    &
                             (1.+dp1(i,j,k))/delz(i,j,k)) )
 ! Using dry pressure for the definition of the virtual potential temperature
 !              pkz(i,j,k) = exp( kappa*log(rdg*delp(i,j,k)*pt(i,j,k)*    &
 !                                      (1.-q(i,j,k,sphum))/delz(i,j,k)) )
 #endif
 
-                     enddo
-                  enddo
-               else
-                  do j=js,je
-                     do i=is,ie
-                        dp1(i,j,k) = 0.
+             enddo
+           enddo
+         else
+           do j=js,je
+              do i=is,ie
+                 dp1(i,j,k) = 0.
 #ifdef MULTI_GASES
-                        kapad(i,j,k)= kappa * (virqd(q(i,j,k,:))/vicpqd(q(i,j,k,:)))
-                        pkz(i,j,k) = exp(kapad(i,j,k)*log(rdg*virqd(q(i,j,k,:))*delp(i,j,k)* &
-                                         pt(i,j,k)/delz(i,j,k)))
+                 kapad(i,j,k)= kappa * (virqd(q(i,j,k,:))/vicpqd(q(i,j,k,:)))
+                 pkz(i,j,k) = exp(kapad(i,j,k)*log(rdg*virqd(q(i,j,k,:))*delp(i,j,k)*pt(i,j,k)/delz(i,j,k)))
 #else
-                        pkz(i,j,k) = exp(kappa*log(rdg*delp(i,j,k)*pt(i,j,k)/delz(i,j,k)))
+                 pkz(i,j,k) = exp(kappa*log(rdg*delp(i,j,k)*pt(i,j,k)/delz(i,j,k)))
 #endif
-                     enddo
-                  enddo
-               endif
-            enddo
+              enddo
+           enddo
          endif
+       enddo
+    endif
 
-         if ( flagstruct%fv_debug ) then
+      if ( flagstruct%fv_debug ) then
 #ifdef MOIST_CAPPA
-            call prt_mxm('cappa', cappa, is, ie, js, je, ng, npz, 1., gridstruct%area_64, domain)
+         call prt_mxm('cappa', cappa, is, ie, js, je, ng, npz, 1., gridstruct%area_64, domain)
 #endif
-            call prt_mxm('PS',        ps, is, ie, js, je, ng,   1, 0.01, gridstruct%area_64, domain)
-            call prt_mxm('T_dyn_b',   pt, is, ie, js, je, ng, npz, 1.,   gridstruct%area_64, domain)
-            if ( .not. hydrostatic) call prt_mxm('delz',    delz, is, ie, js, je, 0, npz, 1., gridstruct%area_64, domain)
-            call prt_mxm('delp_b ', delp, is, ie, js, je, ng, npz, 0.01, gridstruct%area_64, domain)
-            call prt_mxm('pk_b',    pk, is, ie, js, je, 0, npz+1, 1.,gridstruct%area_64, domain)
-            call prt_mxm('pkz_b',   pkz,is, ie, js, je, 0, npz,   1.,gridstruct%area_64, domain)
-         endif
+         call prt_mxm('PS',        ps, is, ie, js, je, ng,   1, 0.01, gridstruct%area_64, domain)
+         call prt_mxm('T_dyn_b',   pt, is, ie, js, je, ng, npz, 1.,   gridstruct%area_64, domain)
+         if ( .not. hydrostatic) call prt_mxm('delz',    delz, is, ie, js, je, 0, npz, 1., gridstruct%area_64, domain)
+         call prt_mxm('delp_b ', delp, is, ie, js, je, ng, npz, 0.01, gridstruct%area_64, domain)
+         call prt_mxm('pk_b',    pk, is, ie, js, je, 0, npz+1, 1.,gridstruct%area_64, domain)
+         call prt_mxm('pkz_b',   pkz,is, ie, js, je, 0, npz,   1.,gridstruct%area_64, domain)
+      endif
 
 !---------------------
 ! Compute Total Energy
 !---------------------
-         if ( (consv_te > 0. .or. idiag%id_te>0)  .and. (.not.do_adiabatic_init) ) then
-            call compute_total_energy(is, ie, js, je, isd, ied, jsd, jed, npz,        &
+      if ( (consv_te > 0. .or. idiag%id_te>0)  .and. (.not.do_adiabatic_init) ) then
+           call compute_total_energy(is, ie, js, je, isd, ied, jsd, jed, npz,        &
                                      u, v, w, delz, pt, delp, q, dp1, pe, peln, phis, &
                                      gridstruct%rsin2, gridstruct%cosa_s, &
                                      zvir, cp_air, rdgas, hlv, te_2d, ua, va, teq,        &
                                      flagstruct%moist_phys, nwat, sphum, liq_wat, rainwat,   &
                                      ice_wat, snowwat, graupel, hailwat, hydrostatic, idiag%id_te)
-            if( idiag%id_te>0 ) then
+           if( idiag%id_te>0 ) then
                used = send_data(idiag%id_te, teq, fv_time)
 !              te_den=1.E-9*g_sum(teq, is, ie, js, je, ng, area, 0)/(grav*4.*pi*radius**2)
 !              if(is_master())  write(*,*) 'Total Energy Density (Giga J/m**2)=',te_den
-            endif
-         endif
+           endif
+      endif
 
-         if( (flagstruct%consv_am .or. idiag%id_amdt>0) .and. (.not.do_adiabatic_init) ) then
-            call compute_aam(npz, is, ie, js, je, isd, ied, jsd, jed, gridstruct, bd,   &
+      if( (flagstruct%consv_am .or. idiag%id_amdt>0) .and. (.not.do_adiabatic_init) ) then
+          call compute_aam(npz, is, ie, js, je, isd, ied, jsd, jed, gridstruct, bd,   &
                            ptop, ua, va, u, v, delp, teq, ps2, m_fac)
-         endif
+      endif
 
-         if( .not.flagstruct%RF_fast .and. flagstruct%tau .ne. 0. ) then
-            if ( gridstruct%grid_type<4 .or. gridstruct%bounded_domain ) then
-!              if ( flagstruct%RF_fast ) then
-!                 call Ray_fast(abs(dt), npx, npy, npz, pfull, flagstruct%tau, u, v, w,  &
+      if( .not.flagstruct%RF_fast .and. flagstruct%tau .ne. 0. ) then
+        if ( gridstruct%grid_type<4 .or. gridstruct%bounded_domain ) then
+!         if ( flagstruct%RF_fast ) then
+!            call Ray_fast(abs(dt), npx, npy, npz, pfull, flagstruct%tau, u, v, w,  &
 !                          dp_ref, ptop, hydrostatic, flagstruct%rf_cutoff, bd)
-!              else
-               call Rayleigh_Super(abs(bdt), npx, npy, npz, ks, pfull, phis, flagstruct%tau, flagstruct%tau_w, u, v, w, pt,  &
+!         else
+             call Rayleigh_Super(abs(bdt), npx, npy, npz, ks, pfull, phis, flagstruct%tau, flagstruct%tau_w, u, v, w, pt,  &
 #ifdef MULTI_GASES
                   q, ncnst,  &
 #endif
                   ua, va, delz, gridstruct%agrid, cp_air, rdgas, ptop, hydrostatic,    &
                 .not. gridstruct%bounded_domain, flagstruct%molecular_diffusion, consv_te, flagstruct%rf_cutoff, gridstruct, domain, bd)
-!               endif
-            else
-               call Rayleigh_Friction(abs(bdt), npx, npy, npz, ks, pfull, flagstruct%tau, u, v, w, pt,  &
-                     ua, va, delz, cp_air, rdgas, ptop, hydrostatic, .true., flagstruct%rf_cutoff, gridstruct, domain, bd)
-            endif
-         endif
+!         endif
+        else
+             call Rayleigh_Friction(abs(bdt), npx, npy, npz, ks, pfull, flagstruct%tau, u, v, w, pt,  &
+                  ua, va, delz, cp_air, rdgas, ptop, hydrostatic, .true., flagstruct%rf_cutoff, gridstruct, domain, bd)
+        endif
+      endif
 
 #endif
 
@@ -1000,8 +1000,8 @@ contains
       enddo
     endif   !  consv_am
   endif
- endif ! If flagstruct%no_dycore block
-    call cubed_to_latlon(u, v, ua, va, gridstruct, &
+
+911  call cubed_to_latlon(u, v, ua, va, gridstruct, &
           npx, npy, npz, 1, gridstruct%grid_type, domain, gridstruct%bounded_domain, flagstruct%c2l_ord, bd)
 
 #ifdef MULTI_GASES

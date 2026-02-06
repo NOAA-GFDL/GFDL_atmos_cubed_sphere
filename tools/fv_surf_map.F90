@@ -1232,8 +1232,6 @@
       integer :: is,  ie,  js,  je
       integer :: isd, ied, jsd, jed
 
-      logical :: flag_inside, start_search
-
       is  = bd%is
       ie  = bd%ie
       js  = bd%js
@@ -1344,7 +1342,7 @@
     min_pts = 999999
     do j=jsd,jed
        do i=isd,ied
-          start_search=.true.
+
           !Do not go into corners
           if (((i < is .and. j < js) .or. &
                (i < is .and. j > je) .or. &
@@ -1353,7 +1351,7 @@
              q2(i,j) = 1.e25
              f2(i,j) = 1.e25
              h2(i,j) = 1.e25
-             start_search=.false.
+             goto 4444
           end if
 
           if ( agrid(i,j,2) < -pi5+stretch_fac*pi5/real(npx_global-1) ) then
@@ -1361,55 +1359,54 @@
                q2(i,j) = qsp
                f2(i,j) = fsp
                h2(i,j) = hsp
-               start_search=.false.
+               goto 4444
           elseif ( agrid(i,j,2) > pi5-stretch_fac*pi5/real(npx_global-1) ) then
 ! NP:
                q2(i,j) = qnp
                f2(i,j) = fnp
                h2(i,j) = hnp
-               start_search=.false.
+               goto 4444
           endif
 
-          if (start_search) then
-             lat_s = min( grid(i,j,2), grid(i+1,j,2), grid(i,j+1,2), grid(i+1,j+1,2), agrid(i,j,2) )
-             lat_n = max( grid(i,j,2), grid(i+1,j,2), grid(i,j+1,2), grid(i+1,j+1,2), agrid(i,j,2) )
+          lat_s = min( grid(i,j,2), grid(i+1,j,2), grid(i,j+1,2), grid(i+1,j+1,2), agrid(i,j,2) )
+          lat_n = max( grid(i,j,2), grid(i+1,j,2), grid(i,j+1,2), grid(i+1,j+1,2), agrid(i,j,2) )
 ! Enlarge the search zone:
              delg = max( 0.2*(lat_n-lat_s), pi/real(npx_global-1), pi2/real(nlat) )
-             lat_s = max(-pi5, lat_s - delg)
-             lat_n = min( pi5, lat_n + delg)
+            lat_s = max(-pi5, lat_s - delg)
+            lat_n = min( pi5, lat_n + delg)
 
-             j1 = nint( (pi5+lat_s)/(pi/real(nlat)) ) - 1
-             if ( lat_s*r2d < (-90.+90./real(npx_global-1)) ) j1 = 1
-             j1 = max(jstart,  j1)
+            j1 = nint( (pi5+lat_s)/(pi/real(nlat)) ) - 1
+            if ( lat_s*r2d < (-90.+90./real(npx_global-1)) ) j1 = 1
+            j1 = max(jstart,  j1)
 
-             j2 = nint( (pi5+lat_n)/(pi/real(nlat)) ) + 1
-             if ( lat_n*r2d > (90.-90./real(npx_global-1))  ) j2 = nlat
-             j2 = min(jend, j2)
+            j2 = nint( (pi5+lat_n)/(pi/real(nlat)) ) + 1
+            if ( lat_n*r2d > (90.-90./real(npx_global-1))  ) j2 = nlat
+            j2 = min(jend, j2)
 
-             j1 = j1 - jstart + 1
-             j2 = j2 - jstart + 1
+            j1 = j1 - jstart + 1
+            j2 = j2 - jstart + 1
 
-             lon_w = min( grid(i,j,1), grid(i+1,j,1), grid(i,j+1,1), grid(i+1,j+1,1) )
-             lon_e = max( grid(i,j,1), grid(i+1,j,1), grid(i,j+1,1), grid(i+1,j+1,1) )
+            lon_w = min( grid(i,j,1), grid(i+1,j,1), grid(i,j+1,1), grid(i+1,j+1,1) )
+            lon_e = max( grid(i,j,1), grid(i+1,j,1), grid(i,j+1,1), grid(i+1,j+1,1) )
 
-             if ( (lon_e-lon_w) > pi ) then
-                i1 = -nint( (pi2-lon_e)/pi2 * real(im) ) - 1
-                i2 =  nint( lon_w/pi2 * real(im) ) + 1
-             else
-                i1 = nint( lon_w/pi2 * real(im) ) - 1
-                i2 = nint( lon_e/pi2 * real(im) ) + 1
-             endif
+            if ( (lon_e-lon_w) > pi ) then
+                 i1 = -nint( (pi2-lon_e)/pi2 * real(im) ) - 1
+                 i2 =  nint( lon_w/pi2 * real(im) ) + 1
+            else
+                 i1 = nint( lon_w/pi2 * real(im) ) - 1
+                 i2 = nint( lon_e/pi2 * real(im) ) + 1
+            endif
 
 ! Enlarge the search zone:
-             ig_lon = max(1, (i2-i1)/8)
-             i1 = max(  -igh, i1 - ig_lon)
-             i2 = min(im+igh, i2 + ig_lon)
+            ig_lon = max(1, (i2-i1)/8)
+            i1 = max(  -igh, i1 - ig_lon)
+            i2 = min(im+igh, i2 + ig_lon)
 
-             np = 0
-             qsum = 0.
-             fsum = 0.
-             hsum = 0.
-             asum = 0.
+              np = 0
+            qsum = 0.
+            fsum = 0.
+            hsum = 0.
+            asum = 0.
 !
 !            4----------3
 !           /          /
@@ -1417,70 +1414,66 @@
 !         /          /
 !        1----------2
 !
-             do k=1,3
-                p1(k) = grid3(k,i,  j)
-                p2(k) = grid3(k,i+1,j)
-                p3(k) = grid3(k,i+1,j+1)
-                p4(k) = grid3(k,i,j+1)
-                pc(k) = p1(k) + p2(k) + p3(k) + p4(k)
-             enddo
-             call normalize_vect( pc )
+            do k=1,3
+               p1(k) = grid3(k,i,  j)
+               p2(k) = grid3(k,i+1,j)
+               p3(k) = grid3(k,i+1,j+1)
+               p4(k) = grid3(k,i,j+1)
+               pc(k) = p1(k) + p2(k) + p3(k) + p4(k)
+            enddo
+            call normalize_vect( pc )
 
-             th0 = min( v_prod(p1,p3), v_prod(p2, p4) )
-             th1 = min( cos_grid, cos(0.25*acos(max(v_prod(p1,p3), v_prod(p2, p4)))))
+            th0 = min( v_prod(p1,p3), v_prod(p2, p4) )
+            th1 = min( cos_grid, cos(0.25*acos(max(v_prod(p1,p3), v_prod(p2, p4)))))
 
-             call  vect_cross(vp_12, p1, p2)
-             call  vect_cross(vp_23, p2, p3)
-             call  vect_cross(vp_34, p3, p4)
-             call  vect_cross(vp_14, p1, p4)
+            call  vect_cross(vp_12, p1, p2)
+            call  vect_cross(vp_23, p2, p3)
+            call  vect_cross(vp_34, p3, p4)
+            call  vect_cross(vp_14, p1, p4)
 
-             prod1 = v_prod(p3, vp_12)
-             prod2 = v_prod(p1, vp_23)
-             prod3 = v_prod(p1, vp_34)
-             prod4 = v_prod(p2, vp_14)
+            prod1 = v_prod(p3, vp_12)
+            prod2 = v_prod(p1, vp_23)
+            prod3 = v_prod(p1, vp_34)
+            prod4 = v_prod(p2, vp_14)
 
-             do jj=j1,j2
-                aa = cos_g(jj)
-                e2(2) = lat_g(jj)
-                do ii=i1,i2
-                   e2(1) = lon_g(ii)
-                   call latlon2xyz(e2, pp)
-                   flag_inside=.false.
+            do jj=j1,j2
+                  aa = cos_g(jj)
+               e2(2) = lat_g(jj)
+               do ii=i1,i2
+                  e2(1) = lon_g(ii)
+                  call latlon2xyz(e2, pp)
 ! Check two extrems:
-                   tmp1 = v_prod(pp, pc)
+                  tmp1 = v_prod(pp, pc)
 ! Points that are close to center:
-                   if ( tmp1 > th1 ) flag_inside=.true.    ! inside
-! With refactor, outside and inside poly checks can probably be removed
-!    but leaving them in for now
+                  if ( tmp1 > th1 ) goto 1111    ! inside
 ! check to exclude points too far away:
-                   if ( tmp1 < th0 ) flag_inside=.false.   ! outside
+                  if ( tmp1 < th0 ) goto 2222    ! outside
 ! Check if inside the polygon
-                   if ( v_prod(pp, vp_12)*prod1 < 0. ) flag_inside=.false.
-                   if ( v_prod(pp, vp_23)*prod2 < 0. ) flag_inside=.false.
-                   if ( v_prod(pp, vp_34)*prod3 < 0. ) flag_inside=.false.
-                   if ( v_prod(pp, vp_14)*prod4 < 0. ) flag_inside=.false.
-                   if (flag_inside) then
-                      np = np + 1
-                      qsum = qsum + zs(ii,jj)*aa
-                      fsum = fsum + ft(ii,jj)*aa
-                      hsum = hsum + zs(ii,jj)**2
-                      asum = asum + aa
-                   endif
-                enddo
-             enddo
+                  if ( v_prod(pp, vp_12)*prod1 < 0. ) goto 2222
+                  if ( v_prod(pp, vp_23)*prod2 < 0. ) goto 2222
+                  if ( v_prod(pp, vp_34)*prod3 < 0. ) goto 2222
+                  if ( v_prod(pp, vp_14)*prod4 < 0. ) goto 2222
+1111                np = np + 1
+                  qsum = qsum + zs(ii,jj)*aa
+                  fsum = fsum + ft(ii,jj)*aa
+                  hsum = hsum + zs(ii,jj)**2
+                  asum = asum + aa
+2222              continue
+               enddo
+            enddo
 
-             if ( np > 0 ) then
-                q2(i,j) = qsum / asum
-                f2(i,j) = fsum / asum
-                h2(i,j) = hsum / real(np) - q2(i,j)**2
-                min_pts = min(min_pts, np)
-             else
-                write(*,*) 'min and max lat_g is ', r2d*minval(lat_g), r2d*maxval(lat_g), mpp_pe()
-                write(*,*) 'Surf_map failed for GID=', mpp_pe(), i,j, '(lon,lat)=', r2d*agrid(i,j,1),r2d*agrid(i,j,2)
-                write(*,*) '[jstart, jend]', jstart, jend
-                call mpp_error(FATAL,'Surf_map failed')
-             endif
-          endif
+            if ( np > 0 ) then
+                 q2(i,j) = qsum / asum
+                 f2(i,j) = fsum / asum
+                 h2(i,j) = hsum / real(np) - q2(i,j)**2
+                 min_pts = min(min_pts, np)
+            else
+                 write(*,*) 'min and max lat_g is ', r2d*minval(lat_g), r2d*maxval(lat_g), mpp_pe()
+                 write(*,*) 'Surf_map failed for GID=', mpp_pe(), i,j, '(lon,lat)=', r2d*agrid(i,j,1),r2d*agrid(i,j,2)
+                 write(*,*) '[jstart, jend]', jstart, jend
+                 call mpp_error(FATAL,'Surf_map failed')
+            endif
+4444  continue
       enddo
     enddo
 

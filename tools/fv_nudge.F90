@@ -1191,61 +1191,60 @@ module fv_nwp_nudge_mod
 
   call get_time (time, seconds, days)
 
-  if ( do_adiabatic_init ) then
-     continue
-  else
-     seconds = seconds - nint(dt)
+  if ( do_adiabatic_init  ) goto 333
+  seconds = seconds - nint(dt)
 
 ! Data must be "time_interval" (hr) apart; keep two time levels in memory
 
-     no_obs = .false.
-     analysis_time = .false.
+  no_obs = .false.
+  analysis_time = .false.
 
-     if ( mod(seconds, time_interval) == 0 ) then
+  if ( mod(seconds, time_interval) == 0 ) then
 
-       if ( nfile == nfile_total ) then
-            no_obs = .true.
+    if ( nfile == nfile_total ) then
+         no_obs = .true.
 #ifndef DYCORE_SOLO
-            forecast_mode = .true.
+         forecast_mode = .true.
 #endif
-            if(print_end_nudge)  then
-               print_end_nudge = .false.
-               if (master) write(*,*) '*** L-S nudging Ended at', days, seconds
-            endif
-            return              ! free-running mode
-       endif
-
-         ps_dat(:,:,1) = ps_dat(:,:,2)
-         if ( nudge_winds ) then
-            u_dat(:,:,:,1) = u_dat(:,:,:,2)
-            v_dat(:,:,:,1) = v_dat(:,:,:,2)
+         if(print_end_nudge)  then
+            print_end_nudge = .false.
+            if (master) write(*,*) '*** L-S nudging Ended at', days, seconds
          endif
-         t_dat(:,:,:,1) = t_dat(:,:,:,2)
-         q_dat(:,:,:,1) = q_dat(:,:,:,2)
+         return              ! free-running mode
+    endif
+
+      ps_dat(:,:,1) = ps_dat(:,:,2)
+      if ( nudge_winds ) then
+         u_dat(:,:,:,1) = u_dat(:,:,:,2)
+         v_dat(:,:,:,1) = v_dat(:,:,:,2)
+      endif
+      t_dat(:,:,:,1) = t_dat(:,:,:,2)
+      q_dat(:,:,:,1) = q_dat(:,:,:,2)
 
 !---------------
 ! Read next data
 !---------------
-         nfile = nfile + 1
-         call get_ncep_analysis ( ps_dat(:,:,2), u_dat(:,:,:,2), v_dat(:,:,:,2),    &
-                                 t_dat(:,:,:,2), q_dat(:,:,:,2), zvir,  &
-                                 ts, nfile, file_names(nfile), bd )
-         time_nudge = dt
-     else
-         time_nudge = time_nudge + dt
-     endif
+      nfile = nfile + 1
+      call get_ncep_analysis ( ps_dat(:,:,2), u_dat(:,:,:,2), v_dat(:,:,:,2),    &
+                              t_dat(:,:,:,2), q_dat(:,:,:,2), zvir,  &
+                              ts, nfile, file_names(nfile), bd )
+      time_nudge = dt
+  else
+      time_nudge = time_nudge + dt
+  endif
 
 !--------------------
 ! Time interpolation:
 !--------------------
 
-     beta = time_nudge / real(time_interval)
+  beta = time_nudge / real(time_interval)
 
-     if ( beta < 0. .or. beta >  (1.+1.E-7) ) then
-          if (master) write(*,*) 'Nudging: beta=', beta
-          call mpp_error(FATAL,'==> Error from get_obs:data out of range')
-     endif
+  if ( beta < 0. .or. beta >  (1.+1.E-7) ) then
+       if (master) write(*,*) 'Nudging: beta=', beta
+       call mpp_error(FATAL,'==> Error from get_obs:data out of range')
   endif
+
+333  continue
 
   if ( do_adiabatic_init ) then
        beta = 1.; alpha = 0.
@@ -2197,14 +2196,14 @@ module fv_nwp_nudge_mod
       real:: dist
       integer n, i, j
 
-    do n=1,nstorms      ! loop through all storms
+    do 5000 n=1,nstorms      ! loop through all storms
 !----------------------------------------
 ! Obtain slp observation
 !----------------------------------------
       call get_slp_obs(time, nobs_tc(n), x_obs(1,n), y_obs(1,n), wind_obs(1,n),  mslp_obs(1,n), mslp_out(1,n), rad_out(1,n),   &
                        time_tc(1,n), pos(1), pos(2), w10_o, slp_o, r_vor, p_vor)
 
-      if ( slp_o<880.E2 .or. slp_o>min(slp_env,slp_mask) .or. abs(pos(2))*rad2deg>40. ) cycle  ! next storm
+      if ( slp_o<880.E2 .or. slp_o>min(slp_env,slp_mask) .or. abs(pos(2))*rad2deg>40. ) goto 5000  ! next storm
 
       if ( r_vor < 30.E3 ) then
            r_vor = r_min + (slp_env-slp_o)/20.E2*r_inc   ! radius of influence
@@ -2218,7 +2217,8 @@ module fv_nwp_nudge_mod
             endif
          enddo             ! i-loop
       enddo                ! end j-loop
-    enddo                  ! end n-loop   
+
+5000 continue
 
  end subroutine get_tc_mask
 
@@ -2363,16 +2363,16 @@ module fv_nwp_nudge_mod
 
     enddo
 
-    do n=1,nstorms      ! loop through all storms
+    do 5000 n=1,nstorms      ! loop through all storms
 
-      if ( nobs_tc(n) < min_nobs ) cycle
+      if ( nobs_tc(n) < min_nobs ) goto 5000
 
 ! Check min MSLP
       mslp0 = 1013.E2
       do i=1,nobs_tc(n)
          mslp0 = min( mslp0, mslp_obs(i,n) )
       enddo
-      if ( mslp0 > min_mslp ) cycle
+      if ( mslp0 > min_mslp ) goto 5000
 
 !----------------------------------------
 ! Obtain slp observation
@@ -2381,7 +2381,7 @@ module fv_nwp_nudge_mod
                        time_tc(1,n), pos(1), pos(2), w10_o, slp_o, r_vor, p_env, stime=split_time, fact=fac)
 
       if ( slp_o<87500. .or. slp_o>slp_env .or. abs(pos(2))*rad2deg>45. ) then
-           cycle         ! next storm
+           goto 5000         ! next storm
       endif
 
 
@@ -2455,7 +2455,7 @@ module fv_nwp_nudge_mod
 
       if ( p_count<32. ) then
            if(nudge_debug .and. master) write(*,*) p_count, 'Skipping obs: too few p_count'
-           cycle
+           goto 5000
       endif
 
       call mp_reduce_sum(p_sum)
@@ -2469,7 +2469,7 @@ module fv_nwp_nudge_mod
             if(master)  write(*,*) 'Environmental SLP out of bound; skipping obs. p_count=', p_count, p_sum
             call prt_maxmin('SLP_breeding', slp, is, ie, js, je, 0, 1, 0.01)
          endif
-         cycle
+         goto 5000
       endif
 
     endif
@@ -2486,13 +2486,13 @@ module fv_nwp_nudge_mod
 
          if ( slp_o > 1003.E2 .and.  r_vor > 1000.E3 ) then
 !             if(master) write(*,*) 'Failed to size the Vortex for the weak storm'
-              cycle
+              goto 5000
          endif
 
          if ( r_vor < 1250.E3 ) goto 123
 
 !        if(master) write(*,*) 'Failed to size the Vortex; skipping this storm'
-         cycle
+         goto 5000
 
       endif
 
@@ -2582,7 +2582,7 @@ module fv_nwp_nudge_mod
       enddo        ! end j-loop
 
       call mp_reduce_sum(mass_sink)
-      if ( abs(mass_sink)<1.E-40 ) cycle
+      if ( abs(mass_sink)<1.E-40 ) goto 5000
 
       r2 = r_vor + del_r
       r3 = min( 4.*r_vor, max(2.*r_vor, 2500.E3) ) + del_r
@@ -2629,7 +2629,7 @@ module fv_nwp_nudge_mod
          enddo
       enddo
 
-      enddo
+5000 continue
 
 !--------------------------
 ! Update delp halo regions:
@@ -2810,16 +2810,16 @@ module fv_nwp_nudge_mod
 
     relx0  = min(1., dt/tau_vt_wind)
 
-    do n=1,nstorms  ! loop through all storms
+    do 3000 n=1,nstorms  ! loop through all storms
 
-      if ( nobs_tc(n) < min_nobs ) cycle
+      if ( nobs_tc(n) < min_nobs ) goto 3000
 
 ! Check min MSLP
       mslp0 = 1013.E2
       do i=1,nobs_tc(n)
          mslp0 = min( mslp0, mslp_obs(i,n) )
       enddo
-      if ( mslp0 > min_mslp ) cycle
+      if ( mslp0 > min_mslp ) goto 3000
 
 !----------------------------------------
 ! Obtain slp observation
@@ -2827,7 +2827,7 @@ module fv_nwp_nudge_mod
       call get_slp_obs(time, nobs_tc(n), x_obs(1,n), y_obs(1,n), wind_obs(1,n),  mslp_obs(1,n), mslp_out(1,n), rad_out(1,n),   &
                        time_tc(1,n), pos(1), pos(2), w10_o, slp_o, r_vor, p_env)
 
-      if ( slp_o<90000. .or. slp_o>slp_env .or. abs(pos(2))*rad2deg>35. ) cycle         ! next storm
+      if ( slp_o<90000. .or. slp_o>slp_env .or. abs(pos(2))*rad2deg>35. ) goto 3000         ! next storm
 
 
       do j=js, je
@@ -2865,7 +2865,7 @@ module fv_nwp_nudge_mod
      enddo
 
      call mp_reduce_sum(p_count)
-     if ( p_count>32 ) cycle  ! over/near rough land
+     if ( p_count>32 ) goto 3000  ! over/near rough land
 
      if ( w10_o < 0. ) then   ! 10-m wind obs is not available
 ! Uses Atkinson_Holliday wind-pressure correlation
@@ -2943,7 +2943,7 @@ module fv_nwp_nudge_mod
           enddo
        enddo
        call mp_reduce_sum(p_count)
-       if ( p_count<16. ) cycle
+       if ( p_count<16. ) go to 3000
 
        call mp_reduce_sum(t_mass)
        call mp_reduce_sum(u_bg)
@@ -2999,7 +2999,7 @@ module fv_nwp_nudge_mod
       enddo        ! end j-loop
 #endif
 
-      enddo
+3000 continue
 
   end subroutine breed_srf_w10
 
@@ -3057,16 +3057,16 @@ module fv_nwp_nudge_mod
     enddo
 
 !!!!!$OMP parallel do default(none) private(pos, w10_o, slp_o, r_vor, p_env)
-    do n=1,nstorms  ! loop through all storms
+    do 3000 n=1,nstorms  ! loop through all storms
 
-      if ( nobs_tc(n) < min_nobs ) cycle
+      if ( nobs_tc(n) < min_nobs ) goto 3000
 
 ! Check min MSLP
       mslp0 = 1013.E2
       do i=1,nobs_tc(n)
          mslp0 = min( mslp0, mslp_obs(i,n) )
       enddo
-      if ( mslp0 > min_mslp ) cycle
+      if ( mslp0 > min_mslp ) goto 3000
 
 !----------------------------------------
 ! Obtain slp observation
@@ -3074,7 +3074,7 @@ module fv_nwp_nudge_mod
       call get_slp_obs(time, nobs_tc(n), x_obs(1,n), y_obs(1,n), wind_obs(1,n),  mslp_obs(1,n), mslp_out(1,n), rad_out(1,n),   &
                        time_tc(1,n), pos(1), pos(2), w10_o, slp_o, r_vor, p_env)
 
-      if ( slp_o<90000. .or. slp_o>slp_env .or. abs(pos(2))*rad2deg>35. ) cycle         ! next storm
+      if ( slp_o<90000. .or. slp_o>slp_env .or. abs(pos(2))*rad2deg>35. ) goto 3000         ! next storm
 
 
       do j=js, je
@@ -3113,7 +3113,7 @@ module fv_nwp_nudge_mod
      enddo
 
      call mp_reduce_sum(p_count)
-     if ( p_count>32 ) cycle  ! over/near rough land
+     if ( p_count>32 ) goto 3000  ! over/near rough land
 
      if ( w10_o < 0. ) then   ! 10-m wind obs is not available
 ! Uses Atkinson_Holliday wind-pressure correlation
@@ -3194,7 +3194,7 @@ module fv_nwp_nudge_mod
           enddo
        enddo
        call mp_reduce_sum(p_count)
-       if ( p_count<16. ) cycle
+       if ( p_count<16. ) go to 3000
 
        call mp_reduce_sum(t_mass)
        call mp_reduce_sum(u_bg)
@@ -3230,7 +3230,7 @@ module fv_nwp_nudge_mod
         enddo        ! end i-loop
       enddo        ! end j-loop
 
-   enddo
+3000 continue
 
   end subroutine breed_srf_winds
 
@@ -3825,4 +3825,3 @@ module fv_nwp_nudge_mod
 
 
 end module fv_nwp_nudge_mod
-
