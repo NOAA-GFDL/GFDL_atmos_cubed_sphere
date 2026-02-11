@@ -72,7 +72,6 @@ cd ${testscriptDir}
 set -o pipefail
 # Execute the test piping output to log file
 ./${testname} " --partition=compute --mpi=pmi2 --job-name=${commit}_${testname} singularity exec -B /contrib -B /usr/lib64/libpmi2.so ${container} ${container_env_script}" |& tee ${logDir}/run_${testname}.log
-echo "before compare"
 ## Compare Restarts to Baseline
 #The following tests are not expectred to have run-to-run reproducibility:
 #d96_2k.solo.bubble
