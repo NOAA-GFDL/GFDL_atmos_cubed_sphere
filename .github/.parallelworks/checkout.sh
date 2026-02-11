@@ -1,4 +1,4 @@
-#!/bin/sh -xe
+#!/bin/sh -e
 
 ##############################################################################
 ## User set up variables
@@ -55,5 +55,6 @@ mkdir -p ${logDir}
 ## clone code
 cd ${testDir}
 git clone --recursive https://github.com/NOAA-GFDL/SHiELD_build.git && cd SHiELD_build && ./CHECKOUT_code |& tee ${logDir}/checkout.log
+
 ## Check out the PR
 cd ${testDir}/SHiELD_SRC/GFDL_atmos_cubed_sphere && git fetch origin ${branch}:toMerge && git merge toMerge
