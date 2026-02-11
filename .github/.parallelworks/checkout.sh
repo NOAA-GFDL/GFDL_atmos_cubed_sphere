@@ -1,4 +1,4 @@
-#!/bin/sh -xe
+#!/bin/sh -e
 
 ##############################################################################
 ## User set up variables
@@ -54,6 +54,11 @@ mkdir -p ${logDir}
 
 ## clone code
 cd ${testDir}
-git clone --recursive https://github.com/NOAA-GFDL/SHiELD_build.git && cd SHiELD_build && ./CHECKOUT_code |& tee ${logDir}/checkout.log
+git clone --recursive https://github.com/NOAA-GFDL/SHiELD_build.git 
+
+sed -i 's/FV3-202411-public/main/g' ${testDir}/SHiELD_build/CHECKOUT_code
+sed -i 's/2025.01.01/2025.03/g' ${testDir}/SHiELD_build/CHECKOUT_code
+
+cd SHiELD_build && ./CHECKOUT_code |& tee ${logDir}/checkout.log
 ## Check out the PR
 cd ${testDir}/SHiELD_SRC/GFDL_atmos_cubed_sphere && git fetch origin ${branch}:toMerge && git merge toMerge
