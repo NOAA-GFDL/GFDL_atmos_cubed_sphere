@@ -182,9 +182,15 @@ subroutine IAU_initialize (IPD_Control, IAU_Data, Init_parm, Atm)
 
     if( file_exists(fname) ) then
       call open_ncfile( fname, ncid )        ! open the file
-      call get_ncdim1( ncid, 'lon',   im)
-      call get_ncdim1( ncid, 'lat',   jm)
-      call get_ncdim1( ncid, 'lev',   km)
+      if (IPD_Control%iau_regional) then
+       call get_ncdim1( ncid, 'xaxis_1',   im)
+       call get_ncdim1( ncid, 'yaxis_1',   jm)
+       call get_ncdim1( ncid, 'zaxis_1',   km)
+      else
+       call get_ncdim1( ncid, 'lon',   im)
+       call get_ncdim1( ncid, 'lat',   jm)
+       call get_ncdim1( ncid, 'lev',   km)
+      end if
 
       if (km.ne.npz) then
         if (is_master()) print *, 'km = ', km
@@ -194,20 +200,22 @@ subroutine IAU_initialize (IPD_Control, IAU_Data, Init_parm, Atm)
 
       if(is_master())  write(*,*) fname, ' DA increment dimensions:', im,jm,km
 
-      allocate (  lon(im) )
-      allocate (  lat(jm) )
+      if (.not.IPD_Control%iau_regional) then
+        allocate (  lon(im) )
+        allocate (  lat(jm) )
 
-      call _GET_VAR1 (ncid, 'lon', im, lon )
-      call _GET_VAR1 (ncid, 'lat', jm, lat )
-      call close_ncfile(ncid)
+        call _GET_VAR1 (ncid, 'lon', im, lon )
+        call _GET_VAR1 (ncid, 'lat', jm, lat )
+        call close_ncfile(ncid)
 
-      ! Convert to radians
-      do i=1,im
-        lon(i) = lon(i) * deg2rad
-      enddo
-      do j=1,jm
-        lat(j) = lat(j) * deg2rad
-      enddo
+        ! Convert to radians
+        do i=1,im
+          lon(i) = lon(i) * deg2rad
+        enddo
+        do j=1,jm
+          lat(j) = lat(j) * deg2rad
+        enddo
+      end if
 
     else
       call mpp_error(FATAL,'==> Error in IAU_initialize: Expected file '&
@@ -226,10 +234,12 @@ subroutine IAU_initialize (IPD_Control, IAU_Data, Init_parm, Atm)
          agrid(is-1+i,js-1+j,2)=Init_parm%xlat(i,j)
       enddo
     enddo
-    call remap_coef( is, ie, js, je, is, ie, js, je, &
+    if (.not.IPD_Control%iau_regional) then
+      call remap_coef( is, ie, js, je, is, ie, js, je, &
         im, jm, lon, lat, id1, id2, jdc, s2c, &
         agrid)
-    deallocate ( lon, lat,agrid )
+      deallocate ( lon, lat,agrid )
+    end if
 
 
     allocate(IAU_Data%ua_inc(is:ie, js:je, km))
@@ -247,11 +257,12 @@ subroutine IAU_initialize (IPD_Control, IAU_Data, Init_parm, Atm)
     allocate (iau_state%inc1%tracer_inc(is:ie, js:je, km,ntracers))
     iau_state%hr1=IPD_Control%iaufhrs(1)
     iau_state%wt = 1.0 ! IAU increment filter weights (default 1.0)
+    iau_state%wt=iau_state%wt*IPD_Control%iau_inc_scale !Increase the weight
     iau_state%wt_normfact = 1.0
     if (IPD_Control%iau_filter_increments) then
        ! compute increment filter weights, sum to obtain normalization factor
        dtp=IPD_control%dtp
-       nstep = 0.5*IPD_Control%iau_delthrs*3600/dtp
+       nstep = nint(0.5*IPD_Control%iau_delthrs*3600/dtp)
        ! compute normalization factor for filter weights
        normfact = 0.
        do k=1,2*nstep+1
@@ -268,8 +279,9 @@ subroutine IAU_initialize (IPD_Control, IAU_Data, Init_parm, Atm)
        enddo
        iau_state%wt_normfact = (2*nstep+1)/normfact
     endif
+    if (IPD_Control%iau_regional) iau_state%wt_normfact=iau_state%wt_normfact*IPD_Control%iau_inc_scale
     if ( Atm%flagstruct%increment_file_on_native_grid ) then
-       call read_cubed_sphere_inc('INPUT/'//trim(IPD_Control%iau_inc_files(1)), iau_state%inc1, Atm)
+       call read_cubed_sphere_inc('INPUT/'//trim(IPD_Control%iau_inc_files(1)), iau_state%inc1, Atm, IPD_Control%iau_regional)
     else
        call read_iau_forcing(IPD_Control,iau_state%inc1,'INPUT/'//trim(IPD_Control%iau_inc_files(1)))
     endif
@@ -285,7 +297,7 @@ subroutine IAU_initialize (IPD_Control, IAU_Data, Init_parm, Atm)
        allocate (iau_state%inc2%tracer_inc(is:ie, js:je, km,ntracers))
        iau_state%hr2=IPD_Control%iaufhrs(2)
        if ( Atm%flagstruct%increment_file_on_native_grid ) then
-          call read_cubed_sphere_inc('INPUT/'//trim(IPD_Control%iau_inc_files(2)), iau_state%inc2, Atm)
+          call read_cubed_sphere_inc('INPUT/'//trim(IPD_Control%iau_inc_files(2)), iau_state%inc2, Atm, IPD_Control%iau_regional)
        else
           call read_iau_forcing(IPD_Control,iau_state%inc2,'INPUT/'//trim(IPD_Control%iau_inc_files(2)))
        endif
@@ -323,9 +335,9 @@ subroutine getiauforcing(IPD_Control,IAU_Data,Atm)
       ! in window kstep=-nstep,nstep (2*nstep+1 total)
       ! time step IPD_control%dtp
       dtp=IPD_control%dtp
-      nstep = 0.5*IPD_Control%iau_delthrs*3600/dtp
+      nstep = nint(0.5*IPD_Control%iau_delthrs*3600/dtp)
       ! compute normalized filter weight
-      kstep = ((IPD_Control%fhour-t1) - 0.5*IPD_Control%iau_delthrs)*3600./dtp
+      kstep = nint(((IPD_Control%fhour-t1) - 0.5*IPD_Control%iau_delthrs)*3600./dtp)
       if (IPD_Control%fhour >= t1 .and. IPD_Control%fhour < t2) then
          sx     = acos(-1.)*kstep/nstep
          wx     = acos(-1.)*kstep/(nstep+1)
@@ -375,7 +387,7 @@ subroutine getiauforcing(IPD_Control,IAU_Data,Atm)
             iau_state%inc1=iau_state%inc2
             if (is_master()) print *,'reading next increment file',trim(IPD_Control%iau_inc_files(itnext))
             if ( Atm%flagstruct%increment_file_on_native_grid ) then
-               call read_cubed_sphere_inc('INPUT/'//trim(IPD_Control%iau_inc_files(itnext)), iau_state%inc2, Atm)
+               call read_cubed_sphere_inc('INPUT/'//trim(IPD_Control%iau_inc_files(itnext)), iau_state%inc2, Atm, IPD_Control%iau_regional)
             else
                call read_iau_forcing(IPD_Control,iau_state%inc2,'INPUT/'//trim(IPD_Control%iau_inc_files(itnext)))
             endif
@@ -481,7 +493,12 @@ subroutine read_iau_forcing(IPD_Control,increments,fname)
       enddo
     enddo
 
-    allocate ( wk3(1:im,jbeg:jend, 1:km) )
+    if (IPD_Control%iau_regional) then
+      allocate ( wk3(1:im,js:je, 1:km) )
+    else
+      allocate ( wk3(1:im,jbeg:jend, 1:km) )
+    endif
+
  ! read in 1 time level
     call interp_inc('T_inc',increments%temp_inc(:,:,:),jbeg,jend)
     call interp_inc('delp_inc',increments%delp_inc(:,:,:),jbeg,jend)

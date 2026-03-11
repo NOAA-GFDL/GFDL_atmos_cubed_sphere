@@ -1526,6 +1526,18 @@
         damp4 = (damp_v*gridstruct%da_min_c)**(nord_v+1)
         call del6_vt_flux(nord_v, npx, npy, damp4, wk, vort, ut, vt, gridstruct, bd)
    endif
+   if ( damp_v .EQ. 0) then
+        do j=jsd,jed
+           do i=isd,ied
+              ut(i,j) = 0.0
+           enddo
+        enddo
+        do j=jsd,jed
+           do i=isd,ied
+              vt(i,j) = 0.0
+           enddo
+        enddo
+   endif
 
    if ( d_con > 1.e-5 .or. flagstruct%do_skeb ) then
       do j=js,je+1

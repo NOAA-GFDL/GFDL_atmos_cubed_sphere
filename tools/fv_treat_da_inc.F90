@@ -522,7 +522,7 @@ contains
     
     ! Read increments
     fname = trim(fname_prefix) // '.nc'
-    call read_cubed_sphere_inc(fname, increment_data, Atm)
+    call read_cubed_sphere_inc(fname, increment_data, Atm, .False.)
 
     ! Wind increments
     ! ---------------
