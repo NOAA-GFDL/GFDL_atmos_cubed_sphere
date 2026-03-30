@@ -349,7 +349,7 @@ contains
           do i=is,ie
            den(i,k) = -delp(i,j,k)/(grav_var(i,j,k)*delz(i,j,k))
              w0(i,k) = w(i,j,k)
-             gz(i,k) = gzh(i)  - grav_var(i,j,k)*delz(i,j,k)/2.0
+             gz(i,k) = gzh(i)  - 0.5* grav_var(i,j,k)*delz(i,j,k)
                 tmp  = gz(i,k) + 0.5*(u0(i,k)**2+v0(i,k)**2+w0(i,k)**2)
              hd(i,k) = cpm(i)*t0(i,k) + tmp
              te(i,k) = cvm(i)*t0(i,k) + tmp
@@ -936,7 +936,7 @@ contains
           do i=is,ie
            den(i,k) = -delp(i,j,k)/(grav_var(i,j,k)*delz(i,j,k))
              w0(i,k) = w(i,j,k)
-             gz(i,k) = gzh(i)  - grav_var(i,j,k)*delz(i,j,k)/2.0
+             gz(i,k) = gzh(i)  - 0.5*grav_var(i,j,k)*delz(i,j,k)
                 tmp  = gz(i,k) + 0.5*(u0(i,k)**2+v0(i,k)**2+w0(i,k)**2)
              hd(i,k) = cpm(i)*t0(i,k) + tmp
              te(i,k) = cvm(i)*t0(i,k) + tmp
