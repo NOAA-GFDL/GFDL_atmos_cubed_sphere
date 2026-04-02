@@ -100,7 +100,7 @@ module fv_nwp_nudge_mod
 !   </tr>
 ! </table>
 
- use external_sst_mod,  only: i_sst, j_sst, sst_ncep, sst_anom, forecast_mode
+ use external_sst_mod,  only: i_sst, j_sst, forecast_mode
  use diag_manager_mod,  only: register_diag_field, send_data
 #ifdef OVERLOAD_R4
  use constantsR4_mod,     only: pi=>pi_8, grav, rdgas, cp_air, kappa, cnst_radius =>radius
@@ -1659,8 +1659,6 @@ module fv_nwp_nudge_mod
 #ifndef DYCORE_SOLO
 ! Perform interp to FMS SST format/grid
       call ncep2fms( wk1 )
-      if(master) call pmaxmin( 'SST_ncep', real(sst_ncep), i_sst, j_sst, 1.)
-!     if(nfile/=1 .and. master) call pmaxmin( 'SST_anom', sst_anom, i_sst, j_sst, 1.)
 #endif
        deallocate ( wk1 )
        if (master) write(*,*) 'Done processing NCEP SST'
@@ -1957,9 +1955,6 @@ module fv_nwp_nudge_mod
        c2 =     a1  * (1.-b1)
        c3 =     a1  *     b1
        c4 = (1.-a1) *     b1
-! Interpolated surface pressure
-       sst_ncep(i,j) = c1*sst(i1,jc  ) + c2*sst(i2,jc  ) +    &
-                       c3*sst(i2,jc+1) + c4*sst(i1,jc+1)
      enddo   !i-loop
 5000 continue   ! j-loop
 

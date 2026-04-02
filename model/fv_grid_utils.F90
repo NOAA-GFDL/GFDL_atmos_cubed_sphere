@@ -77,7 +77,7 @@
 #include <fms_platform.h>
  use constants_mod,   only: omega, pi=>pi_8, cnst_radius=>radius
  use mpp_mod,         only: FATAL, mpp_error, WARNING
- use external_sst_mod, only: i_sst, j_sst, sst_ncep, sst_anom
+ use external_sst_mod, only: i_sst, j_sst
  use mpp_domains_mod, only: mpp_update_domains, DGRID_NE, mpp_global_sum
  use mpp_domains_mod, only: BITWISE_EXACT_SUM, domain2d, BITWISE_EFP_SUM
  use mpp_parameter_mod, only: AGRID_PARAM=>AGRID, CGRID_NE_PARAM=>CGRID_NE
@@ -276,12 +276,6 @@
               endif
            endif
       endif
-
-! NCEP analysis available from amip-Interp (allocate if needed)
-#ifndef DYCORE_SOLO
-      if (.not. allocated(sst_ncep)) allocate (sst_ncep(i_sst,j_sst))
-      if (.not. allocated(sst_anom)) allocate (sst_anom(i_sst,j_sst))
-#endif
 
 
       cos_sg(:,:,:) =  big_number
@@ -989,8 +983,6 @@
 
 ! deallocate sst_ncep (if allocated)
 #ifndef DYCORE_SOLO
-      if (allocated(sst_ncep)) deallocate( sst_ncep )
-      if (allocated(sst_anom)) deallocate( sst_anom )
 #endif
   end subroutine grid_utils_end
 

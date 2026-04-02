@@ -144,7 +144,7 @@ module external_ic_mod
 ! </table>
 
    use netcdf
-   use external_sst_mod,   only: i_sst, j_sst, sst_ncep
+   use external_sst_mod,   only: i_sst, j_sst
    use fms_mod,            only: write_version_number, check_nml_error
    use fms2_io_mod,        only: file_exists, open_file, close_file, read_data, variable_exists, &
                                  get_variable_size, get_global_attribute, global_att_exists, &
@@ -1672,10 +1672,6 @@ contains
 ! Perform interp to FMS SST format/grid
 #ifndef DYCORE_SOLO
         call ncep2fms(im, jm, lon, lat, wk2)
-        if( is_master() ) then
-          write(*,*) 'External_ic_mod: i_sst=', i_sst, ' j_sst=', j_sst
-          call pmaxmin( 'SST_ncep_fms',  real(sst_ncep), i_sst, j_sst, 1.)
-        endif
 #endif
       endif  !(read_ts)
 
@@ -2871,9 +2867,6 @@ contains
        c2 =     a1  * (1.-b1)
        c3 =     a1  *     b1
        c4 = (1.-a1) *     b1
-! Interpolated surface pressure
-       sst_ncep(i,j) = c1*wk(i1,jc  ) + c2*wk(i2,jc  ) +    &
-                       c3*wk(i2,jc+1) + c4*wk(i1,jc+1)
      enddo   !i-loop
 5000 continue   ! j-loop
 
