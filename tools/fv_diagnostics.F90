@@ -1808,7 +1808,9 @@ contains
 #else
                            trange_bad(1),trange_bad(2), bad_range, Time)
 #endif
-#endif	! SW_DYNAMICS
+
+!endif SW_DYNAMICS
+#endif
 
          call range_check('Qv', Atm(n)%q(:,:,:,sphum), isc, iec, jsc, jec, ngc, npz, Atm(n)%gridstruct%agrid,   &
                           -1.e-8, 1.e20, bad_range, Time)

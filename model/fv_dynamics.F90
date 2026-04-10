@@ -1248,7 +1248,8 @@ contains
              enddo
           enddo
 #endif
-#ifdef SMALL_EARTH_TEST ! changed!!!
+!SMALL_EARTH_TEST has changed
+#ifdef SMALL_EARTH_TEST
           tau0 = abs( tau )
           tau1 = abs( tau_w )
 #else
