@@ -364,7 +364,7 @@ contains
 
  mord = abs(iord)
 
- do 666 j=jfirst,jlast
+ do j=jfirst,jlast
 
     do i=isd, ied
        q1(i) = q(i,j)
@@ -551,7 +551,7 @@ contains
       enddo
 
    endif
-   goto 666
+   cycle
 
  else
 
@@ -699,8 +699,7 @@ contains
          endif
       enddo
   endif
-
-666   continue
+ enddo
  end subroutine xppm
 
 
