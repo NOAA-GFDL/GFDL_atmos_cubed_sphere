@@ -924,15 +924,13 @@ CONTAINS
       r_hi(k) = wm(k) - ptmp1
    enddo
 
-   ktop = ks1
+   ktop = km  ! Default value if dt is not .gt. dts(k)
    do k=ks1, km
       if( dt > dts(k) ) then
           ktop = k-1
-          goto 333
+          exit
       endif
    enddo
-   ktop = km
-333   continue
 
  if ( ktop >= ks1 ) then
    do k=ks1, ktop
@@ -951,7 +949,7 @@ CONTAINS
    enddo
 
    kt1 = max(1, ktop)
-   do 444 ke=km+1, ktop+2, -1
+   do ke=km+1, ktop+2, -1
       time_left = dt
      do k=ke-1, kt1, -1
         if ( time_left     > dts(k) ) then
@@ -962,10 +960,10 @@ CONTAINS
                z_frac = time_left/dts(k)
             m_top(ke) = m_top(ke) + z_frac*dm(k)
             r_top(ke) = r_top(ke) + z_frac*r_hi(k)
-            go to 444     ! next level
+            exit
         endif
      enddo
-444 continue
+   enddo
 
   do k=ktop+1, km
      m_bot(k) = 0.
