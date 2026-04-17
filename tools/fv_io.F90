@@ -36,7 +36,7 @@ module fv_io_mod
 !   </tr>
 !   <tr>
 !     <td>external_sst_mod</td>
-!     <td>sst_ncep, sst_anom, use_ncep_sst</td>
+!     <td>use_ncep_sst</td>
 !   </tr>
 !   <tr>
 !     <td>field_manager_mod</td>

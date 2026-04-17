@@ -37,7 +37,7 @@
 !   </tr>
 !   <tr>
 !     <td>external_sst_mod</td>
-!     <td>i_sst, j_sst, sst_ncep, sst_anom</td>
+!     <td>i_sst, j_sst</td>
 !   </tr>
 !   <tr>
 !     <td>fv_arrays_mod</td>
@@ -276,7 +276,6 @@
               endif
            endif
       endif
-
 
       cos_sg(:,:,:) =  big_number
       sin_sg(:,:,:) = tiny_number
