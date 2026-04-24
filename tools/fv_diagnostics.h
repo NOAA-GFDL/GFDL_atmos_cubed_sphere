@@ -105,4 +105,6 @@
 #else
      integer :: id_o3w
 #endif
-#endif _FV_DIAG__
+
+!endif _FV_DIAG__
+#endif
