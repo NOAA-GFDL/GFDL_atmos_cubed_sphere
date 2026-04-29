@@ -684,8 +684,8 @@ contains
                 npx, npy, npz, gridstruct%bounded_domain, .false., .false., .false., bd)
 
            endif
-
-#endif SW_DYNAMICS
+!endif SW_DYNAMICS
+#endif
 
       endif   ! end hydro check
 
@@ -1160,7 +1160,8 @@ contains
            call complete_group_halo_update(i_pack(5), domain)
                                        call timing_off('COMM_TOTAL')
         endif
-#endif SW_DYNAMICS
+!endif SW_DYNAMICS
+#endif
      endif    ! end hydro check
 
 #ifdef SW_DYNAMICS
@@ -1356,7 +1357,8 @@ contains
                0, 0, npx, npy, npz, bd, split_timestep_BC+1, real(n_split*flagstruct%k_split), &
                neststruct%w_BC, bctype=neststruct%nestbctype  )
         end if
-#endif SW_DYNAMICS
+!endif SW_DYNAMICS
+#endif
             call nested_grid_BC_apply_intT(u, &
             0, 1, npx, npy, npz, bd, split_timestep_BC+1, real(n_split*flagstruct%k_split), &
             neststruct%u_BC, bctype=neststruct%nestbctype  )
@@ -1377,7 +1379,8 @@ contains
                                          isd, ied, jsd, jed,      &
                                          reg_bc_update_time,it )
          endif
-#endif SW_DYNAMICS
+!endif SW_DYNAMICS
+#endif
 
          call regional_boundary_update(u, 'u', &
                                        isd, ied, jsd, jed+1, npz, &
