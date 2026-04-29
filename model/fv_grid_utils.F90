@@ -977,14 +977,6 @@
 
   end subroutine grid_utils_init
 
-
-  subroutine grid_utils_end
-
-! deallocate sst_ncep (if allocated)
-#ifndef DYCORE_SOLO
-#endif
-  end subroutine grid_utils_end
-
 !>@brief The subroutine 'direct_transform' performs a direct transformation of the
 !! standard (symmetrical) cubic grid to a locally enhanced high-res grid on the sphere.
 !>@details It is an application of the Schmidt transformation at the south pole
