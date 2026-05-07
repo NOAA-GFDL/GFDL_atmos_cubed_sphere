@@ -115,7 +115,7 @@
         global_mx, unit_vect_latlon,  &
         cubed_to_latlon, c2l_ord2, g_sum, global_qsum, great_circle_dist,  &
         v_prod, get_unit_vect2, project_sphere_v
- public mid_pt_sphere,  mid_pt_cart, vect_cross, grid_utils_init, grid_utils_end, &
+ public mid_pt_sphere,  mid_pt_cart, vect_cross, grid_utils_init, &
         spherical_angle, cell_center2, get_area, inner_prod, fill_ghost, &
         direct_transform, cube_transform, &
         make_eta_level, expand_cell, cart_to_latlon, intp_great_circle, normalize_vect, &
