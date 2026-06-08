@@ -297,10 +297,9 @@ contains
 !! and diagnostics.
  subroutine atmosphere_init (Time_init, Time, Time_step, Grid_box, area)
 
-   use ccpp_static_api,   only: ccpp_physics_init
-   use CCPP_data,         only: ccpp_suite,          &
-                                cdata => cdata_tile, &
-                                GFDL_interstitial
+   use ufs_ccpp_cap,      only: ccpp_physics_init
+   use CCPP_driver,       only: ccpp_suite, errmsg, errflg
+   use CCPP_data,         only: GFDL_interstitial
 #ifdef OPENMP
    use omp_lib
 #endif
@@ -501,9 +500,9 @@ contains
 
    ! For fast physics running over the entire domain, block
    ! and thread number are not used; set to safe values
-   cdata%blk_no = 1
-   cdata%thrd_no = 1
-   cdata%thrd_cnt = 1
+   !cdata%blk_no = 1
+   !cdata%thrd_no = 1
+   !cdata%thrd_cnt = 1
 
    ! Create shared data type for fast and slow physics, one for each thread
 #ifdef OPENMP
@@ -540,10 +539,12 @@ contains
 
    if (Atm(mygrid)%flagstruct%do_sat_adj) then
       ! Initialize fast physics
-      call ccpp_physics_init(cdata, suite_name=trim(ccpp_suite), group_name="fast_physics", ierr=ierr)
+      call ccpp_physics_init(ccpp_suite=trim(ccpp_suite), group_name='fast_physics', &
+           lb=Atm(mygrid)%bd%is, ub=Atm(mygrid)%bd%ie, mythread=1, &
+           nthreads=1, nphys_threads=1, errflg=errflg, errmsg=errmsg)
       if (ierr/=0) then
-         cdata%errmsg = ' atmosphere_dynamics: error in ccpp_physics_init for group fast_physics: ' // trim(cdata%errmsg)
-         call mpp_error (FATAL, cdata%errmsg)
+         errmsg = ' atmosphere_dynamics: error in ccpp_physics_init for group fast_physics: ' // trim(errmsg)
+         call mpp_error (FATAL, errmsg)
       endif
    endif
 
@@ -810,9 +811,8 @@ contains
 !! FV3 dynamical core responsible for writing out a restart and final diagnostic state.
  subroutine atmosphere_end (Time, Grid_box, restart_endfcst)
 
-   use ccpp_static_api,   only: ccpp_physics_finalize
-   use CCPP_data,         only: ccpp_suite
-   use CCPP_data,         only: cdata => cdata_tile
+   use ufs_ccpp_cap,      only: ccpp_physics_final
+   use CCPP_driver,       only: ccpp_suite, errmsg, errflg
 
    type (time_type),      intent(in)    :: Time
    type(grid_box_type),   intent(inout) :: Grid_box
@@ -821,10 +821,12 @@ contains
 
    if (Atm(mygrid)%flagstruct%do_sat_adj) then
       ! Finalize fast physics
-      call ccpp_physics_finalize(cdata, suite_name=trim(ccpp_suite), group_name="fast_physics", ierr=ierr)
+      call ccpp_physics_final(ccpp_suite=trim(ccpp_suite), group_name='fast_physics', &
+           lb=Atm(mygrid)%bd%is, ub=Atm(mygrid)%bd%ie, mythread=1, &
+           nthreads=1, nphys_threads=1, errflg=errflg, errmsg=errmsg)
       if (ierr/=0) then
-         cdata%errmsg = ' atmosphere_dynamics: error in ccpp_physics_finalize for group fast_physics: ' // trim(cdata%errmsg)
-         call mpp_error (FATAL, cdata%errmsg)
+         errmsg = ' atmosphere_dynamics: error in ccpp_physics_finalize for group fast_physics: ' // trim(errmsg)
+         call mpp_error (FATAL, errmsg)
       endif
    endif
 
