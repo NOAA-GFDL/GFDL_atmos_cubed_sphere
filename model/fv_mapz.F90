@@ -677,7 +677,7 @@ contains
 #ifdef MULTI_GASES
 !$OMP                        shared(num_gas)                                                   &
 #endif
-!$OMP                       private(q2,pe0,pe1,pe2,pe3,qv,cvm,gz,gsize,phis,kdelz,dp2,t0, ierr)
+!$OMP                       private(q2,pe0,pe1,pe2,pe3,qv,cvm,gz,gsize,phis,kdelz,dp2,t0)
 
 !$OMP do
   do k=2,km
@@ -821,19 +821,15 @@ endif        ! end last_step check
 
   if ( do_sat_adj ) then
      call timing_on('sat_adj2')
-    ! Call to CCPP fast_physics group
-    !if (cdata%initialized()) then
+     ! Call to CCPP fast_physics group
      call ccpp_physics_run(ccpp_suite=trim(ccpp_suite), group_name='fast_physics', &
           lb=is, ub=ie, mythread=1, nthreads=1, nphys_threads=1, errflg=errflg, errmsg=errmsg)
-      if (ierr/=0) then
+      if (errflg/=0) then
         call mpp_error(NOTE, trim(errmsg))
         call mpp_error(FATAL, "Call to ccpp_physics_run for group 'fast_physics' failed")
       endif
-    !else
-    !  call mpp_error (FATAL, 'Lagrangian_to_Eulerian: can not call CCPP fast physics because CCPP not initialized')
-    !endif
-                                           call timing_off('sat_adj2')
-  endif   ! do_sat_adj
+      call timing_off('sat_adj2')
+   endif   ! do_sat_adj
 
   if ( last_step ) then
        ! Output temperature if last_step

@@ -297,7 +297,7 @@ contains
 !! and diagnostics.
  subroutine atmosphere_init (Time_init, Time, Time_step, Grid_box, area)
 
-   use ufs_ccpp_cap,      only: ccpp_physics_init
+   use ufs_ccpp_cap,      only: ccpp_physics_init, ccpp_register, ccpp_init
    use CCPP_driver,       only: ccpp_suite, errmsg, errflg
    use CCPP_data,         only: GFDL_interstitial
 #ifdef OPENMP
@@ -538,11 +538,23 @@ contains
                                  mpirank=mpp_pe(), mpiroot=mpp_root_pe())
 
    if (Atm(mygrid)%flagstruct%do_sat_adj) then
+      ! Register fast-physics
+      call ccpp_register(ccpp_suite=trim(ccpp_suite), errflg=errflg, errmsg=errmsg)
+      if (errflg/=0) then
+         errmsg = ' atmosphere_dynamics: error in ccpp_register for group fast_physics: ' // trim(errmsg)
+         call mpp_error (FATAL, errmsg)
+      endif
+      ! Initialize ccpp
+      call ccpp_init(ccpp_suite=trim(ccpp_suite), errmsg=errmsg, errflg=errflg)
+      if (errflg/=0) then
+         errmsg = ' atmosphere_dynamics: error in ccpp_init for group fast_physics: ' // trim(errmsg)
+         call mpp_error (FATAL, errmsg)
+      endif
       ! Initialize fast physics
       call ccpp_physics_init(ccpp_suite=trim(ccpp_suite), group_name='fast_physics', &
            lb=Atm(mygrid)%bd%is, ub=Atm(mygrid)%bd%ie, mythread=1, &
            nthreads=1, nphys_threads=1, errflg=errflg, errmsg=errmsg)
-      if (ierr/=0) then
+      if (errflg/=0) then
          errmsg = ' atmosphere_dynamics: error in ccpp_physics_init for group fast_physics: ' // trim(errmsg)
          call mpp_error (FATAL, errmsg)
       endif
