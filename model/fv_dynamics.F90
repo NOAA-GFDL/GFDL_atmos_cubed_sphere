@@ -156,6 +156,7 @@ module fv_dynamics_mod
    use fv_regional_mod,     only: current_time_in_seconds
    use boundary_mod,        only: nested_grid_BC_apply_intT
    use fv_arrays_mod,       only: fv_grid_type, fv_flags_type, fv_atmos_type, fv_nest_type, fv_diag_type, fv_grid_bounds_type, inline_mp_type
+   use fv_arrays_mod,       only: R_GRID
    use fv_arrays_mod,       only: sa3dtke_type ! for SA-3D-TKE (kyf) (modify for data structure)
    use fv_nwp_nudge_mod,    only: do_adiabatic_init
    use time_manager_mod,    only: get_time
@@ -341,8 +342,15 @@ contains
       nq = nq_tot - flagstruct%dnats
       nr = nq_tot - flagstruct%dnrts
 
-      call init_ijk_mem(isd,ied, jsd,jed, npz+1, grav_var_h, grav)
-
+!      call init_ijk_mem(isd,ied, jsd,jed, npz+1, grav_var_h, grav)
+!$OMP parallel do default(none) shared(isd,ied,jsd,jed,npz,grav_var_h)
+      do j=jsd,jed
+       do i=isd,ied
+        do k=npz+1,1,-1
+        grav_var_h(i,j,k)= grav
+        enddo
+       enddo
+      enddo
       if(flagstruct%var_grav)then
        ! Surface
 !$OMP parallel do default(none) shared(is,ie,js,je,npz,phis,newrad,grav_var_h)       

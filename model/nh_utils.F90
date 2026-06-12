@@ -57,7 +57,7 @@ module nh_utils_mod
    use constants_mod,     only: pi_8
    use tp_core_mod,       only: fv_tp_2d
    use sw_core_mod,       only: fill_4corners, del6_vt_flux
-   use fv_arrays_mod,     only: fv_grid_bounds_type, fv_grid_type,fv_nest_BC_type_3d
+   use fv_arrays_mod,     only: fv_grid_bounds_type, fv_grid_type,fv_nest_BC_type_3d, R_GRID
    use mpp_mod,           only: mpp_pe
 #ifdef MULTI_GASES
    use multi_gases_mod,  only:  vicpqd, vicvqd

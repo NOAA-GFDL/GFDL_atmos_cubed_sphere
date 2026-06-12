@@ -29,8 +29,11 @@ module fv_arrays_mod
   use horiz_interp_type_mod, only: horiz_interp_type
   use mpp_mod,               only: mpp_broadcast
   use platform_mod,          only: r8_kind
+#ifdef OVERLOAD_R4
+  use constantsR4_mod,       only: grav
+#else  
   use constants_mod,         only: grav
-
+#endif
 
   public
 
