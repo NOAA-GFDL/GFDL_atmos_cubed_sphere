@@ -836,7 +836,7 @@ contains
       call ccpp_physics_final(ccpp_suite=trim(ccpp_suite), group_name='fast_physics', &
            lb=Atm(mygrid)%bd%is, ub=Atm(mygrid)%bd%ie, mythread=1, &
            nthreads=1, nphys_threads=1, errflg=errflg, errmsg=errmsg)
-      if (ierr/=0) then
+      if (errflg/=0) then
          errmsg = ' atmosphere_dynamics: error in ccpp_physics_finalize for group fast_physics: ' // trim(errmsg)
          call mpp_error (FATAL, errmsg)
       endif
