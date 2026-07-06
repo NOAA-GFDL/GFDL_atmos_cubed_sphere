@@ -1090,7 +1090,7 @@ contains
        call range_check('VA_dyn', ua, is, ie, js, je, ng, npz,gridstruct%agrid,&
                          -880., 880., bad_range)
        call range_check('TA_dyn', pt, is, ie, js, je, ng, npz,gridstruct%agrid,&
-                         150.,3350., bad_range)
+                         50.,335., bad_range)
        call range_check('W_dyn', w, is, ie, js, je, ng, npz,gridstruct%agrid, &
                          -250., 250., bad_range)
      else
@@ -1099,7 +1099,7 @@ contains
        call range_check('VA_dyn', ua, is, ie, js, je, ng, npz, gridstruct%agrid,   &
                          -280., 280., bad_range, fv_time)
        call range_check('TA_dyn', pt, is, ie, js, je, ng, npz, gridstruct%agrid,   &
-                         150., 335., bad_range, fv_time)
+                         50., 335., bad_range, fv_time)
        if ( .not. hydrostatic ) &
             call range_check('W_dyn', w, is, ie, js, je, ng, npz, gridstruct%agrid,   &
                          -50., 100., bad_range, fv_time)
@@ -1316,7 +1316,8 @@ contains
              enddo
           enddo
 #endif
-#ifdef SMALL_EARTH_TEST ! changed!!!
+!SMALL_EARTH_TEST has changed
+#ifdef SMALL_EARTH_TEST
           tau0 = abs( tau )
           tau1 = abs( tau_w )
 #else
