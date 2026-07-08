@@ -328,7 +328,7 @@ contains
    integer :: blocksize    = 1
    logical :: chksum_debug = .false.
    logical :: dycore_only  = .false.
-   logical :: pdc          = .true.
+   logical :: pdc          = .false.
    logical :: debug        = .false.
    logical :: sync         = .false.
    logical :: ignore_rst_cksum = .false.
@@ -336,7 +336,7 @@ contains
    logical :: cpl_imp_mrg = .false.
    logical :: cpl_imp_dbg = .false.
    namelist /atmos_model_nml/ blocksize, chksum_debug, dycore_only, debug, sync, ccpp_suite, avg_max_length, &
-                              ignore_rst_cksum, cpl_imp_mrg, cpl_imp_dbg,pdc
+                              ignore_rst_cksum, cpl_imp_mrg, cpl_imp_dbg, pdc
    ! *DH 20210326
 
    !For regional
