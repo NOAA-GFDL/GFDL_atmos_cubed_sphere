@@ -77,7 +77,7 @@ module fv_nggps_diags_mod
  use field_manager_mod,  only: MODEL_ATMOS
  use fv_diagnostics_mod, only: range_check, dbzcalc,max_vv,get_vorticity, &
                                max_uh,max_vorticity,bunkers_vector,       &
-                               helicity_relative_CAPS,max_vorticity_hy1
+                               helicity_relative_CAPS,max_vorticity_hy1,getcape,eqv_pot
  use fv_arrays_mod,      only: fv_atmos_type
  use module_diag_hailcast, only: do_hailcast, id_hailcast_dhail,         &
                                  id_hailcast_dhail1, id_hailcast_dhail2, &
@@ -108,14 +108,14 @@ module fv_nggps_diags_mod
  real, parameter:: stndrd_atmos_lapse = 0.0065
 
  logical master
- integer :: id_ua, id_va, id_pt, id_delp, id_pfhy, id_pfnh
+ integer :: id_ua, id_va, id_pt, id_delp, id_pfhy, id_pfnh, id_cape, id_cin
  integer :: id_w, id_delz, id_diss, id_ps, id_hs, id_dbz, id_omga
  integer :: kstt_ua, kstt_va, kstt_pt, kstt_delp, kstt_pfhy
  integer :: kstt_pfnh, kstt_w, kstt_delz, kstt_diss, kstt_ps,kstt_hs
  integer :: kend_ua, kend_va, kend_pt, kend_delp, kend_pfhy
  integer :: kend_pfnh, kend_w, kend_delz, kend_diss, kend_ps,kend_hs
- integer :: kstt_dbz, kend_dbz, kstt_omga, kend_omga
- integer :: kstt_windvect, kend_windvect
+ integer :: kstt_dbz, kend_dbz, kstt_omga, kend_omga, kstt_cin, kend_cin
+ integer :: kstt_windvect, kend_windvect, kstt_cape, kend_cape
  integer :: kstt_o3_ave, kend_o3_ave, kstt_pm25_ave, kend_pm25_ave
  integer :: kstt_smoke_ave, kend_smoke_ave
  integer :: kstt_dust_ave, kend_dust_ave
@@ -344,6 +344,20 @@ contains
           nlevs = nlevs + 1
        endif
 !
+       id_cape = register_diag_field( trim(file_name), 'cape', axes(1:2), Time,  &
+            'Convective available potential energy (surface-based)', 'J/kg' , missing_value=missing_value )
+      if( id_cape > 0) then
+        kstt_cape = nlevs+1; kend_cape = nlevs+1
+        nlevs = nlevs + 1
+      endif
+!
+      id_cin = register_diag_field( trim(file_name), 'cin', axes(1:2), Time,  &
+            'Convective inhibition (surface-based)', 'J/kg' , missing_value=missing_value )
+      if( id_cin > 0) then
+        kstt_cin = nlevs+1; kend_cin = nlevs+1
+        nlevs = nlevs + 1
+      endif                    
+!
        id_dbz = register_diag_field ( trim(file_name), 'reflectivity', axes(1:3), Time,    &
            'Stoelinga simulated reflectivity', 'dBz', missing_value=missing_value)
        if( rainwat > 0 .and. id_dbz > 0) then
@@ -547,8 +561,8 @@ contains
     integer :: i, j, k, n, ngc, nq, itrac
     logical :: bad_range
     real    :: ptop, allmax
-    real, allocatable :: wk(:,:,:), wk2(:,:,:)
-    real, dimension(:,:),allocatable :: ustm,vstm,srh01,srh03
+    real, allocatable :: wk(:,:,:), wk2(:,:,:), wk3(:,:,:)
+    real, dimension(:,:),allocatable :: ustm,vstm,srh01,srh03,cin,cape
 
     n = 1
     ngc = Atm(n)%ng
@@ -628,7 +642,7 @@ contains
     endif
 
     !--- PRESSURE (hydrostatic)
-    if( Atm(n)%flagstruct%hydrostatic .and. id_pfhy > 0 ) then
+    if( Atm(n)%flagstruct%hydrostatic .and. (id_pfhy > 0 .or. id_cape > 0 .or. id_cin > 0) ) then
        do k=1,npzo
          do j=jsco,jeco
            do i=isco,ieco
@@ -641,7 +655,7 @@ contains
 
 #ifdef GFS_PHYS
     !--- DELP
-    if(id_delp > 0 .or. ((.not. Atm(n)%flagstruct%hydrostatic) .and. id_pfnh > 0)) then
+    if(id_delp > 0 .or. id_cape > 0 .or. id_cin > 0 .or. ((.not. Atm(n)%flagstruct%hydrostatic) .and. id_pfnh > 0 )) then
        do k=1,npzo
          do j=jsco,jeco
            do i=isco,ieco
@@ -673,7 +687,7 @@ contains
     endif
 
     !--- PRESSURE (non-hydrostatic)
-    if( (.not. Atm(n)%flagstruct%hydrostatic) .and. id_pfnh > 0) then
+    if( (.not. Atm(n)%flagstruct%hydrostatic) .and. (id_pfnh > 0 .or. id_cape >0 .or. id_cin >0)) then
        do k=1,npzo
          do j=jsco,jeco
            do i=isco,ieco
@@ -702,7 +716,7 @@ contains
     endif
 
     !--- PRESSURE (non-hydrostatic)
-    if( (.not. Atm(n)%flagstruct%hydrostatic) .and. id_pfnh > 0) then
+    if( (.not. Atm(n)%flagstruct%hydrostatic) .and. (id_pfnh > 0 .or. id_cape >0 .or. id_cin > 0 )) then
        do k=1,npzo
          do j=jsco,jeco
            do i=isco,ieco
@@ -740,7 +754,31 @@ contains
 !       'rdgas=',rdgas,'grav=',grav,'stndrd_atmos_lapse=',stndrd_atmos_lapse,rdgas/grav*stndrd_atmos_lapse
       call store_data(id_ps, wk, Time, kstt_ps, kend_ps)
     endif
-
+!cape
+    if (id_cape > 0 .or. id_cin > 0) then
+      allocate(cape(isco:ieco,jsco:jeco))
+      allocate(cin(isco:ieco,jsco:jeco))        
+      allocate(wk3(isco:ieco,jsco:jeco,npzo))
+      call eqv_pot(wk3, Atm(n)%pt, Atm(n)%delp, Atm(n)%delz, Atm(n)%peln, Atm(n)%pkz, Atm(n)%q(isdo,jsdo,1,sphum),    &
+      isco, ieco, jsco, jeco, ngc, npzo, Atm(n)%flagstruct%hydrostatic, Atm(n)%flagstruct%moist_phys)
+      do j=jsco,jeco
+        do i=isco,ieco
+           cin(i,j)  = 0.
+           cape(i,j) = 0.
+           call getcape(npzo, wk(i,j,:), Atm(n)%pt(i,j,:), -Atm(n)%delz(i,j,:), Atm(n)%q(i,j,:,sphum), wk3(i,j,:), cape(i,j), cin(i,j), source_in=1)
+        enddo
+      enddo
+        if (id_cape > 0) then
+           call store_data(id_cape, cape, Time, kstt_cape, kend_cape)
+        endif
+        if (id_cin > 0) then
+           call store_data(id_cin, cin, Time, kstt_cin, kend_cin)
+        endif
+        deallocate(cape)
+        deallocate(cin)
+        deallocate(wk3)
+  endif
+!  
     if( id_hs > 0) then
       do j=jsco,jeco
         do i=isco,ieco
@@ -1583,6 +1621,20 @@ contains
      if(rc==0)  num_field_dyn=num_field_dyn+1
    endif
 !
+   if( id_cape > 0) then
+    call find_outputname(trim(file_name),'cape',output_name)
+    call add_field_to_bundle(trim(output_name),'Convective available potential energy (surface-based)', 'J/kg', "time: point",   &
+         axes(1:2), fcst_grid, kstt_cape,kend_cape, dyn_bundle, output_file, rcd=rc)
+    if(rc==0)  num_field_dyn=num_field_dyn+1
+  endif
+!
+  if( id_cin> 0) then
+    call find_outputname(trim(file_name),'cin',output_name)
+    call add_field_to_bundle(trim(output_name),'Convective inhibition (surface-based)', 'J/kg', "time: point",   &
+         axes(1:2), fcst_grid, kstt_cin,kend_cin, dyn_bundle, output_file, rcd=rc)
+    if(rc==0)  num_field_dyn=num_field_dyn+1
+  endif
+!  
    if(id_dbz > 0) then
      call find_outputname(trim(file_name),'reflectivity',output_name)
 !     if(mpp_pe()==mpp_root_pe())print *,'reflectivity, output name=',trim(output_name)
