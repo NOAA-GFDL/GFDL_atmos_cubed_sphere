@@ -498,12 +498,6 @@ contains
 
    ! Do CCPP fast physics initialization before call to adiabatic_init (since this calls fv_dynamics)
 
-   ! For fast physics running over the entire domain, block
-   ! and thread number are not used; set to safe values
-   !cdata%blk_no = 1
-   !cdata%thrd_no = 1
-   !cdata%thrd_cnt = 1
-
    ! Create shared data type for fast and slow physics, one for each thread
 #ifdef OPENMP
    nthreads = omp_get_max_threads()
