@@ -392,6 +392,7 @@ CONTAINS
    is1 = is - 1
    ie1 = ie + 1
 
+!$OMP parallel do default(none) shared(is1,ie1,js,je,km,rgrav,grav_var)   
    do k=1,km
      do j=js-1,je+1
        do i=is1,ie1

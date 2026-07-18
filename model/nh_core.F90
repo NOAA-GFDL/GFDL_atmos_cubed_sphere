@@ -112,6 +112,8 @@ CONTAINS
   integer i, j, k
 
     gama = 1./(1.-akap)
+
+!$OMP parallel do default(none) shared(isd,ied,jsd,jed,km,rgrav,grav_var)    
     do k=1,km
       do j=jsd,jed
         do i=isd,ied
