@@ -198,10 +198,9 @@ contains
                         parent_grid, domain, diss_est, inline_mp, grav_var_h, grav_var)
 
     use mpp_mod,           only: FATAL, mpp_error
-    use ccpp_static_api,   only: ccpp_physics_timestep_init,    &
-                                 ccpp_physics_timestep_finalize
-    use CCPP_data,         only: ccpp_suite
-    use CCPP_data,         only: cdata => cdata_tile
+    use ufs_ccpp_cap,      only: ccpp_physics_timestep_init,    &
+                                 ccpp_physics_timestep_final
+    use CCPP_driver,       only: ccpp_suite, errmsg, errflg
     use CCPP_data,         only: GFDL_interstitial
     use molecular_diffusion_mod, only: md_time, md_wait_sec, md_tadj_layers,          &
                                        thermosphere_adjustment
@@ -382,7 +381,8 @@ contains
         enddo
       enddo
       ! Call CCPP timestep init
-      call ccpp_physics_timestep_init(cdata, suite_name=trim(ccpp_suite), group_name="fast_physics", ierr=ierr)
+      call ccpp_physics_timestep_init(ccpp_suite=trim(ccpp_suite), group_name='fast_physics', &
+           lb=is, ub=ie, mythread=1, nthreads=1, nphys_threads=1, errflg=errflg, errmsg=errmsg)
       ! Reset all interstitial variables for CCPP version
       ! of fast physics, and manually set runtime parameters
       call GFDL_interstitial%reset()
@@ -1107,7 +1107,9 @@ contains
   endif
 
   ! Call CCPP timestep finalize
-  call ccpp_physics_timestep_finalize(cdata, suite_name=trim(ccpp_suite), group_name="fast_physics", ierr=ierr)
+  call ccpp_physics_timestep_final(ccpp_suite=trim(ccpp_suite), group_name='fast_physics', &
+       lb=is, ub=ie, mythread=1, nthreads=1, nphys_threads=1, errflg=errflg, errmsg=errmsg)
+
 
   end subroutine fv_dynamics
 
