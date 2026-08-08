@@ -56,13 +56,17 @@ module fv_mapz_mod
 !     <td>is_master</td>
 !   </tr>
 !   <tr>
-!     <td>ccpp_static_api</td>
+!     <td>ufs_ccpp_cap</td>
 !     <td>ccpp_physics_run</td>
 !   </tr>
 !   <tr>
-!     <td>CCPP_data</td>
-!     <td>ccpp_suite, cdata_tile, GFDL_interstitial</td>
+!     <td>CCPP_driver</td>
+!     <td>ccpp_suite, errmsg, errflg</td>
 !   </tr>
+!   <tr>
+!     <td>CCPP_data</td>
+!     <td>GFDL_interstitial</td>
+!   </tr> 
 !   <tr>
 !     <td>fv_timing_mod</td>
 !     <td>timing_on, timing_off</td>
@@ -96,9 +100,8 @@ module fv_mapz_mod
   use fv_timing_mod,     only: timing_on, timing_off
   use fv_mp_mod,         only: is_master, mp_reduce_min, mp_reduce_max
   ! CCPP fast physics
-  use ccpp_static_api,   only: ccpp_physics_run
-  use CCPP_data,         only: ccpp_suite
-  use CCPP_data,         only: cdata => cdata_tile
+  use ufs_ccpp_cap,      only: ccpp_physics_run
+  use CCPP_driver,       only: ccpp_suite, errmsg, errflg
   use CCPP_data,         only: GFDL_interstitial
 #ifdef MULTI_GASES
   use multi_gases_mod,  only:  virq, virqd, vicpqd, vicvqd, num_gas
@@ -680,12 +683,12 @@ contains
 !$OMP                               ng,gridstruct,E_Flux,pdt,dtmp,reproduce_sum,q,             &
 !$OMP                               mdt,cld_amt,cappa,dtdt,out_dt,rrg,akap,do_sat_adj,         &
 !$OMP                               kord_tm, pe4,npx,npy, ccn_cm3,                             &
-!$OMP                               u_dt,v_dt,c2l_ord,bd,dp0,ps,cdata,GFDL_interstitial,grav_var)&
-!$OMP                        shared(ccpp_suite)                                                &
+!$OMP                               u_dt,v_dt,c2l_ord,bd,dp0,ps,GFDL_interstitial,grav_var)    &
+!$OMP                        shared(ccpp_suite, errmsg, errflg)                                &
 #ifdef MULTI_GASES
 !$OMP                        shared(num_gas)                                                   &
 #endif
-!$OMP                       private(q2,pe0,pe1,pe2,pe3,qv,cvm,gz,gsize,phis,kdelz,dp2,t0, ierr)
+!$OMP                       private(q2,pe0,pe1,pe2,pe3,qv,cvm,gz,gsize,phis,kdelz,dp2,t0)
 
 !$OMP do
   do k=2,km
@@ -828,19 +831,16 @@ endif        ! end last_step check
 ! if ( (.not.do_adiabatic_init) .and. do_sat_adj ) then
 
   if ( do_sat_adj ) then
-                                           call timing_on('sat_adj2')
-    ! Call to CCPP fast_physics group
-    if (cdata%initialized()) then
-      call ccpp_physics_run(cdata, suite_name=trim(ccpp_suite), group_name='fast_physics', ierr=ierr)
-      if (ierr/=0) then
-        call mpp_error(NOTE, trim(cdata%errmsg))
+     call timing_on('sat_adj2')
+     ! Call to CCPP fast_physics group
+     call ccpp_physics_run(ccpp_suite=trim(ccpp_suite), group_name='fast_physics', &
+          lb=is, ub=ie, mythread=1, nthreads=1, nphys_threads=1, errflg=errflg, errmsg=errmsg)
+      if (errflg/=0) then
+        call mpp_error(NOTE, trim(errmsg))
         call mpp_error(FATAL, "Call to ccpp_physics_run for group 'fast_physics' failed")
       endif
-    else
-      call mpp_error (FATAL, 'Lagrangian_to_Eulerian: can not call CCPP fast physics because CCPP not initialized')
-    endif
-                                           call timing_off('sat_adj2')
-  endif   ! do_sat_adj
+      call timing_off('sat_adj2')
+   endif   ! do_sat_adj
 
   if ( last_step ) then
        ! Output temperature if last_step
