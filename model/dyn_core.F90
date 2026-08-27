@@ -53,6 +53,7 @@ module dyn_core_mod
   use diag_manager_mod,   only: send_data
   use fv_arrays_mod,      only: fv_grid_type, fv_flags_type, fv_nest_type, fv_diag_type
   use fv_arrays_mod,      only: fv_grid_bounds_type, R_GRID, fv_nest_BC_type_3d, fv_thermo_type
+  use fv_arrays_mod,      only: inline_pbl_type, inline_gwd_type
 
   use boundary_mod,         only: extrapolation_BC,  nested_grid_BC_apply_intT
   use fv_regional_mod,      only: regional_boundary_update
@@ -95,7 +96,7 @@ contains
                      u,  v,  w, delz, pt, q, delp, pe, pk, phis, ws, omga, ptop, pfull, ua, va, &
                      uc, vc, mfx, mfy, cx, cy, pkz, peln, q_con, ak, bk, &
                      ks, gridstruct, flagstruct, neststruct, thermostruct, idiag, bd, domain, &
-                     init_step, i_pack, end_step, heat_source, diss_est, consv, te0_2d, time_total)
+                     init_step, i_pack, end_step, heat_source, diss_est, consv, te0_2d, inline_pbl, inline_gwd, time_total)
     integer, intent(IN) :: npx
     integer, intent(IN) :: npy
     integer, intent(IN) :: npz
@@ -132,6 +133,9 @@ contains
     real, intent(inout):: pe(bd%is-1:bd%ie+1, npz+1,bd%js-1:bd%je+1)  ! edge pressure (pascal)
     real, intent(inout):: peln(bd%is:bd%ie,npz+1,bd%js:bd%je)          ! ln(pe)
     real, intent(inout):: pk(bd%is:bd%ie,bd%js:bd%je, npz+1)        ! pe**kappa
+
+    type(inline_pbl_type), intent(inout):: inline_pbl
+    type(inline_gwd_type), intent(inout):: inline_gwd
 
 !-----------------------------------------------------------------------
 ! Others:
@@ -1102,11 +1106,12 @@ contains
 
           call timing_on('FAST_PHYS')
 
-          call fast_phys (is, ie, js, je, isd, ied, jsd, jed, npz, npx, npy, nq, &
+          call fast_phys (is, ie, js, je, isd, ied, jsd, jed, npz, npx, npy, nq, flagstruct%nwat, &
              dt, consv, akap, ptop, phis, te0_2d, u, v, w, pt, &
-             delp, delz, q_con, cappa, q, pkz, zvir, flagstruct%te_err, flagstruct%tw_err, &
+             delp, delz, q_con, cappa, q, pkz, zvir, flagstruct%te_err, flagstruct%tw_err, inline_pbl, inline_gwd, &
              gridstruct, thermostruct, domain, bd, hydrostatic, do_adiabatic_init, &
-             flagstruct%consv_checker, flagstruct%adj_mass_vmr)
+             flagstruct%do_inline_pbl, flagstruct%do_inline_gwd, flagstruct%consv_checker, flagstruct%adj_mass_vmr, &
+             flagstruct%inline_pbl_flag)
 
           call timing_on('COMM_TOTAL')
           !some mpp domains updates are commented out at this moment -- Linjiong
@@ -1138,6 +1143,23 @@ contains
               enddo
               call pe_halo (is, ie, js, je, isd, ied, jsd, jed, npz, ptop, pe, delp)
           endif
+
+          if (idiag%id_inline_pbl_fast_te_a_chg>0) &
+              used = send_data(idiag%id_inline_pbl_fast_te_a_chg, inline_pbl%fast_te_a_chg, fv_time)
+          if (idiag%id_inline_pbl_fast_te_b_chg>0) &
+              used = send_data(idiag%id_inline_pbl_fast_te_b_chg, inline_pbl%fast_te_b_chg, fv_time)
+          if (idiag%id_inline_pbl_fast_tw_a_chg>0) &
+              used = send_data(idiag%id_inline_pbl_fast_tw_a_chg, inline_pbl%fast_tw_a_chg, fv_time)
+          if (idiag%id_inline_pbl_fast_tw_b_chg>0) &
+              used = send_data(idiag%id_inline_pbl_fast_tw_b_chg, inline_pbl%fast_tw_b_chg, fv_time)
+          if (idiag%id_inline_gwd_fast_te_a_chg>0) &
+              used = send_data(idiag%id_inline_gwd_fast_te_a_chg, inline_gwd%fast_te_a_chg, fv_time)
+          if (idiag%id_inline_gwd_fast_te_b_chg>0) &
+              used = send_data(idiag%id_inline_gwd_fast_te_b_chg, inline_gwd%fast_te_b_chg, fv_time)
+          if (idiag%id_inline_gwd_fast_tw_a_chg>0) &
+              used = send_data(idiag%id_inline_gwd_fast_tw_a_chg, inline_gwd%fast_tw_a_chg, fv_time)
+          if (idiag%id_inline_gwd_fast_tw_b_chg>0) &
+              used = send_data(idiag%id_inline_gwd_fast_tw_b_chg, inline_gwd%fast_tw_b_chg, fv_time)
 
           call timing_off('FAST_PHYS')
 

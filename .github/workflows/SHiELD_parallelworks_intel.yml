@@ -112,7 +112,8 @@ jobs:
       - env:
           RUNSCRIPT: ${{ matrix.runscript }}
           ARG1: ${{ matrix.argument }}
-        run: $RUNSCRIPT -t $ARG1 -b $GITHUB_REF -h $GITHUB_SHA
+        run: bash -c "$RUNSCRIPT -t $ARG1 -b $GITHUB_REF -h $GITHUB_SHA"
+     
   shutdown:
     if: always() && github.repository == 'NOAA-GFDL/GFDL_atmos_cubed_sphere'
     runs-on: [gfdlacsciintel]

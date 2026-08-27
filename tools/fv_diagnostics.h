@@ -77,7 +77,7 @@
  logical, allocatable :: conv_vmr_mmr(:)
 
 ! Microphysical diagnostics
- integer :: id_pret, id_prew, id_prer, id_prei, id_pres, id_preg
+ integer :: id_pret, id_prec, id_prew, id_prer, id_prei, id_pres, id_preg
  integer :: id_prefluxw, id_prefluxr, id_prefluxi, id_prefluxs, id_prefluxg
  integer :: id_qv_dt_gfdlmp, id_T_dt_gfdlmp, id_ql_dt_gfdlmp, id_qi_dt_gfdlmp
  integer :: id_qr_dt_gfdlmp, id_qg_dt_gfdlmp, id_qs_dt_gfdlmp
@@ -95,7 +95,6 @@
  integer :: id_mppms, id_mppmg, id_mppar, id_mppas, id_mppag
  integer :: id_mpprs, id_mpprg, id_mppxr, id_mppxs, id_mppxg
  integer :: id_mppm1, id_mppm2, id_mppm3
-
  integer :: id_qcw, id_qcr, id_qci, id_qcs, id_qcg
  integer :: id_rew, id_rer, id_rei, id_res, id_reg, id_cld
 
