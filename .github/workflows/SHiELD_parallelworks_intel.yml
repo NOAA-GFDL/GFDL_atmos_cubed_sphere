@@ -30,9 +30,52 @@ jobs:
     runs-on: [gfdlacsciintel]
     name: Checkout Code
     steps:
-    - run: /contrib/fv3/GFDL_atmos_cubed_sphere_CI/checkout.sh -b $GITHUB_REF -h $GITHUB_SHA
-    
-  build:
+      - env:
+          TEST_DIR: /contrib/fv3/2023.2.0/GFDL_atmos_cubed_sphere/${{ github.ref }}/${{ github.sha }}
+          MODULESHOME: /usr/share/lmod/lmod
+        run: |
+          ## set up directory structure
+          rm -rf $TEST_DIR
+          mkdir -p $TEST_DIR/log
+          cd $TEST_DIR
+          ## clone SHiELD_build
+          git clone --recursive https://github.com/NOAA-GFDL/SHiELD_build.git
+          ## modify checkout script to checkout main branches
+          sed -i 's/FV3-202604-public/main/g' $TEST_DIR/SHiELD_build/CHECKOUT_code
+          ## checkout the component code
+          cd SHiELD_build && ./CHECKOUT_code |& tee $TEST_DIR/log/checkout.log
+          ## Checkout the PR of GFDL_atmos_cubed_sphere that is being tested
+          cd $TEST_DIR/SHiELD_SRC/GFDL_atmos_cubed_sphere && git fetch origin $GITHUB_REF:toMerge && git merge toMerge
+          ### (optional) checkout PRs that this PR relies on from other repos
+          ### replace "num" with the PR number e.g. 217
+          #cd $TEST_DIR/SHiELD_SRC/atmos_drivers && git fetch origin pull/num/head:pr-num && git merge pr-num
+          #cd $TEST_DIR/SHiELD_SRC/SHiELD_physics && git fetch origin pull/num/head:pr-num && git merge pr-num
+  buildshield:
+    if: github.repository == 'NOAA-GFDL/GFDL_atmos_cubed_sphere'
+    runs-on: [gfdlacsciintel]
+    name: Full SHiELD build
+    needs: [checkout]
+    strategy:
+      fail-fast: true
+      max-parallel: 17
+      matrix:
+        runscript: [/contrib/fv3/GFDL_atmos_cubed_sphere_CI/compile.sh]
+        config: [shield]
+        hydro: [nh, hydro]
+        bit: [64bit]
+        mode: [repro]
+    steps:
+      - env:
+          RUNSCRIPT: ${{ matrix.runscript }}
+          CONFIG: ${{ matrix.config }}
+          HYDRO: ${{ matrix.hydro }}
+          BIT: ${{ matrix.bit }}
+          MODE: ${{ matrix.mode }}
+        run: |
+           chmod +x /contrib/containers/load_spack_noaa-intel.sh
+           $RUNSCRIPT -b $GITHUB_REF -h $GITHUB_SHA -c $CONFIG --hydro $HYDRO --bit $BIT -m $MODE
+           
+  buildsolo:
     if: github.repository == 'NOAA-GFDL/GFDL_atmos_cubed_sphere'
     runs-on: [gfdlacsciintel]
     name: SOLO SHiELD build
@@ -61,7 +104,7 @@ jobs:
     if: github.repository == 'NOAA-GFDL/GFDL_atmos_cubed_sphere'
     runs-on: [gfdlacsciintel]
     name: SOLO SHiELD test suite
-    needs: [checkout, build]
+    needs: [checkout, buildsolo]
     strategy:
       fail-fast: false
       max-parallel: 17
@@ -118,7 +161,7 @@ jobs:
     if: always() && github.repository == 'NOAA-GFDL/GFDL_atmos_cubed_sphere'
     runs-on: [gfdlacsciintel]
     name: Shutdown Processes
-    needs: [checkout, build, test]
+    needs: [checkout, buildshield, buildsolo, test]
     strategy:
       fail-fast: false
       max-parallel: 17
