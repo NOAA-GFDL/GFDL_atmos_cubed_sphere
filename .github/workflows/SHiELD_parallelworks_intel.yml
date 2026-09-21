@@ -30,9 +30,73 @@ jobs:
     runs-on: [gfdlacsciintel]
     name: Checkout Code
     steps:
-    - run: /contrib/fv3/GFDL_atmos_cubed_sphere_CI/checkout.sh -b $GITHUB_REF -h $GITHUB_SHA
-    
-  build:
+      - env:
+          TEST_DIR: /contrib/fv3/2023.2.0/GFDL_atmos_cubed_sphere/${{ github.ref }}/${{ github.sha }}
+          MODULESHOME: /usr/share/lmod/lmod
+        run: |
+          # --- Configuration Variables ---
+          CHECKOUT_ATMOS_DRIVERS_PR="false" # set to true if you want to test with a PR from atmos_drivers
+          ATMOS_DRIVERS_PR="1"  # change to the PR num you want to test
+          CHECKOUT_SHIELD_PHYSICS_PR="false" # set to true if you want to test with a PR from SHiELD_physics
+          SHIELD_PHYSICS_PR="1" # change to the PR num you want to test
+          # -------------------------------
+          
+          # set up directory structure
+          rm -rf $TEST_DIR
+          mkdir -p $TEST_DIR/log
+          cd $TEST_DIR
+          
+          # clone SHiELD_build
+          git clone --recursive https://github.com/NOAA-GFDL/SHiELD_build.git
+          
+          # modify checkout script to checkout main branches
+          sed -i 's/FV3-202604-public/main/g' $TEST_DIR/SHiELD_build/CHECKOUT_code
+          
+          # checkout the component code
+          cd SHiELD_build && ./CHECKOUT_code |& tee $TEST_DIR/log/checkout.log
+          
+          # Checkout the PR of GFDL_atmos_cubed_sphere that is being tested
+          cd $TEST_DIR/SHiELD_SRC/GFDL_atmos_cubed_sphere && git fetch origin $GITHUB_REF:toMerge && git merge toMerge
+          
+          if [ "$CHECKOUT_ATMOS_DRIVERS_PR" = "true" ]; then
+            echo "Checking out dependent astmos_drivers PR..."
+            
+            cd $TEST_DIR/SHiELD_SRC/atmos_drivers
+            git fetch origin pull/${ATMOS_DRIVERS_PR}/head:pr-${ATMOS_DRIVERS_PR} && git merge pr-${ATMOS_DRIVERS_PR}
+          fi
+          if [ "$CHECKOUT_SHIELD_PHYSICS_PR" = "true" ]; then
+            echo "Checking out dependent SHiELD_physics PR..."
+            
+            cd $TEST_DIR/SHiELD_SRC/SHiELD_physics
+            git fetch origin pull/${SHIELD_PHYSICS_PR}/head:pr-${SHIELD_PHYSICS_PR} && git merge pr-${SHIELD_PHYSICS_PR}
+          fi
+
+  buildshield:
+    if: github.repository == 'NOAA-GFDL/GFDL_atmos_cubed_sphere'
+    runs-on: [gfdlacsciintel]
+    name: Full SHiELD build
+    needs: [checkout]
+    strategy:
+      fail-fast: true
+      max-parallel: 17
+      matrix:
+        runscript: [/contrib/fv3/GFDL_atmos_cubed_sphere_CI/compile.sh]
+        config: [shield]
+        hydro: [nh, hydro]
+        bit: [64bit]
+        mode: [repro]
+    steps:
+      - env:
+          RUNSCRIPT: ${{ matrix.runscript }}
+          CONFIG: ${{ matrix.config }}
+          HYDRO: ${{ matrix.hydro }}
+          BIT: ${{ matrix.bit }}
+          MODE: ${{ matrix.mode }}
+        run: |
+           chmod +x /contrib/containers/load_spack_noaa-intel.sh
+           $RUNSCRIPT -b $GITHUB_REF -h $GITHUB_SHA -c $CONFIG --hydro $HYDRO --bit $BIT -m $MODE
+           
+  buildsolo:
     if: github.repository == 'NOAA-GFDL/GFDL_atmos_cubed_sphere'
     runs-on: [gfdlacsciintel]
     name: SOLO SHiELD build
@@ -61,7 +125,7 @@ jobs:
     if: github.repository == 'NOAA-GFDL/GFDL_atmos_cubed_sphere'
     runs-on: [gfdlacsciintel]
     name: SOLO SHiELD test suite
-    needs: [checkout, build]
+    needs: [checkout, buildsolo]
     strategy:
       fail-fast: false
       max-parallel: 17
@@ -118,7 +182,7 @@ jobs:
     if: always() && github.repository == 'NOAA-GFDL/GFDL_atmos_cubed_sphere'
     runs-on: [gfdlacsciintel]
     name: Shutdown Processes
-    needs: [checkout, build, test]
+    needs: [checkout, buildshield, buildsolo, test]
     strategy:
       fail-fast: false
       max-parallel: 17
