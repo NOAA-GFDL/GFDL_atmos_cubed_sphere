@@ -37,6 +37,7 @@ module intermediate_phys_mod
     use fv_arrays_mod, only: inline_pbl_type, inline_cnv_type, inline_gwd_type
     use fv_arrays_mod, only: fv_thermo_type
     use mpp_domains_mod, only: domain2d, mpp_update_domains
+    use mpp_domains_mod, only: DGRID_NE, AGRID
     use tracer_manager_mod, only: get_tracer_index, get_tracer_names
     use field_manager_mod, only: model_atmos
     use gfdl_mp_mod, only: gfdl_mp_driver, fast_sat_adj, c_liq, c_ice, cv_air, &
@@ -47,6 +48,7 @@ module intermediate_phys_mod
     use sa_aamf_mod, only: sa_aamf_deep, sa_aamf_shal
     use sa_gwd_mod, only: sa_gwd_oro, sa_gwd_cnv
     use fv_timing_mod, only: timing_on, timing_off
+    use deform_utils_mod, only: cal_3d_tke_budget
 
     implicit none
 
@@ -65,11 +67,11 @@ module intermediate_phys_mod
 contains
 
 subroutine intermediate_phys (is, ie, js, je, isd, ied, jsd, jed, km, npx, npy, nq, nwat, &
-               mdt, consv, akap, ptop, pfull, hs, te0_2d, u, v, w, omga, pt, &
+               mdt, consv, akap, ptop, ak, bk, pfull, hs, te0_2d, u, v, w, omga, pt, &
                delp, delz, q_con, cappa, q, pkz, r_vir, te_err, tw_err, &
                inline_mp, inline_pbl, inline_cnv, inline_gwd, &
                gridstruct, thermostruct, domain, bd, hydrostatic, do_adiabatic_init, &
-               do_inline_mp, do_inline_pbl, do_inline_cnv, do_inline_gwd, &
+               do_inline_mp, do_inline_pbl, do_3dtke, do_inline_cnv, do_inline_gwd, &
                do_sat_adj, last_step, do_fast_phys, consv_checker, adj_mass_vmr, &
                inline_pbl_flag, inline_cnv_flag)
 
@@ -83,10 +85,13 @@ subroutine intermediate_phys (is, ie, js, je, isd, ied, jsd, jed, km, npx, npy, 
 
     logical, intent (in) :: hydrostatic, do_adiabatic_init, do_inline_mp, do_inline_pbl, consv_checker
     logical, intent (in) :: do_inline_cnv, do_inline_gwd, do_sat_adj, last_step, do_fast_phys
+    logical, intent (in) :: do_3dtke
 
     real, intent (in) :: consv, mdt, akap, r_vir, ptop, te_err, tw_err
 
     real, intent (in), dimension (km) :: pfull
+
+    real, intent (in), dimension (km+1) :: ak, bk
 
     real, intent (in), dimension (isd:ied, jsd:jed) :: hs
 
@@ -156,6 +161,10 @@ subroutine intermediate_phys (is, ie, js, je, isd, ied, jsd, jed, km, npx, npy, 
     real, allocatable, dimension (:,:) :: dz, zm, zi, wa, dp, pm, pi, pmk, pik, qv, ql, qr, ta, uu, vv, ww, radh
 
     real, allocatable, dimension (:,:,:) :: u_dt, v_dt, dp0, u0, v0, qa
+    
+    real, allocatable, dimension (:,:,:) :: deform_1h, deform_1v
+
+    real, allocatable, dimension (:,:) :: def_1h, def_1v
 
     real (kind = r8), allocatable, dimension (:) :: tz
 
@@ -500,6 +509,11 @@ subroutine intermediate_phys (is, ie, js, je, isd, ied, jsd, jed, km, npx, npy, 
         allocate (u_dt (isd:ied, jsd:jed, km))
         allocate (v_dt (isd:ied, jsd:jed, km))
 
+        allocate (deform_1h (isd:ied, jsd:jed, km))
+        allocate (deform_1v (isd:ied, jsd:jed, km))
+        allocate (def_1h (is:ie, 1:km))
+        allocate (def_1v (is:ie, 1:km))
+
         ! initialize wind tendencies
         do k = 1, km
             do j = jsd, jed
@@ -528,7 +542,20 @@ subroutine intermediate_phys (is, ie, js, je, isd, ied, jsd, jed, km, npx, npy, 
             dp0 = delp
         endif
 
+        ! 3D-TKE budget terms
+        if (do_3dtke) then
+            call mpp_update_domains(ua, va, domain, gridtype=AGRID)
+            call mpp_update_domains(u , v , domain, gridtype=DGRID_NE)
+            call mpp_update_domains(w, domain)
+
+            call cal_3d_tke_budget(u, v, ua, va, w, &
+                                   delz, km, ak, bk, gridstruct, bd, &
+                                   deform_1h, deform_1v)
+
+        endif
+
 !$OMP parallel do default (none) shared (is, ie, js, je, isd, jsd, km, nq, ua, va, w, &
+!$OMP                                    do_3dtke, deform_1h, deform_1v, &
 !$OMP                                    te, delp, hydrostatic, hs, pt, delz, q_con, &
 !$OMP                                    rainwat, liq_wat, ice_wat, snowwat, graupel, &
 !$OMP                                    sphum, pkz, consv, te0_2d, gridstruct, q, &
@@ -537,7 +564,7 @@ subroutine intermediate_phys (is, ie, js, je, isd, ied, jsd, jed, km, npx, npy, 
 !$OMP                                    adj_mass_vmr, conv_vmr_mmr, consv_checker, &
 !$OMP                                    te_err, tw_err, inline_pbl_flag, thermostruct) &
 !$OMP                           private (gsize, dz, zi, pi, pik, pmk, lsoil, pe, &
-!$OMP                                    zm, dp, pm, ta, uu, vv, qliq, qsol, qa, adj_vmr, &
+!$OMP                                    zm, dp, pm, ta, uu, vv, def_1h, def_1v, qliq, qsol, qa, adj_vmr, &
 !$OMP                                    radh, rb, u10m, v10m, sigmaf, vegtype, q_liq, &
 !$OMP                                    stress, wind, kinver, q_sol, c_moist, peln, &
 !$OMP                                    cvm, kr, dqv, dql, dqi, dqr, dqs, dqg, ps_dt, &
@@ -649,6 +676,8 @@ subroutine intermediate_phys (is, ie, js, je, isd, ied, jsd, jed, km, npx, npy, 
                 uu (is:ie, k) = ua (is:ie, j, kr)
                 vv (is:ie, k) = va (is:ie, j, kr)
                 qa (is:ie, k, 1:nq) = q (is:ie, j, kr, 1:nq)
+                def_1h (is:ie, k) = deform_1h (is:ie, j, kr)
+                def_1v (is:ie, k) = deform_1v (is:ie, j, kr)
                 radh (is:ie, k) = inline_pbl%radh (is:ie, j, kr)
                 c_moist = (1 - (q (is:ie, j, kr, sphum) + q_liq + q_sol)) * cv_air + &
                     q (is:ie, j, kr, sphum) * cv_vap + q_liq * c_liq + q_sol * c_ice
@@ -693,7 +722,7 @@ subroutine intermediate_phys (is, ie, js, je, isd, ied, jsd, jed, km, npx, npy, 
                 enddo
             endif
 
-            if (inline_pbl_flag .eq. 1) then
+            if (inline_pbl_flag .eq. 1) then 
                 ! diagnose surface variables for PBL parameterization
                 call sa_tke_edmf_sfc (ie-is+1, lsoil, pi (is:ie, 1), uu (is:ie, 1), &
                     vv (is:ie, 1), ta (is:ie, 1), qa (is:ie, 1, sphum), &
@@ -714,17 +743,33 @@ subroutine intermediate_phys (is, ie, js, je, isd, ied, jsd, jed, km, npx, npy, 
                     inline_pbl%ep (is:ie, j), u10m_out = u10m, v10m_out = v10m, &
                     rb_out = rb, stress_out = stress, wind_out = wind)
 
-                ! SA-TKE-EDMF main program
-                call sa_tke_edmf_pbl (ie-is+1, km, nq, liq_wat, ice_wat, ntke, &
-                    abs (mdt), uu, vv, ta, qa, gsize, inline_pbl%lsm (is:ie, j), &
-                    radh, rb, inline_pbl%zorl (is:ie, j), u10m, v10m, &
-                    inline_pbl%ffmm (is:ie, j), inline_pbl%ffhh (is:ie, j), &
-                    inline_pbl%tsfc (is:ie, j), inline_pbl%hflx (is:ie, j), &
-                    inline_pbl%evap (is:ie, j), stress, wind, kinver, &
-                    pik (is:ie, 1), dp, pi, pm, pmk, zi, zm, &
-                    inline_pbl%hpbl (is:ie, j), inline_pbl%kpbl (is:ie, j))
-                    !inline_pbl%dusfc (is:ie, j), inline_pbl%dvsfc (is:ie, j), &
-                    !inline_pbl%dtsfc (is:ie, j), inline_pbl%dqsfc (is:ie, j))
+                    ! SA-TKE-EDMF main program
+                    if ( do_3dtke ) then
+                       call sa_tke_edmf_pbl (ie-is+1, km, nq, liq_wat, ice_wat, ntke, &
+                           abs (mdt), uu, vv, ta, qa, &
+                           gsize, inline_pbl%lsm (is:ie, j), &
+                           radh, rb, inline_pbl%zorl (is:ie, j), u10m, v10m, &
+                           inline_pbl%ffmm (is:ie, j), inline_pbl%ffhh (is:ie, j), &
+                           inline_pbl%tsfc (is:ie, j), inline_pbl%hflx (is:ie, j), &
+                           inline_pbl%evap (is:ie, j), stress, wind, kinver, &
+                           pik (is:ie, 1), dp, pi, pm, pmk, zi, zm, &
+                           inline_pbl%hpbl (is:ie, j), inline_pbl%kpbl (is:ie, j), &
+                           shr3d_h = def_1h, shr3d_v = def_1v)
+                           !inline_pbl%dusfc (is:ie, j), inline_pbl%dvsfc (is:ie, j), &
+                           !inline_pbl%dtsfc (is:ie, j), inline_pbl%dqsfc (is:ie, j))
+                    else 
+                       call sa_tke_edmf_pbl (ie-is+1, km, nq, liq_wat, ice_wat, ntke, &
+                            abs (mdt), uu, vv, ta, qa, &
+                            gsize, inline_pbl%lsm (is:ie, j), &
+                            radh, rb, inline_pbl%zorl (is:ie, j), u10m, v10m, &
+                            inline_pbl%ffmm (is:ie, j), inline_pbl%ffhh (is:ie, j), &
+                            inline_pbl%tsfc (is:ie, j), inline_pbl%hflx (is:ie, j), &
+                            inline_pbl%evap (is:ie, j), stress, wind, kinver, &
+                            pik (is:ie, 1), dp, pi, pm, pmk, zi, zm, &
+                            inline_pbl%hpbl (is:ie, j), inline_pbl%kpbl (is:ie, j))
+                            !inline_pbl%dusfc (is:ie, j), inline_pbl%dvsfc (is:ie, j), &
+                            !inline_pbl%dtsfc (is:ie, j), inline_pbl%dqsfc (is:ie, j))
+                    endif
 
             elseif (inline_pbl_flag .eq. 2) then
                 ! diagnose surface variables for PBL parameterization

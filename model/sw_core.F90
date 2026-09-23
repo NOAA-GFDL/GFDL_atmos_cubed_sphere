@@ -21,11 +21,11 @@
 
 module sw_core_mod
 
- use tp_core_mod,       only: fv_tp_2d, pert_ppm, copy_corners
- use fv_mp_mod, only: fill_corners, XDir, YDir
+ use tp_core_mod, only: fv_tp_2d, pert_ppm, copy_corners
+ use fv_mp_mod, only: fill_corners, XDir, YDir, is_master
  use fv_arrays_mod, only: fv_grid_type, fv_grid_bounds_type, fv_flags_type
  use a2b_edge_mod, only: a2b_ord4
- use mpp_mod, only: mpp_pe !DEBUG
+ use mpp_mod, only: mpp_pe, mpp_error, FATAL
 
 #ifdef SW_DYNAMICS
  use test_cases_mod,   only: test_case
@@ -68,10 +68,10 @@ module sw_core_mod
   real, parameter:: b3 = -13./60.
   real, parameter:: b4 =  0.45
   real, parameter:: b5 = -0.05
-  real, parameter :: smag_scalar = r3
+  real, parameter :: smag_scalar = r3 ! TODO: make this a namelist
 
-      private
-      public :: c_sw, d_sw, fill_4corners, del6_vt_flux, divergence_corner, divergence_corner_nest
+  private
+  public :: c_sw, d_sw, fill_4corners, del6_vt_flux, divergence_corner, divergence_corner_nest
 
   contains
 
@@ -496,8 +496,9 @@ module sw_core_mod
                    crx_adv, cry_adv,  xfx_adv, yfx_adv, q_con, z_rat, kgb, heat_source,    &
                    diss_est, zvir, sphum, nq, q, k, km, inline_q,  &
                    dt, hord_tr, hord_mt, hord_vt, hord_tm, hord_dp, nord,   &
-                   nord_v, nord_w, nord_t, dddmp, d2_bg, d4_bg, damp_v, damp_w, &
-                   damp_t, d_con, hydrostatic, gridstruct, flagstruct, use_cond, bd)
+                   nord_v, nord_w, nord_t, & 
+                   d2_bg, d4_bg, damp_v, damp_w, &
+                   damp_t, d_con, hydrostatic, gridstruct, flagstruct, use_cond, bd, tke)
 
       integer, intent(IN):: hord_tr, hord_mt, hord_vt, hord_tm, hord_dp
       integer, intent(IN):: nord   ! nord=1 divergence damping; (del-4) or 3 (del-8)
@@ -505,7 +506,7 @@ module sw_core_mod
       integer, intent(IN):: nord_w ! vertical velocity
       integer, intent(IN):: nord_t ! pt
       integer, intent(IN):: sphum, nq, k, km
-      real   , intent(IN):: dt, dddmp, d2_bg, d4_bg, d_con
+      real   , intent(IN):: dt, d2_bg, d4_bg, d_con
       real   , intent(IN):: zvir
       real   , intent(IN):: damp_v, damp_w, damp_t, kgb
       logical, intent(IN):: use_cond
@@ -532,6 +533,7 @@ module sw_core_mod
       real, intent(OUT), dimension(bd%isd:bd%ied,bd%js:bd%je+1):: cry_adv, yfx_adv
       type(fv_grid_type), intent(IN), target :: gridstruct
       type(fv_flags_type), intent(IN), target :: flagstruct
+      real, intent(INOUT), optional :: tke(bd%isd:bd%ied,  bd%jsd:bd%jed) 
 ! Local:
       logical:: sw_corner, se_corner, ne_corner, nw_corner
       real :: ut(bd%isd:bd%ied+1,bd%jsd:bd%jed)
@@ -561,6 +563,9 @@ module sw_core_mod
       real :: u_lon, tmp
       integer :: i,j, is2, ie1, js2, je1, n, nt, n2, iq
       logical :: prevent_diss_cooling
+      integer :: damp_flag
+      real    :: cs
+      real, parameter :: tkemin = 0.001
 
       real, pointer, dimension(:,:) :: area, area_c, rarea
 
@@ -622,6 +627,8 @@ module sw_core_mod
       ne_corner = gridstruct%ne_corner
 
       prevent_diss_cooling = flagstruct%prevent_diss_cooling
+      damp_flag = flagstruct%damp_flag
+      cs = flagstruct%cs
 
 #ifdef SW_DYNAMICS
       if ( test_case == 1 ) then
@@ -916,8 +923,38 @@ module sw_core_mod
          enddo
       enddo
 
-      call fv_tp_2d(delp, crx_adv, cry_adv, npx, npy, hord_dp, fx, fy,  &
+      ! get diffusion coefficient to be used for 2nd order damping/diffusion of 
+      ! the physical fields defined at cell centers (e.g., potential temp., vorticity, etc)
+
+      if (damp_flag .eq. 1 .and. cs > 1.e-5) then ! Lucas's updated smag-type diffusion
+         ! smag_q is dt * sqrt(T**2 + S**2); du/dz and dv/dz not considered yet 
+         if (flagstruct%grid_type<3 .and. .not. bounded_domain .and. &
+              ( sw_corner .or. se_corner .or. ne_corner .or. nw_corner ) ) call fill_corners(u, v, npx, npy, VECTOR=.true., DGRID=.true.)
+         call smag_cell(abs(dt), u, v, smag_q, bd, npx, npy, gridstruct, ng, cs)
+
+      elseif (damp_flag .eq. 2 .and. cs > 1.e-5) then ! tke-based
+         if ( .not. present(tke) ) call mpp_error(FATAL,'tke not defined but using tke-based damping') 
+         do j = jsd, jed
+            do i = isd, ied
+               ! smag_q is dt * sqrt(e) / sqrt (A)
+               ! cs * smag_q should be no larger than 0.2
+               smag_q(i,j) = min(0.2/cs, abs(dt)*sqrt(max(tke(i,j),tkemin))/sqrt(gridstruct%da_min))
+            enddo
+         enddo
+
+      else
+         smag_q(:,:) = 0.
+      endif
+
+      ! apply 2nd order damping to delp via calling fv_tp_2d
+      if (damp_flag .gt. 0 .and. cs > 1.e-5) then
+        call fv_tp_2d(delp, crx_adv, cry_adv, npx, npy, hord_dp, fx, fy,  &
+                    xfx_adv,yfx_adv, gridstruct, bd, ra_x, ra_y, flagstruct%lim_fac, nord=nord_v, damp_c=damp_v, &
+                    damp_smag=cs, damp_Km=smag_q)
+      else 
+        call fv_tp_2d(delp, crx_adv, cry_adv, npx, npy, hord_dp, fx, fy,  &
                     xfx_adv,yfx_adv, gridstruct, bd, ra_x, ra_y, flagstruct%lim_fac, nord=nord_v, damp_c=damp_v)
+      endif
 
 ! <<< Save the mass fluxes to the "Flux Capacitor" for tracer transport >>>
         do j=jsd,jed
@@ -948,10 +985,25 @@ module sw_core_mod
         enddo
 
         if ( .not. hydrostatic ) then
-            if ( damp_w>1.E-5 ) then
-               dd8 = kgb*abs(dt)
-               damp4 = (damp_w*gridstruct%da_min_c)**(nord_w+1)
-               call del6_vt_flux(nord_w, npx, npy, damp4, w, wk, fx2, fy2, gridstruct, bd)
+           if ( damp_w>1.E-5 ) then
+              dd8 = kgb*abs(dt)
+              damp4 = (damp_w*gridstruct%da_min_c)**(nord_w+1)
+              call del6_vt_flux(nord_w, npx, npy, damp4, w, wk, fx2, fy2, gridstruct, bd)
+           else 
+              fx2 = 0.
+              fy2 = 0. 
+           endif
+
+           ! apply 2nd order damping to w
+           ! ensure the 2nd diffusive fluxes do not override the diffusive flux above
+           if ( damp_flag .gt. 0 .and. cs > 1.e-5 ) then
+              damp4 = cs * gridstruct%da_min_c
+              call del6_vt_flux(0, npx, npy, damp4, w, wk, fx3, fy3, gridstruct, bd, damp_Km=smag_q)
+              fx2 = fx2 + fx3 
+              fy2 = fy2 + fy3 
+           endif
+
+           if ( damp_w > 1.e-5 .or. ( damp_flag .gt. 0 .and. cs > 1.e-5 )) then
                if (prevent_diss_cooling) then
                   do j=js,je
                   do i=is,ie
@@ -1007,13 +1059,17 @@ module sw_core_mod
 !       enddo
 !    endif
 #if defined(GFS_PHYS) || defined(DCMIP)
+        ! apply damping to pt via calling fv_tp_2d
+        ! there are two steps involved:
+        ! - first is the higher-order damping using vtdm4,
+        ! - second is the 2nd order damping (scaled by smag_scalar)
         call fv_tp_2d(pt, crx_adv,cry_adv, npx, npy, hord_tm, gx, gy,  &
                       xfx_adv,yfx_adv, gridstruct, bd, ra_x, ra_y, flagstruct%lim_fac, &
-                      mfx=fx, mfy=fy, mass=delp, nord=nord_v, damp_c=damp_v) !SHiELD
+                      mfx=fx, mfy=fy, mass=delp, nord=nord_v, damp_c=damp_v, damp_smag=cs*smag_scalar, damp_Km=smag_q) !SHiELD
 #else
         call fv_tp_2d(pt, crx_adv,cry_adv, npx, npy, hord_tm, gx, gy,  &
                       xfx_adv,yfx_adv, gridstruct, bd, ra_x, ra_y, flagstruct%lim_fac, &
-                      mfx=fx, mfy=fy, mass=delp, nord=nord_t, damp_c=damp_t) !AM4
+                      mfx=fx, mfy=fy, mass=delp, nord=nord_t, damp_c=damp_t, damp_smag=cs*smag_scalar, damp_Km=smag_q) !AM4
 #endif
 #endif
 
@@ -1031,9 +1087,17 @@ module sw_core_mod
            enddo
         enddo
         do iq=1,nq
-           call fv_tp_2d(q(isd,jsd,k,iq), crx_adv,cry_adv, npx, npy, hord_tr, gx, gy,  &
+           ! apply 2nd-order TKE-based damping to tracers via calling fv_tp_2d
+           if (damp_flag .eq. 2 .and. cs > 1.e-5) then
+              call fv_tp_2d(q(isd,jsd,k,iq), crx_adv,cry_adv, npx, npy, hord_tr, gx, gy,  &
+                         xfx_adv,yfx_adv, gridstruct, bd, ra_x, ra_y, flagstruct%lim_fac, &
+                         mfx=fx, mfy=fy, mass=delp, nord=nord_t, damp_c=damp_t, damp_smag=cs*smag_scalar, damp_Km=smag_q)
+           else
+              call fv_tp_2d(q(isd,jsd,k,iq), crx_adv,cry_adv, npx, npy, hord_tr, gx, gy,  &
                          xfx_adv,yfx_adv, gridstruct, bd, ra_x, ra_y, flagstruct%lim_fac, &
                          mfx=fx, mfy=fy, mass=delp, nord=nord_t, damp_c=damp_t)
+           endif
+
            do j=js,je
               do i=is,ie
                  q(i,j,k,iq) = (q(i,j,k,iq)*wk(i,j) +               &
@@ -1265,7 +1329,7 @@ module sw_core_mod
                enddo
             enddo
         endif
-        if ( damp_w>1.E-5 ) then
+        if ( damp_w>1.E-5 .or. ( damp_flag .gt. 0 .and. cs > 1.e-5 ) ) then
           do j=js,je
              do i=is,ie
                 w(i,j) = w(i,j) + dw(i,j)
@@ -1285,7 +1349,7 @@ module sw_core_mod
 !-----------------------------
 ! Compute divergence damping
 !-----------------------------
-!  damp = dddmp * da_min_c
+!  damp = cs * da_min_c
 
    if ( nord==0 ) then
 !         area ~ dxb*dyb*sin(alpha)
@@ -1364,7 +1428,7 @@ module sw_core_mod
       do j=js,je+1
          do i=is,ie+1
             delpc(i,j) = gridstruct%rarea_c(i,j)*delpc(i,j)
-                damp = gridstruct%da_min_c*max(d2_bg, min(0.20, dddmp*abs(delpc(i,j)*dt)))
+                damp = gridstruct%da_min_c*max(d2_bg, min(0.20, cs*abs(delpc(i,j)*dt))) ! dddmp->cs
                 vort(i,j) = damp*delpc(i,j)
                 ke(i,j) = ke(i,j) + vort(i,j)
          enddo
@@ -1425,23 +1489,6 @@ module sw_core_mod
 
      enddo ! n-loop
 
-     if ( dddmp<1.E-5) then
-          vort(:,:) = 0.
-     else
-      if ( flagstruct%grid_type < 3 ) then
-! Interpolate relative vort to cell corners
-          call a2b_ord4(wk, vort, gridstruct, npx, npy, is, ie, js, je, ng, .false.)
-          do j=js,je+1
-             do i=is,ie+1
-! The following is an approxi form of Smagorinsky diffusion
-                vort(i,j) = abs(dt)*sqrt(delpc(i,j)**2 + vort(i,j)**2)
-             enddo
-          enddo
-      else  ! Correct form: works only for doubly preiodic domain
-          call smag_corner(abs(dt), u, v, ua, va, vort, bd, npx, npy, gridstruct, ng)
-      endif
-     endif
-
      if (gridstruct%stretched_grid ) then
 ! Stretched grid with variable damping ~ area
          dd8 = gridstruct%da_min * d4_bg**n2
@@ -1449,13 +1496,74 @@ module sw_core_mod
          dd8 = ( gridstruct%da_min_c*d4_bg )**n2
      endif
 
-     do j=js,je+1
-        do i=is,ie+1
-           damp2 =  gridstruct%da_min_c*max(d2_bg, min(0.20, dddmp*vort(i,j)))  ! del-2
+! KGao: redesign the 2nd order damping
+! 
+! - about the damping coeff:
+!   - damp2 is a coeff (dt * Km) to be used together with horizontal divergence (D or delpc) for 2nd order divergence damping 
+!   - for smag type: Km = cs * l^2 * sqrt(T^2+S^2); cs * dt * sqrt(T^2+S^2) is capped at 0.2 
+!       damp2 = cs * A * vort, 
+!       where vort  = dt * sqrt(T^2+S^2) and it is dimensionless
+!   - for TKE based: Km = cs * l * sqrt(e) 
+!
+! - about the damping tendency:
+!   - Let's define term = damp2 * D = dt * Km * D; then 1/dx * (term[i+1,j] - term[i,j]) becomes a momentum tendency term [m/s^2]
+!   - ke(i,j) = ke(i,j) + vort(i,j); ke here combines ke and damp2 * D
+!   - u(i,j) = ... + ke(i,j) - ke(i+1,j) ; no 1/dx factor, because u is u*dx here 
+
+     if (damp_flag .eq. 0 .or. damp_flag .eq. 1) then ! original method
+
+        if ( cs < 1.e-5) then  ! dddmp -> cs
+           vort(:,:) = 0.
+        else
+           if ( flagstruct%grid_type < 3 ) then
+              ! vort below is relative vort at cell corners
+              call a2b_ord4(wk, vort, gridstruct, npx, npy, is, ie, js, je, ng, .false.)
+              do j = js, je+1
+                 do i = is, ie+1
+                    ! vort below is only an approxi form of dt * sqrt(T^2+S^2)
+                    vort(i,j) = abs(dt)*sqrt(delpc(i,j)**2 + vort(i,j)**2)
+                 enddo
+              enddo
+           else  
+              ! vort below is the correct form
+              call smag_corner(abs(dt), u, v, ua, va, vort, bd, npx, npy, gridstruct, ng)
+           endif
+        endif
+
+        do j = js, je+1
+           do i = is, ie+1
+              damp2 = gridstruct%da_min_c*max(d2_bg, min(0.20, cs*vort(i,j)))
+              vort(i,j) = damp2*delpc(i,j) + dd8*divg_d(i,j)
+              ke(i,j) = ke(i,j) + vort(i,j)
+           enddo
+        enddo
+
+     elseif (damp_flag .eq. 2) then ! tke-based
+
+        ! get new tke-based damping coeff at cell corners, where divergence is defined
+
+        ! vort below is the tke at cell corners
+        call a2b_ord4(tke, vort, gridstruct, npx, npy, is, ie, js, je, ng, .false.)
+        do j = js, je+1
+           do i = is, ie+1
+              ! vort below is the damping coeff at cell corners
+              vort(i,j) = min(0.2/cs, abs(dt)*sqrt(max(vort(i,j),tkemin))/sqrt(gridstruct%da_min_c))
+              damp2 = gridstruct%da_min_c * max( d2_bg, cs*vort(i,j) )
+              vort(i,j) = damp2*delpc(i,j) + dd8*divg_d(i,j)
+              ke(i,j) = ke(i,j) + vort(i,j)
+           enddo
+        enddo
+
+     else
+        if (is_master()) print*, 'Warning: the damp_flag parameter is not valid !!!' 
+        damp2 = 0.
+        do j = js, je+1
+          do i = is, ie+1
            vort(i,j) = damp2*delpc(i,j) + dd8*divg_d(i,j)
              ke(i,j) = ke(i,j) + vort(i,j)
+          enddo
         enddo
-     enddo
+     endif ! end of the new 2nd order damping
 
    endif
 
@@ -1513,10 +1621,19 @@ module sw_core_mod
    if ( damp_v>1.E-5 ) then
         damp4 = (damp_v*gridstruct%da_min_c)**(nord_v+1)
         call del6_vt_flux(nord_v, npx, npy, damp4, wk, vort, ut, vt, gridstruct, bd)
-   elseif (flagstruct%do_diss_est) then
-        ut=0.
-        vt=0.
+   else !elseif (flagstruct%do_diss_est) then
+        ut = 0.
+        vt = 0.
    endif
+
+   ! apply 2nd order damping to vorticity via calling del6_vt_flux
+   ! this is an additional step after the higher-order damping using vtdm4
+   if ( damp_flag .gt. 0 .and. cs > 1.e-5) then
+       damp4 = cs * gridstruct%da_min_c
+       call del6_vt_flux(0, npx, npy, damp4, wk, vort, fx3, fy3, gridstruct, bd, damp_Km=smag_q)
+       ut = ut + fx3
+       vt = vt + fy3
+    endif
 
    !estimate dissipation for dissipative heating
    ! or dissipation estimate diagnostic
@@ -1586,7 +1703,7 @@ module sw_core_mod
    endif !  d_con > 1.e-5 .or. flagstruct%do_diss_est 
 
 ! Add diffusive fluxes to the momentum equation:
-   if ( damp_v>1.E-5 ) then
+   if ( damp_v>1.E-5 .or. ( damp_flag .gt. 0 .and. cs > 1.e-5 )) then
       do j=js,je+1
          do i=is,ie
             u(i,j) = u(i,j) + vt(i,j)
@@ -1723,12 +1840,12 @@ module sw_core_mod
    if (present(damp_Km)) then !Coefficient multiplied in earlier
       do j=js,je
          do i=is,ie+1
-            fx2(i,j) = fx2(i,j)*0.5*damp_km(i,j)
+            fx2(i,j) = fx2(i,j)*0.5*(damp_km(i-1,j)+damp_km(i,j))
          enddo
       enddo
       do j=js,je+1
          do i=is,ie
-            fy2(i,j) = fy2(i,j)*0.5*damp_km(i,j)
+            fy2(i,j) = fy2(i,j)*0.5*(damp_km(i,j-1)+damp_km(i,j))
          enddo
       enddo
 
@@ -1935,8 +2052,12 @@ end subroutine divergence_corner_nest
 
 
  subroutine smag_corner(dt, u, v, ua, va, smag_c, bd, npx, npy, gridstruct, ng)
-! Compute the Tension_Shear strain at cell corners for Smagorinsky diffusion
-!!!  work only if (grid_type==4)
+! Compute the cell-corner Smagorinsky diffusion coefficients
+! works only if (grid_type==4) (need to add corner handling on cubed sphere)
+
+! Smag = sqrt [ T**2 + S**2 ]:  unit = 1/s
+! where T = du/dx - dv/dy;   S = du/dy + dv/dx
+
  type(fv_grid_bounds_type), intent(IN) :: bd
  real, intent(in):: dt
  integer, intent(IN) :: npx, npy, ng
@@ -1975,71 +2096,69 @@ end subroutine divergence_corner_nest
  rarea   => gridstruct%rarea
  rarea_c => gridstruct%rarea_c
 
-  is2 = max(2,is); ie1 = min(npx-1,ie+1)
+ is2 = max(2,is); ie1 = min(npx-1,ie+1)
 
-! Smag = sqrt [ T**2 + S**2 ]:  unit = 1/s
-! where T = du/dx - dv/dy;   S = du/dy + dv/dx
-! Compute tension strain at corners:
-       do j=js,je+1
-          do i=is-1,ie+1
-             ut(i,j) = u(i,j)*dyc(i,j)
-          enddo
-       enddo
-       do j=js-1,je+1
-          do i=is,ie+1
-             vt(i,j) = v(i,j)*dxc(i,j)
-          enddo
-       enddo
-       do j=js,je+1
-          do i=is,ie+1
-             smag_c(i,j) = rarea_c(i,j)*(vt(i,j-1)-vt(i,j)-ut(i-1,j)+ut(i,j))
-          enddo
-       enddo
-! Fix the corners?? if grid_type /= 4
+! Compute tension strain T at corners
+ do j=js,je+1
+    do i=is-1,ie+1
+       ut(i,j) = u(i,j)*dyc(i,j)
+    enddo
+ enddo
+ do j=js-1,je+1
+    do i=is,ie+1
+       vt(i,j) = v(i,j)*dxc(i,j)
+    enddo
+ enddo
+ do j=js,je+1
+    do i=is,ie+1
+       smag_c(i,j) = rarea_c(i,j)*(vt(i,j-1)-vt(i,j)-ut(i-1,j)+ut(i,j))
+    enddo
+ enddo
 
-! Compute shear strain:
-       do j=jsd,jed+1
-          do i=isd,ied
-             vt(i,j) = u(i,j)*dx(i,j)
-          enddo
-       enddo
-       do j=jsd,jed
-          do i=isd,ied+1
-             ut(i,j) = v(i,j)*dy(i,j)
-          enddo
-       enddo
+! Compute cell-mean shear strain S
+  do j=jsd,jed+1
+     do i=isd,ied
+        vt(i,j) = u(i,j)*dx(i,j)
+     enddo
+  enddo
+  do j=jsd,jed
+     do i=isd,ied+1
+        ut(i,j) = v(i,j)*dy(i,j)
+     enddo
+  enddo
+  do j=jsd,jed
+     do i=isd,ied
+        wk(i,j) = rarea(i,j)*(vt(i,j)-vt(i,j+1)+ut(i,j)-ut(i+1,j))
+    enddo
+  enddo
 
-       do j=jsd,jed
-          do i=isd,ied
-             wk(i,j) = rarea(i,j)*(vt(i,j)-vt(i,j+1)+ut(i,j)-ut(i+1,j))
-          enddo
-       enddo
-       call a2b_ord4(wk, sh, gridstruct, npx, npy, is, ie, js, je, ng, .false.)
-       do j=js,je+1
-          do i=is,ie+1
-             smag_c(i,j) = dt*sqrt( sh(i,j)**2 + smag_c(i,j)**2 )
-          enddo
-       enddo
+! Interpolate cell-mean S to cell corners
+  call a2b_ord4(wk, sh, gridstruct, npx, npy, is, ie, js, je, ng, .false.)
+
+  do j=js,je+1
+     do i=is,ie+1
+        smag_c(i,j) = dt*sqrt( sh(i,j)**2 + smag_c(i,j)**2 )
+     enddo
+  enddo
 
  end subroutine smag_corner
 
+ subroutine smag_cell(dt, u, v, smag_q, bd, npx, npy, gridstruct, ng, smag2d, dudz, dvdz)
+! Compute the cell-mean Smagorinsky diffusion coefficients
+! works only if (grid_type==4) (need to add corner handling on cubed sphere)
 
- subroutine smag_cell(dt, u, v, ua, va, smag_q, bd, npx, npy, gridstruct, ng, do_smag, dudz, dvdz, smag2d)
-! Compute the cell-mean Tension_Shear strain for Smagorinsky diffusion
-!!!  works only if (grid_type==4) (need to add corner handling on cubed sphere)
-!!! Next want to add in vertical shear terms
-   !!! To complete the calculation
+! Smag = sqrt [ T**2 + S**2 ]:  unit = 1/s
+! where T = du/dx - dv/dy;   S = du/dy + dv/dx
+
  type(fv_grid_bounds_type), intent(IN) :: bd
  real, intent(in):: dt, smag2d
  integer, intent(IN) :: npx, npy, ng
  real, intent(in),  dimension(bd%isd:bd%ied,  bd%jsd:bd%jed+1):: u
  real, intent(in),  dimension(bd%isd:bd%ied+1,bd%jsd:bd%jed  ):: v
- real, intent(in),  dimension(bd%isd:bd%ied,bd%jsd:bd%jed):: ua, va
  real, intent(out), dimension(bd%isd:bd%ied,bd%jsd:bd%jed):: smag_q
  type(fv_grid_type), intent(IN), target :: gridstruct
- logical, intent(in) :: do_smag
- real , intent(IN) :: dudz(bd%isd:bd%ied,  bd%jsd:bd%jed+1)
- real , intent(IN) :: dvdz(bd%isd:bd%ied+1,bd%jsd:bd%jed)
+ real , intent(IN), optional :: dudz(bd%isd:bd%ied,  bd%jsd:bd%jed+1)
+ real , intent(IN), optional :: dvdz(bd%isd:bd%ied+1,bd%jsd:bd%jed)
 
 ! local
  real:: ut(bd%isd:bd%ied+1,bd%jsd:bd%jed)
@@ -2072,81 +2191,75 @@ end subroutine divergence_corner_nest
  rarea   => gridstruct%rarea
  rarea_c => gridstruct%rarea_c
 
-  is2 = max(2,is); ie1 = min(npx-1,ie+1)
+ is2 = max(2,is); ie1 = min(npx-1,ie+1)
 
-  if (smag2d > 1.e-3) then
-     smag_limit = 0.20/smag2d
-  elseif (do_smag) then
-     smag_q = 0.0
-     return
-  endif
+ if (smag2d > 1.e-5) then
+    smag_limit = 0.20/smag2d
+ else
+    smag_q = 0.0
+    return
+ endif
 
-! Smag = sqrt [ T**2 + S**2 ]:  unit = 1/s
-! where T = du/dx - dv/dy;   S = du/dy + dv/dx
-! Compute tension strain at corners:
-       do j=js-1,je+2
-          do i=is-2,ie+2
-             ut(i,j) = u(i,j)*dyc(i,j)
-          enddo
-       enddo
-       do j=js-2,je+2
-          do i=is-1,ie+2
-             vt(i,j) = v(i,j)*dxc(i,j)
-          enddo
-       enddo
-       do j=js-1,je+2
-          do i=is-1,ie+2
-             wk(i,j) = rarea_c(i,j)*(vt(i,j-1)-vt(i,j)-ut(i-1,j)+ut(i,j))
-          enddo
-       enddo
-! Fix the corners?? if grid_type /= 4
-       do j=js-1,je+1
-          do i=is-1,ie+1
-             smag_q(i,j) = 0.25*(wk(i,j) + wk(i,j+1) + wk(i+1,j) + wk(i+1,j+1))
-          enddo
-       enddo
+! Compute tension strain T at corners and then the 4-corner mean
+ do j=js-1,je+2
+    do i=is-2,ie+2
+       ut(i,j) = u(i,j)*dyc(i,j)
+    enddo
+ enddo
+ do j=js-2,je+2
+    do i=is-1,ie+2
+       vt(i,j) = v(i,j)*dxc(i,j)
+    enddo
+ enddo
+ do j=js-1,je+2
+    do i=is-1,ie+2
+       wk(i,j) = rarea_c(i,j)*(vt(i,j-1) - vt(i,j) - ut(i-1,j) + ut(i,j))
+    enddo
+ enddo
 
-       if (do_smag) then
-          do j=js-1,je+1
-             do i=is-1,ie+1
-                smag_q(i,j) = smag_q(i,j) - 0.5*(dvdz(i,j-1)+dvdz(i,j))
-                smag_q(i,j) = smag_q(i,j) + 0.5*(dudz(i-1,j)+dudz(i,j))
-             enddo
-          enddo
-       endif
+ do j=js-1,je+1
+    do i=is-1,ie+1
+       smag_q(i,j) = 0.25*(wk(i,j) + wk(i,j+1) + wk(i+1,j) + wk(i+1,j+1))
+    enddo
+ enddo
 
-! Compute shear strain:
-       do j=js-1,je+2
-          do i=is-1,ie+1
-             vt(i,j) = u(i,j)*dx(i,j)
-          enddo
-       enddo
-       do j=js-1,je+1
-          do i=is-1,ie+2
-             ut(i,j) = v(i,j)*dy(i,j)
-          enddo
-       enddo
+! Compute shear strain S
+ do j=js-1,je+2
+    do i=is-1,ie+1
+       vt(i,j) = u(i,j)*dx(i,j)
+    enddo
+ enddo
+ do j=js-1,je+1
+    do i=is-1,ie+2
+       ut(i,j) = v(i,j)*dy(i,j)
+    enddo
+ enddo
 
-       do j=js-1,je+1
-          do i=is-1,ie+1
-             wk(i,j) = rarea(i,j)*(vt(i,j)-vt(i,j+1)+ut(i,j)-ut(i+1,j))
-          enddo
+ do j=js-1,je+1
+    do i=is-1,ie+1
+       wk(i,j) = rarea(i,j)*(vt(i,j) - vt(i,j+1) + ut(i,j) - ut(i+1,j))
+    enddo
+ enddo
+
+ ! KGao: This scheme can be further expanded to consider the vertical wind shear; 
+ !       currently note used and we need to confirm the signs below are correct
+ if ( present(dudz) .and. present(dvdz) ) then
+     do j=js-1,je+1
+        do i=is-1,ie+1
+           smag_q(i,j) = smag_q(i,j) - 0.5*(dvdz(i,j-1)+dvdz(i,j))
+           smag_q(i,j) = smag_q(i,j) + 0.5*(dudz(i-1,j)+dudz(i,j))
+           wk(i,j) = wk(i,j) - 0.5*(dvdz(i-1,j)+dvdz(i,j))
+           wk(i,j) = wk(i,j) - 0.5*(dudz(i,j-1)+dudz(i,j))
+           smag_q(i,j) = min(dt*sqrt( wk(i,j)**2 + smag_q(i,j)**2 ), smag_limit)
        enddo
-       if (do_smag) then
-          do j=js-1,je+1
-             do i=is-1,ie+1
-                wk(i,j) = wk(i,j) - 0.5*(dvdz(i-1,j)+dvdz(i,j))
-                wk(i,j) = wk(i,j) - 0.5*(dudz(i,j-1)+dudz(i,j))
-                smag_q(i,j) = min(dt*sqrt( wk(i,j)**2 + smag_q(i,j)**2 ), smag_limit)
-             enddo
-          enddo
-       else
-          do j=js-1,je+1
-             do i=is-1,ie+1
-                smag_q(i,j) = dt*sqrt( wk(i,j)**2 + smag_q(i,j)**2 )
-             enddo
-          enddo
-       endif
+    enddo
+ else
+    do j=js-1,je+1
+       do i=is-1,ie+1
+          smag_q(i,j) = dt*sqrt( wk(i,j)**2 + smag_q(i,j)**2 )
+       enddo
+   enddo
+ endif
 
  end subroutine smag_cell
 

@@ -47,6 +47,8 @@
 !    c) add option for turning off hb19 formula for surface backgroud diff. (do_dk_hb19)
 ! 4) May 2022 by Linjiong Zhou
 !    put it into the FV3 dynamical core and revise accordingly
+! 5) Aug 2024 by Kun Gao
+!    introduce inline 3D-TKE related updates
 ! =======================================================================
 
 module sa_tke_edmf_mod
@@ -134,6 +136,16 @@ module sa_tke_edmf_mod
     real :: ch0 = 0.4  ! proportionality coefficient for heat & q in PBL
     real :: ch1 = 0.15 ! proportionality coefficient for heat & q above PBL
 
+    ! KGao: parameters below are for LES and/or idealized simulatons
+    logical :: no_mf         = .false. ! flag for turning off mass-flux effect
+    logical :: use_const_l2  = .false. ! flag for using a constant l2 parameter (set by rlmx)
+    logical :: use_const_cd  = .false. ! flag for using constant surface exchange coeff
+    logical :: use_simple_k  = .false. ! flag for using a simple k formula, in which cm and pr are set to constants
+                                       ! ck0 and pr0 are used 
+    real    :: cd0           = 0.0011  ! constant surface drag coeff for idealized tests
+    real    :: cs            = 0.      ! cs parameter for kh (should be same as the cs in fv3 namelist)
+    real    :: pr0           = 1./3  
+
     ! -----------------------------------------------------------------------
     ! namelist
     ! -----------------------------------------------------------------------
@@ -143,7 +155,8 @@ module sa_tke_edmf_mod
         xkzm_lim, xkzm_fac, xkzinv, xkgdx, rlmn, rlmx, sfc_gfdl, &
         cap_k0_land, do_dk_hb19, dspheat, redrag, do_z0_moon, &
         do_z0_hwrf15, do_z0_hwrf17, do_z0_hwrf17_hwonly, czilc, &
-        z0s_max, wind_th_hwrf, ivegsrc, ck0, ck1, ch0, ch1
+        z0s_max, wind_th_hwrf, ivegsrc, ck0, ck1, ch0, ch1, &
+        no_mf, use_const_l2, use_const_cd, use_simple_k, cd0, cs, pr0
 
 contains
 
@@ -195,8 +208,10 @@ subroutine sa_tke_edmf_pbl (im, km, ntrac, ntcw, ntiw, ntke, &
         radh, rbsoil, zorl, u10m, v10m, fm, fh, &
         tsea, heat, evap, stress, spd1, kinver, &
         psk, del, prsi, prsl, prslk, phii, phil, &
-        hpbl, kpbl, dusfc, dvsfc, dtsfc, dqsfc, dkt_out)
-
+        hpbl, kpbl, &
+        shr3d_h, shr3d_v, &
+        dusfc, dvsfc, dtsfc, dqsfc, dkt_out)
+    
     implicit none
 
     ! -----------------------------------------------------------------------
@@ -224,6 +239,8 @@ subroutine sa_tke_edmf_pbl (im, km, ntrac, ntcw, ntiw, ntke, &
     integer, intent (out) :: kpbl (im)
 
     real, intent (out) :: hpbl (im)
+  
+    real, intent (in), optional :: shr3d_h (im, km), shr3d_v (im, km)
 
     real, intent (out), optional :: dusfc (im), dvsfc (im), dtsfc (im), dqsfc (im), &
         dkt_out (im, km)
@@ -245,6 +262,8 @@ subroutine sa_tke_edmf_pbl (im, km, ntrac, ntcw, ntiw, ntke, &
         dku (im, km - 1), dkt (im, km - 1), dkq (im, km - 1), &
         cku (im, km - 1), ckt (im, km - 1), q1g (im, km, ntrac), &
         vdt (im, km), udt (im, km), tdt (im, km), qdt (im, km)
+    
+    real :: dkh(im, km - 1)
 
     real :: plyr (im, km), rhly (im, km), cfly (im, km), &
         qstl (im, km)
@@ -531,7 +550,13 @@ subroutine sa_tke_edmf_pbl (im, km, ntrac, ntcw, ntiw, ntke, &
         sfcflg (i) = .true.
         if (rbsoil (i) > 0.) sfcflg (i) = .false.
         pcnvflg (i) = .false.
-        scuflg (i) = .true.
+
+        if (no_mf) then
+           scuflg (i) = .false.
+        else
+           scuflg (i) = .true.
+        endif
+
         if (scuflg (i)) then
             radmin (i) = 0.
             mrad (i) = km1
@@ -784,6 +809,7 @@ subroutine sa_tke_edmf_pbl (im, km, ntrac, ntcw, ntiw, ntke, &
         if (pblflg (i)) then
             if (zol (i) < zolcru) then
                 pcnvflg (i) = .true.
+                if (no_mf) pcnvflg (i) = .false.
             endif
             wst3 (i) = gotvx (i, 1) * sflux (i) * hpbl (i)
             wstar (i) = wst3 (i) ** h1
@@ -858,6 +884,9 @@ subroutine sa_tke_edmf_pbl (im, km, ntrac, ntcw, ntiw, ntke, &
     ! -----------------------------------------------------------------------
     ! look for stratocumulus
     ! -----------------------------------------------------------------------
+   
+    ! if not using mass flux transports, skip the following steps 
+    if (.not. no_mf) then
 
     do i = 1, im
         flg (i) = scuflg (i)
@@ -908,6 +937,8 @@ subroutine sa_tke_edmf_pbl (im, km, ntrac, ntcw, ntiw, ntke, &
         if (scuflg (i) .and. krad (i) <= 1) scuflg (i) = .false.
         if (scuflg (i) .and. radmin (i) >= 0.) scuflg (i) = .false.
     enddo
+    
+    endif ! <--- endif (.not. no_mf)
 
     ! -----------------------------------------------------------------------
     ! compute components for mass flux mixing by large thermals
@@ -950,6 +981,9 @@ subroutine sa_tke_edmf_pbl (im, km, ntrac, ntcw, ntiw, ntke, &
         ntcw_new = ntcw - 1
     endif
 
+    ! if not using mass flux, skip the following steps
+    if (.not. no_mf) then
+
     ! -----------------------------------------------------------------------
     ! edmf parameterization siebesma et al. (2007)
     ! -----------------------------------------------------------------------
@@ -968,6 +1002,8 @@ subroutine sa_tke_edmf_pbl (im, km, ntrac, ntcw, ntiw, ntke, &
         thlx, thvx, thlvx, gdx, thetae, radj, &
         krad, mrad, radmin, buod, xmfd, &
         tcdo, qcdo, ucdo, vcdo, xlamde)
+
+    endif ! <--- endif (.not. no_mf)
 
     ! -----------------------------------------------------------------------
     ! compute prandtl number and exchange coefficient varying with height
@@ -1061,6 +1097,7 @@ subroutine sa_tke_edmf_pbl (im, km, ntrac, ntcw, ntiw, ntke, &
             tem1 = min (tem, rlmn)
 
             ptem2 = min (zlup, zldn)
+
             rlam (i, k) = elmfac * ptem2
             rlam (i, k) = max (rlam (i, k), tem1)
             rlam (i, k) = min (rlam (i, k), rlmx)
@@ -1069,6 +1106,9 @@ subroutine sa_tke_edmf_pbl (im, km, ntrac, ntcw, ntiw, ntke, &
             ele (i, k) = elefac * ptem2
             ele (i, k) = max (ele (i, k), tem1)
             ele (i, k) = min (ele (i, k), elmx)
+           
+            if (use_const_l2) rlam(i,k) = rlmx
+            if (use_const_l2) ele(i,k)  = elefac * rlmx
 
         enddo
     enddo
@@ -1089,6 +1129,14 @@ subroutine sa_tke_edmf_pbl (im, km, ntrac, ntcw, ntiw, ntke, &
             elm (i, k) = zk * rlam (i, k) / (rlam (i, k) + zk)
 
             dz = zi (i, k + 1) - zi (i, k)
+
+            ! KGao: notes on mixing lengths and their limiters
+            ! elm - mixing length used for Kz calculations
+            !     - no larger than max(dx, dz)
+            ! ele - mixing length used for TKE dissipation calculations 
+            !     - no larger than max(dx, dz)
+            ! example:
+            ! if dx = 35m, elm and ele are capped at 35m
             tem = max (gdx (i), dz)
             elm (i, k) = min (elm (i, k), tem)
             ele (i, k) = min (ele (i, k), tem)
@@ -1162,6 +1210,18 @@ subroutine sa_tke_edmf_pbl (im, km, ntrac, ntcw, ntiw, ntke, &
         endif
     enddo
 
+    ! use a simple K formulation, in which cm and pr are constant
+    if ( use_simple_k ) then  
+      do k = 1, km1
+         do i = 1, im
+            tem = 0.5 * (elm (i, k) + elm (i, k + 1))
+            tem = tem * sqrt (tkeh (i, k))
+            dku (i, k) = cs * tem
+            dkt (i, k) = dku (i, k) / pr0
+         enddo
+      enddo
+    endif
+       
     if (present (dkt_out)) then
         do k = 1, km1
             do i = 1, im
@@ -1290,6 +1350,29 @@ subroutine sa_tke_edmf_pbl (im, km, ntrac, ntcw, ntiw, ntke, &
                 endif
                 shrp = shrp + ptem1 + ptem2
             endif
+
+            !obtain 3D TKE shear production:
+            !a. dku_v and dku_h are treated separately
+            !   shrp_3d = dku_h * shr3d_h + dku_v * shr3d_v
+            !b. how to get dku_h?
+            !   dku_h = cs * l_h * sqrt(e)
+
+            if ( present(shr3d_h) .and. present(shr3d_v)) then
+
+              dkh(i, k) = cs * sqrt(gdx(i)) * sqrt(tke(i, k)) ! define dkh at layer center
+
+              tem1 = dkh(i, k) * shr3d_h(i, k)
+
+              if ( k == 1 ) then
+                 tem2 = dku(i, k) * shr3d_v(i, k)
+              else  
+                 tem2 = 0.5 * ( dku(i, k-1) + dku(i, k) ) * shr3d_v(i, k) ! dku is at layer interface
+              endif
+
+              shrp = tem1 + tem2
+
+            endif
+
             prod (i, k) = buop + shrp
         enddo
     enddo
@@ -1706,7 +1789,7 @@ subroutine sa_tke_edmf_pbl (im, km, ntrac, ntcw, ntiw, ntke, &
         hpbl (i) = hpblx (i)
         kpbl (i) = kpblx (i)
     enddo
-
+   
     return
 
 end subroutine sa_tke_edmf_pbl
@@ -2132,6 +2215,13 @@ subroutine sfc_exch (im, ps, u1, v1, t1, q1, z1, &
             tem1 = 0.00001 / z1 (i)
             cm (i) = max (cm (i), tem1)
             ch (i) = max (ch (i), tem1)
+
+            ! use constant cd
+            if ( use_const_cd ) then
+               cm (i) = cd0
+               ch (i) = cd0
+            endif
+
             stress (i) = cm (i) * wind (i) * wind (i)
             ustar (i) = sqrt (stress (i))
 

@@ -621,7 +621,7 @@ contains
                      ptop, ak, bk, pfull, gridstruct, thermostruct, domain,   &
                      flagstruct%do_sat_adj, fv_time, hydrostatic, hybrid_z,     &
                      flagstruct%adiabatic, do_adiabatic_init, flagstruct%do_inline_mp, &
-                     flagstruct%do_inline_pbl, flagstruct%do_inline_cnv, flagstruct%do_inline_gwd, &
+                     flagstruct%do_inline_pbl, flagstruct%do_3dtke, flagstruct%do_inline_cnv, flagstruct%do_inline_gwd, &
                      inline_mp, inline_pbl, inline_cnv, inline_gwd, bd, flagstruct%fv_debug, &
                      flagstruct%do_fast_phys, flagstruct%do_intermediate_phys, &
                      flagstruct%consv_checker, flagstruct%adj_mass_vmr, flagstruct%inline_pbl_flag, flagstruct%inline_cnv_flag)

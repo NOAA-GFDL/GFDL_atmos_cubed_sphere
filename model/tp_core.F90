@@ -1419,13 +1419,13 @@ endif
       if (present(damp_Km)) then
         do j=js,je
            do i=is,ie+1
-              damp2 = 0.25*damp*(damp_km(i-1,j)+damp_km(i,j))
+              damp2 = 0.5*damp*(damp_km(i-1,j)+damp_km(i,j))
               fx(i,j) = fx(i,j) + damp2*fx2(i,j)
            enddo
         enddo
         do j=js,je+1
            do i=is,ie
-              damp2 = 0.25*damp*(damp_km(i,j-1)+damp_km(i,j))
+              damp2 = 0.5*damp*(damp_km(i,j-1)+damp_km(i,j))
               fy(i,j) = fy(i,j) + damp2*fy2(i,j)
            enddo
         enddo
