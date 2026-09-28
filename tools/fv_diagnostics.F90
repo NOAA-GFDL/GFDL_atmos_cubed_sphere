@@ -97,7 +97,7 @@ module fv_diagnostics_mod
 
  public :: fv_diag_init, fv_time, fv_diag, prt_mxm, prt_maxmin, range_check
 
- public :: prt_mass, prt_minmax, ppme, fv_diag_init_gn, z_sum, sphum_ll_fix, eqv_pot, qcly0, gn
+ public :: prt_mass, prt_minmax, ppme, fv_diag_init_gn, z_sum, z_sum_trop, sphum_ll_fix, eqv_pot, qcly0, gn
  public :: prt_height, prt_gb_nh_sh, interpolate_vertical, rh_calc, get_height_field, get_height_given_pressure
  public :: cs3_interpolator, get_vorticity
 ! needed by fv_nggps_diag
@@ -1056,6 +1056,12 @@ contains
             'vertical integral of uv', '(m/sec)^2*Pa', missing_value=missing_value )
        id_ivv = register_diag_field ( trim(field), 'vv_vi', axes(1:2), Time,        &
             'vertical integral of vv', '(m/sec)^2*Pa', missing_value=missing_value )
+
+       id_ivtx = register_diag_field ( trim(field), 'ivtx', axes(1:2), Time,       &
+            'vertical integral of uq (below 100hPa)', 'Kg/Kg*m/sec*Pa', missing_value=missing_value )
+       id_ivty = register_diag_field ( trim(field), 'ivty', axes(1:2), Time,       &
+            'vertical integral of vq (below 100hPa)', 'Kg/Kg*m/sec*Pa', missing_value=missing_value )
+
 
        if(.not.Atm(n)%flagstruct%hydrostatic) then
           id_iwq = register_diag_field ( trim(field), 'wq_vi', axes(1:2), Time,        &
@@ -3947,6 +3953,32 @@ contains
        endif
      endif
 
+ ! zonal moisture flux
+     if(id_ivtx > 0) then
+       do k=1,npz
+          do j=jsc,jec
+             do i=isc,iec
+                a4(i,j,k) =  Atm(n)%ua(i,j,k) * Atm(n)%q(i,j,k,sphum)
+             enddo
+          enddo 
+       enddo
+       call z_sum_trop(isc, iec, jsc, jec, npz, 0, Atm(n)%pe(isc:iec,1:npz+1,jsc:jec), Atm(n)%delp(isc:iec,jsc:jec,1:npz), a4, a2)
+       used=send_data(id_ivtx, a2, Time)
+     endif
+    ! meridional moisture flux
+     if(id_ivty > 0) then
+       do k=1,npz
+          do j=jsc,jec
+             do i=isc,iec
+                a4(i,j,k) =  Atm(n)%va(i,j,k) * Atm(n)%q(i,j,k,sphum)
+             enddo 
+          enddo
+       enddo
+       call z_sum_trop(isc, iec, jsc, jec, npz, 0, Atm(n)%pe(isc:iec,1:npz+1,jsc:jec), Atm(n)%delp(isc:iec,jsc:jec,1:npz), a4, a2)
+       used=send_data(id_ivty, a2, Time)
+     endif
+
+
      ! zonal heat flux
      if(id_ut > 0) then
        do k=1,npz
@@ -4617,6 +4649,32 @@ contains
  enddo
 
  end subroutine z_sum
+
+! vertical integration over the troposphere
+ subroutine z_sum_trop(is, ie, js, je, km, n_g, pe, delp, q, sum2)
+ integer, intent(in):: is, ie, js, je,  n_g, km
+ real, intent(in):: delp(is-n_g:ie+n_g, js-n_g:je+n_g, km)
+ real, intent(in):: pe(is-n_g:ie+n_g, km+1, js-n_g:je+n_g)
+ real, intent(in)::    q(is-n_g:ie+n_g, js-n_g:je+n_g, km)
+ real, intent(out):: sum2(is:ie,js:je)
+ 
+ integer i,j,k
+ 
+ do j=js,je 
+    do i=is,ie
+       sum2(i,j) = 0.0
+    enddo
+    do k=2,km
+       do i=is,ie
+        if ( pe(i,k,j)>100.e2 ) then
+          sum2(i,j) = sum2(i,j) + delp(i,j,k)*q(i,j,k)
+        endif
+       enddo
+    enddo
+ enddo
+
+ end subroutine z_sum_trop
+
 
 
  real function p_sum(is, ie, js, je, km, n_g, delp, area, domain)

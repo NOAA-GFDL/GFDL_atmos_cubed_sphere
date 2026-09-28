@@ -100,7 +100,8 @@
      integer :: id_uq, id_vq, id_wq, id_iuq, id_ivq, id_iwq,   & ! moisture flux & vertical integral
                 id_ut, id_vt, id_wt, id_iut, id_ivt, id_iwt,   & ! heat flux
                 id_uu, id_uv, id_vv, id_ww,                    & ! momentum flux
-                id_iuu, id_iuv, id_iuw, id_ivv, id_ivw, id_iww   ! vertically integral of momentum flux
+                id_iuu, id_iuv, id_iuw, id_ivv, id_ivw, id_iww,& ! vertically integral of momentum flux
+                id_ivtx, id_ivty                                 ! vertically integral of vapor over the troposphere
 
      integer :: id_uw, id_vw
      integer :: id_lagrangian_tendency_of_hydrostatic_pressure
