@@ -45,7 +45,7 @@
 ! </table>
 
  use molecular_diffusion_mod,  only: molecular_diffusion_coefs, &
-                                     tau_visc, tau_cond, tau_diff
+                                     tau_visc, tau_cond, tau_diff 
  use tp_core_mod,       only: fv_tp_2d, pert_ppm, copy_corners,    &
                               deln_flux_explm, deln_flux_explm_udvd
  use fv_mp_mod, only: is_master, fill_corners, XDir, YDir
@@ -1599,7 +1599,6 @@
 #endif
 
  end subroutine d_sw
-
 
 ! d_md :: D-Grid 2D molecular diffusion
 

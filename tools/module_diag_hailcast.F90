@@ -924,6 +924,15 @@ CONTAINS
       RTIME = 2000.
       IF (wdur .LT. RTIME) RTIME = wdur
 
+      WFZLP = 0.0
+      ZFZL = 0.0
+      RFZL = 0.0
+      VUFZL = 0.0
+      DENSAFZL = 0.0
+      VUMAX = 0.0
+      RI = 0.0
+      RW =0.0
+
       TFZL = tk_embryo
       CALL INTERPP(PA, WFZLP, TCA, tk_embryo, IFOUT, nz)
       CALL INTERP(h1d, ZFZL, WFZLP, IFOUT, PA, nz)

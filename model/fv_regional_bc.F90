@@ -6891,11 +6891,15 @@ subroutine remap_scalar_nggps_regional_bc(Atm                         &
       deallocate(pes)
       if (.not. lstatus) then
        if (mpp_pe() == 0) write(0,*) 'INPUT source not found ',lstatus,' set source=No Source Attribute'
+#ifdef MULTI_GASES 
+       source='SPECTRAL GFS SIGIO FILE'
+#else
        source='No Source Attribute'
        call mpp_error(FATAL,'fv_regional_bc::get_data_source - input source not &
             found in file gfs_data.nc. The accepted &
             FV3 sources are "FV3GFS GAUSSIAN NEMSIO FILE", &
-            "FV3GFS GAUSSIAN NETCDF FILE" or "FV3GFS GRIB2 FILE".')
+            "FV3GFS GAUSSIAN NETCDF FILE" or "FV3GFS GRIB2 FILE".') 
+#endif                      
       endif
       call mpp_error(NOTE, 'INPUT gfs_data source string: '//trim(source))
 
