@@ -328,7 +328,6 @@ contains
    integer :: blocksize    = 1
    logical :: chksum_debug = .false.
    logical :: dycore_only  = .false.
-   logical :: pdc          = .false.
    logical :: debug        = .false.
    logical :: sync         = .false.
    logical :: ignore_rst_cksum = .false.
@@ -336,7 +335,7 @@ contains
    logical :: cpl_imp_mrg = .false.
    logical :: cpl_imp_dbg = .false.
    namelist /atmos_model_nml/ blocksize, chksum_debug, dycore_only, debug, sync, ccpp_suite, avg_max_length, &
-                              ignore_rst_cksum, cpl_imp_mrg, cpl_imp_dbg, pdc
+                              ignore_rst_cksum, cpl_imp_mrg, cpl_imp_dbg
    ! *DH 20210326
 
    !For regional
@@ -650,9 +649,9 @@ contains
 
 !>@brief The subroutine 'atmosphere_dynamics' is an API for the main driver
 !! of the FV3 dynamical core responsible for executing a "dynamics" step.
- subroutine atmosphere_dynamics ( Time, pdc )
+ subroutine atmosphere_dynamics ( Time )
+! subroutine atmosphere_dynamics ( Time )        
    type(time_type),intent(in) :: Time
-   logical,intent(in) :: pdc
    integer :: n, psc, atmos_time_step
    integer :: k, w_diff, nt_dyn, n_split_loc, seconds, days
    logical :: used
@@ -690,7 +689,6 @@ contains
    do psc=1,abs(p_split)
       p_step = psc
                     call timing_on('fv_dynamics')
-      if(pdc)then
           call fv_dynamics(npx, npy, npz, nq, Atm(n)%ng, dt_atmos/real(abs(p_split)),&
           Atm(n)%flagstruct%consv_te, Atm(n)%flagstruct%fill,       &
           Atm(n)%flagstruct%reproduce_sum, kappa, cp_air, zvir,     &
@@ -712,31 +710,7 @@ contains
           Atm(n)%gridstruct,  Atm(n)%flagstruct,                    &
           Atm(n)%neststruct,  Atm(n)%idiag, Atm(n)%bd,              &
           Atm(n)%parent_grid, Atm(n)%domain,Atm(n)%diss_est,        &
-          Atm(n)%inline_mp, pdc)
-      else
-     call fv_dynamics(npx, npy, npz, nq, Atm(n)%ng, dt_atmos/real(abs(p_split)),&
-                      Atm(n)%flagstruct%consv_te, Atm(n)%flagstruct%fill,       &
-                      Atm(n)%flagstruct%reproduce_sum, kappa, cp_air, zvir,     &
-                      Atm(n)%ptop, Atm(n)%ks, nq,                               &
-                      n_split_loc, Atm(n)%flagstruct%q_split,                   &
-!                     Atm(n)%flagstruct%n_split, Atm(n)%flagstruct%q_split,     &
-                      Atm(n)%u,    Atm(n)%v,     Atm(n)%w,  Atm(n)%delz,        &
-                      Atm(n)%flagstruct%hydrostatic,                            &
-                      Atm(n)%pt  , Atm(n)%delp,  Atm(n)%q,  Atm(n)%ps,          &
-                      Atm(n)%pe,   Atm(n)%pk,    Atm(n)%peln,                   &
-                      Atm(n)%pkz,  Atm(n)%phis,  Atm(n)%q_con,                  &
-                      Atm(n)%omga, Atm(n)%ua,    Atm(n)%va, Atm(n)%uc,          &
-                      Atm(n)%vc,                                                &
-!The following variable is used for SA-3D-TKE (kyf) (modify for data structure)
-                      Atm(n)%sa3dtke_var,                                       &
-                      Atm(n)%ak,    Atm(n)%bk, Atm(n)%mfx,                      &
-                      Atm(n)%mfy , Atm(n)%cx,    Atm(n)%cy, Atm(n)%ze0,         &
-                      Atm(n)%flagstruct%hybrid_z,                               &
-                      Atm(n)%gridstruct,  Atm(n)%flagstruct,                    &
-                      Atm(n)%neststruct,  Atm(n)%idiag, Atm(n)%bd,              &
-                      Atm(n)%parent_grid, Atm(n)%domain,Atm(n)%diss_est,        &
-                      Atm(n)%inline_mp)
-      endif
+          Atm(n)%inline_mp, Atm(n)%flagstruct%pdc)
      call timing_off('fv_dynamics')
 
     if (ngrids > 1 .and. (psc < p_split .or. p_split < 0)) then
@@ -1837,6 +1811,9 @@ contains
    real, parameter:: q1000_h2o = 3.1E-6
    real, parameter:: q2000_h2o = 2.8E-6
    real, parameter:: q3000_h2o = 3.0E-6
+   !must keep pdc_in as false, no tendency to dribbling
+   logical :: pdc_in = .false.
+
    real:: xt, p00, q00
    integer:: isc, iec, jsc, jec, npz
    integer:: m, n, i,j,k, ngc, n_split_loc, days
@@ -1939,7 +1916,7 @@ contains
                      Atm(mygrid)%cx, Atm(mygrid)%cy, Atm(mygrid)%ze0, Atm(mygrid)%flagstruct%hybrid_z,    &
                      Atm(mygrid)%gridstruct, Atm(mygrid)%flagstruct,                            &
                      Atm(mygrid)%neststruct, Atm(mygrid)%idiag, Atm(mygrid)%bd, Atm(mygrid)%parent_grid,  &
-                     Atm(mygrid)%domain,Atm(mygrid)%diss_est, Atm(mygrid)%inline_mp)
+                     Atm(mygrid)%domain,Atm(mygrid)%diss_est, Atm(mygrid)%inline_mp,pdc_in)
 ! Backward
     call fv_dynamics(Atm(mygrid)%npx, Atm(mygrid)%npy, npz,  nq, Atm(mygrid)%ng, -dt_atmos, 0.,      &
                      Atm(mygrid)%flagstruct%fill, Atm(mygrid)%flagstruct%reproduce_sum, kappa, cp_air, zvir,  &
@@ -1956,7 +1933,7 @@ contains
                      Atm(mygrid)%cx, Atm(mygrid)%cy, Atm(mygrid)%ze0, Atm(mygrid)%flagstruct%hybrid_z,    &
                      Atm(mygrid)%gridstruct, Atm(mygrid)%flagstruct,                            &
                      Atm(mygrid)%neststruct, Atm(mygrid)%idiag, Atm(mygrid)%bd, Atm(mygrid)%parent_grid,  &
-                     Atm(mygrid)%domain,Atm(mygrid)%diss_est, Atm(mygrid)%inline_mp)
+                     Atm(mygrid)%domain,Atm(mygrid)%diss_est, Atm(mygrid)%inline_mp,pdc_in)
 !Nudging back to IC
 !$omp parallel do default (none) &
 !$omp              shared (pref, npz, jsc, jec, isc, iec, n, sphum, Atm, u0, v0, t0, dp0, xt, zvir, mygrid, nudge_dz, dz0) &
@@ -2034,7 +2011,7 @@ contains
                      Atm(mygrid)%cx, Atm(mygrid)%cy, Atm(mygrid)%ze0, Atm(mygrid)%flagstruct%hybrid_z,    &
                      Atm(mygrid)%gridstruct, Atm(mygrid)%flagstruct,                            &
                      Atm(mygrid)%neststruct, Atm(mygrid)%idiag, Atm(mygrid)%bd, Atm(mygrid)%parent_grid,  &
-                     Atm(mygrid)%domain,Atm(mygrid)%diss_est, Atm(mygrid)%inline_mp)
+                     Atm(mygrid)%domain,Atm(mygrid)%diss_est, Atm(mygrid)%inline_mp,pdc_in)
 ! Forward call
     call fv_dynamics(Atm(mygrid)%npx, Atm(mygrid)%npy, npz,  nq, Atm(mygrid)%ng, dt_atmos, 0.,      &
                      Atm(mygrid)%flagstruct%fill, Atm(mygrid)%flagstruct%reproduce_sum, kappa, cp_air, zvir,  &
@@ -2050,7 +2027,7 @@ contains
                      Atm(mygrid)%cx, Atm(mygrid)%cy, Atm(mygrid)%ze0, Atm(mygrid)%flagstruct%hybrid_z,    &
                      Atm(mygrid)%gridstruct, Atm(mygrid)%flagstruct,                            &
                      Atm(mygrid)%neststruct, Atm(mygrid)%idiag, Atm(mygrid)%bd, Atm(mygrid)%parent_grid,  &
-                     Atm(mygrid)%domain,Atm(mygrid)%diss_est, Atm(mygrid)%inline_mp)
+                     Atm(mygrid)%domain,Atm(mygrid)%diss_est, Atm(mygrid)%inline_mp,pdc_in)
 ! Nudging back to IC
 !$omp parallel do default (none) &
 !$omp              shared (nudge_dz,npz, jsc, jec, isc, iec, n, sphum, Atm, u0, v0, t0, dz0, dp0, xt, zvir, mygrid) &

@@ -367,7 +367,7 @@ module fv_control_mod
      logical , pointer :: nudge_ic
      logical , pointer :: ncep_ic
      logical , pointer :: nggps_ic
-   logical , pointer :: hrrrv3_ic
+     logical , pointer :: hrrrv3_ic
      logical , pointer :: ecmwf_ic
      logical , pointer :: gfs_phil
      logical , pointer :: agrid_vel_rst
@@ -392,7 +392,7 @@ module fv_control_mod
      logical , pointer :: molecular_diffusion
      real,     pointer :: dz_min
      integer,  pointer :: psm_bc
-
+     logical,  pointer :: pdc ! higher order physcis and dynamics coupling   
      integer , pointer :: a2b_ord
      integer , pointer :: c2l_ord
 
@@ -1022,6 +1022,7 @@ module fv_control_mod
        write_coarse_agrid_vel_rst    => Atm%coarse_graining%write_coarse_agrid_vel_rst
        write_coarse_dgrid_vel_rst    => Atm%coarse_graining%write_coarse_dgrid_vel_rst
        pass_full_omega_to_physics_in_non_hydrostatic_mode => Atm%flagstruct%pass_full_omega_to_physics_in_non_hydrostatic_mode
+       pdc                           => Atm%flagstruct%pdc
      end subroutine set_namelist_pointers
 
 
@@ -1117,7 +1118,7 @@ module fv_control_mod
             write_coarse_diagnostics,&
             write_only_coarse_intermediate_restarts, &
             write_coarse_agrid_vel_rst, write_coarse_dgrid_vel_rst, increment_file_on_native_grid, &
-            pass_full_omega_to_physics_in_non_hydrostatic_mode, ignore_rst_cksum
+            pass_full_omega_to_physics_in_non_hydrostatic_mode, ignore_rst_cksum,pdc
 
        ! Read FVCORE namelist
        read (input_nml_file,fv_core_nml,iostat=ios)

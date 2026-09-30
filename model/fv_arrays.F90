@@ -939,7 +939,8 @@ module fv_arrays_mod
 
 !This logical variable is used for SA-3D-TKE
      logical :: sa3dtke_dyco = .false.
-
+     !If use higher oreder of physcis-dynamics coupling
+     logical :: pdc = .false.
   !>Convenience pointers
   integer, pointer :: grid_number
 

@@ -225,7 +225,7 @@ contains
     logical, intent(IN) :: reproduce_sum
     logical, intent(IN) :: hydrostatic
     logical, intent(IN) :: hybrid_z       !< Using hybrid_z for remapping
-    logical, intent(IN), optional :: pdc_in
+    logical, intent(IN) :: pdc_in
 
     type(fv_grid_bounds_type), intent(IN) :: bd
     real, intent(inout), dimension(bd%isd:bd%ied  ,bd%jsd:bd%jed+1,npz) :: u !< D grid zonal wind (m/s)
@@ -296,9 +296,6 @@ contains
     real, save, allocatable :: q_save(:,:,:,:)
 
 ! Local Arrays
-      ! real, allocatable :: pt_tend(:,:,:)
-      ! real, allocatable :: u_tend(:,:,:), v_tend(:,:,:)
-      ! real, allocatable :: q_tend(:,:,:,:)
       real:: ws(bd%is:bd%ie,bd%js:bd%je)
       real::   teq(bd%is:bd%ie,bd%js:bd%je)
       real:: ps2(bd%isd:bd%ied,bd%jsd:bd%jed)
@@ -358,11 +355,22 @@ contains
       nq = nq_tot - flagstruct%dnats
       nr = nq_tot - flagstruct%dnrts
       rdg = -rdgas * agrav
-
       !phy-dyn-cpl: No physics tendencies to “dribble” at the very first time-step
-      pdc = present(pdc_in) .and. .not.hydrostatic .and. .not.do_adiabatic_init .and. .not.lfirst
-      if(present(pdc_in) .and. lfirst .and. .not.do_adiabatic_init.and. .not.hydrostatic) lfirst = .false.
-      if  (present(pdc_in)) then  
+      if (lfirst) then
+              pdc = .false.
+              if (pdc_in .and. .not.hydrostatic .and. .not.do_adiabatic_init) then
+                      lfirst = .false.
+              end if
+      else
+              if (pdc_in .and. .not.hydrostatic .and. .not.do_adiabatic_init) then
+                pdc = .true.
+              end if
+      end if
+
+
+
+
+      if (pdc_in) then
         if(.not.allocated(q_save)) allocate(q_save(isd:ied,jsd:jed,npz,nq))
         if(.not.allocated(delz_save)) allocate(delz_save(is:ie,js:je,npz))
         if(.not.allocated(delp_save)) allocate(delp_save(isd:ied,jsd:jed,npz))
@@ -372,10 +380,7 @@ contains
       end if
       if (pdc) then
         if(.not.allocated(qwat)) allocate(qwat(nq))
-      !   allocate(pt_tend(isd:ied,jsd:jed,npz))
         if(.not.allocated(q_tend)) allocate(q_tend(isd:ied,jsd:jed,npz,nq))
-      !   allocate(u_tend(isd:ied,jsd:jed+1,npz))
-      !   allocate(v_tend(isd:ied+1,jsd:jed,npz))
       end if
 
       ! Call CCPP timestep init
@@ -1002,7 +1007,7 @@ contains
                                                   call avec_timer_start(6)
 #endif
 
-       if(present(pdc_in) .and. GFDL_interstitial%last_step)then
+       if((pdc_in) .and. GFDL_interstitial%last_step)then
          call Lagrangian_to_Eulerian(GFDL_interstitial%last_step, consv_te, ps, pe, delp,          &
                      pkz, pk, mdt, bdt, npx, npy, npz, is,ie,js,je, isd,ied,jsd,jed,       &
                      nr, nwat, sphum, q_con, u,  v, w, delz, pt, q, phis,    &
@@ -1088,7 +1093,7 @@ contains
   if ( flagstruct%molecular_diffusion ) then
      if( .not. md_time .and. time_total - time_offset .gt. md_wait_sec ) then
          md_time= .true.
-         if( is_master() ) write(*,*) 'Molecular diffusion is on with explicit scheme '
+         if( is_master() ) write(6,*) 'Molecular diffusion is on with explicit scheme '
      endif
   endif
 
@@ -1265,7 +1270,7 @@ contains
     endif   !  consv_am
   endif
 
-  if(present(pdc_in))then
+  if(pdc_in) then
    
 !$OMP parallel do default(none) shared(is,ie,js,je,npz,delz_save,delz)
     do k=1,npz
