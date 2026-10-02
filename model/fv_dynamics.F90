@@ -839,14 +839,14 @@ contains
 
 #ifdef MOIST_CAPPA
               cappa(i,j,k) = rdgas/(rdgas + cvm(i)/(1.+dp1(i,j,k)))
-              pkz(i,j,k) = exp(cappa(i,j,k)*log(rdg*delp(i,j,k)*pt(i,j,k)*    &
+              pkz(i,j,k) = exp(cappa(i,j,k)*log(rdg(i,j,k)*delp(i,j,k)*pt(i,j,k)*    &
 #ifdef MULTI_GASES
                           (1.+dp1(i,j,k))                  /delz(i,j,k)) )
 #else
                           (1.+dp1(i,j,k))*(1.-q_con(i,j,k))/delz(i,j,k)) )
 #endif
 #else
-              pkz(i,j,k) = exp( kappa*log(rdg*delp(i,j,k)*pt(i,j,k)*    &
+              pkz(i,j,k) = exp( kappa*log(rdg(i,j,k)*delp(i,j,k)*pt(i,j,k)*    &
                           (1.+dp1(i,j,k))/delz(i,j,k)) )
 ! Using dry pressure for the definition of the virtual potential temperature
 !              pkz(i,j,k) = exp( kappa*log(rdg*delp(i,j,k)*pt(i,j,k)*    &
@@ -861,9 +861,9 @@ contains
                 dp1(i,j,k) = 0.
 #ifdef MULTI_GASES
                 kapad(i,j,k)= kappa * (virqd(q(i,j,k,:))/vicpqd(q(i,j,k,:)))
-                pkz(i,j,k) = exp(kapad(i,j,k)*log(rdg*virqd(q(i,j,k,:))*delp(i,j,k)*pt(i,j,k)/delz(i,j,k)))
+                pkz(i,j,k) = exp(kapad(i,j,k)*log(rdg(i,j,k)*virqd(q(i,j,k,:))*delp(i,j,k)*pt(i,j,k)/delz(i,j,k)))
 #else
-                pkz(i,j,k) = exp(kappa*log(rdg*delp(i,j,k)*pt(i,j,k)/delz(i,j,k)))
+                pkz(i,j,k) = exp(kappa*log(rdg(i,j,k)*delp(i,j,k)*pt(i,j,k)/delz(i,j,k)))
 #endif
             enddo
           enddo
@@ -929,7 +929,7 @@ contains
 #ifdef MULTI_GASES
                      kapad, &
 #endif 
-                    grav, hydrostatic, &
+                    grav_var_h, hydrostatic, &
                     u, v, w, delz, pt, q, delp, pe, pk, phis, ws, omga, ptop, pfull, ua, va,           &
                     uc, vc,            &
 !The following variable is for SA-3D-TKE (kyf) (modify for data structure)
