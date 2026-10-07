@@ -360,24 +360,8 @@ contains
       nr = nq_tot - flagstruct%dnrts
       
       !phy-dyn-cpl: No physics tendencies to “dribble” at the very first time-step
-      if(is_master()) print *,'bf_pdc_expression',pdc_drib,pdc,lfirst
       pdc = pdc_drib .and. .not.hydrostatic .and. .not.do_adiabatic_init .and. .not.lfirst
       if (lfirst .and. pdc_drib .and. .not.hydrostatic .and. .not.do_adiabatic_init) lfirst = .false.
-      if(is_master()) print *,'af_pdc_expression',pdc_drib,pdc,lfirst
-
-      !if (lfirst) then
-      !        pdc = .false.
-      !        if (pdc_drib .and. .not.hydrostatic .and. .not.do_adiabatic_init) then
-      !                lfirst = .false.
-      !        end if
-      !else
-      !        if (pdc_drib .and. .not.hydrostatic .and. .not.do_adiabatic_init) then
-      !          pdc = .true.
-      !        end if
-      !end if
-
-
-
 
       if (pdc_drib) then
         if(.not.allocated(q_save)) allocate(q_save(isd:ied,jsd:jed,npz,nq))
