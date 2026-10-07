@@ -572,9 +572,8 @@ contains
 
                                                      call timing_on('COMM_TOTAL')
      call complete_group_halo_update(i_pack(8), domain)
-     if( .not. hydrostatic )then
+     if( .not. hydrostatic )  &
           call complete_group_halo_update(i_pack(7), domain)
-     endif
                                                      call timing_off('COMM_TOTAL')
 
     if(pdc)then

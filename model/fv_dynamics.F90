@@ -195,7 +195,7 @@ contains
                         sa3dtke_var,                                                  &
                         ak, bk, mfx, mfy, cx, cy, ze0, hybrid_z,                      &
                         gridstruct, flagstruct, neststruct, idiag, bd,                &
-                        parent_grid, domain, diss_est, inline_mp, pdc_in,             &
+                        parent_grid, domain, diss_est, inline_mp, pdc_drib,             &
                         grav_var_h, grav_var)
 
     use mpp_mod,           only: FATAL, mpp_error
@@ -224,7 +224,7 @@ contains
     logical, intent(IN) :: reproduce_sum
     logical, intent(IN) :: hydrostatic
     logical, intent(IN) :: hybrid_z       !< Using hybrid_z for remapping
-    logical, intent(IN) :: pdc_in
+    logical, intent(IN) :: pdc_drib
 
     type(fv_grid_bounds_type), intent(IN) :: bd
     real, intent(inout), dimension(bd%isd:bd%ied  ,bd%jsd:bd%jed+1,npz) :: u !< D grid zonal wind (m/s)
@@ -360,21 +360,26 @@ contains
       nr = nq_tot - flagstruct%dnrts
       
       !phy-dyn-cpl: No physics tendencies to “dribble” at the very first time-step
-      if (lfirst) then
-              pdc = .false.
-              if (pdc_in .and. .not.hydrostatic .and. .not.do_adiabatic_init) then
-                      lfirst = .false.
-              end if
-      else
-              if (pdc_in .and. .not.hydrostatic .and. .not.do_adiabatic_init) then
-                pdc = .true.
-              end if
-      end if
+      if(is_master()) print *,'bf_pdc_expression',pdc_drib,pdc,lfirst
+      pdc = pdc_drib .and. .not.hydrostatic .and. .not.do_adiabatic_init .and. .not.lfirst
+      if (lfirst .and. pdc_drib .and. .not.hydrostatic .and. .not.do_adiabatic_init) lfirst = .false.
+      if(is_master()) print *,'af_pdc_expression',pdc_drib,pdc,lfirst
+
+      !if (lfirst) then
+      !        pdc = .false.
+      !        if (pdc_drib .and. .not.hydrostatic .and. .not.do_adiabatic_init) then
+      !                lfirst = .false.
+      !        end if
+      !else
+      !        if (pdc_drib .and. .not.hydrostatic .and. .not.do_adiabatic_init) then
+      !          pdc = .true.
+      !        end if
+      !end if
 
 
 
 
-      if (pdc_in) then
+      if (pdc_drib) then
         if(.not.allocated(q_save)) allocate(q_save(isd:ied,jsd:jed,npz,nq))
         if(.not.allocated(delz_save)) allocate(delz_save(is:ie,js:je,npz))
         if(.not.allocated(delp_save)) allocate(delp_save(isd:ied,jsd:jed,npz))
@@ -1053,7 +1058,7 @@ contains
                                                   call avec_timer_start(6)
 #endif
 
-       if((pdc_in) .and. GFDL_interstitial%last_step)then
+       if((pdc_drib) .and. GFDL_interstitial%last_step)then
          call Lagrangian_to_Eulerian(GFDL_interstitial%last_step, consv_te, ps, pe, delp,          &
                      pkz, pk, mdt, bdt, npx, npy, npz, is,ie,js,je, isd,ied,jsd,jed,       &
                      nr, nwat, sphum, q_con, u,  v, w, delz, pt, q, phis,    &
@@ -1340,7 +1345,7 @@ contains
     endif   !  consv_am
   endif
 
-  if(pdc_in) then
+  if(pdc_drib) then
    
 !$OMP parallel do default(none) shared(is,ie,js,je,npz,delz_save,delz)
     do k=1,npz
@@ -1392,7 +1397,7 @@ contains
     call start_group_halo_update(i_pack(8), u_save, v_save, domain, gridtype=DGRID_NE)
     call complete_group_halo_update(i_pack(8), domain)
     call complete_group_halo_update(i_pack(10), domain)
-  endif !pdc_in for pdc changes
+  endif !pdc_drib for pdc changes
 
 911  call cubed_to_latlon(u, v, ua, va, gridstruct, &
           npx, npy, npz, 1, gridstruct%grid_type, domain, gridstruct%bounded_domain, flagstruct%c2l_ord, bd)

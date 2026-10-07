@@ -717,7 +717,7 @@ contains
                       Atm(n)%gridstruct,  Atm(n)%flagstruct,                    &
                       Atm(n)%neststruct,  Atm(n)%idiag, Atm(n)%bd,              &
                       Atm(n)%parent_grid, Atm(n)%domain,Atm(n)%diss_est,        &
-                      Atm(n)%inline_mp, Atm(n)%flagstruct%pdc,                  &
+                      Atm(n)%inline_mp, Atm(n)%flagstruct%pdc_drib,               &
                       Atm(n)%grav_var_h, Atm(n)%grav_var)
 
      call timing_off('fv_dynamics')
@@ -1547,7 +1547,6 @@ contains
    dnats = Atm(mygrid)%flagstruct%dnats
    nq_adv = nq - dnats
 
-
    if( nq<3 ) call mpp_error(FATAL, 'GFS phys must have 3 interactive tracers')
 
    if (IAU_Data%in_interval) then
@@ -1821,8 +1820,8 @@ contains
    real, parameter:: q1000_h2o = 3.1E-6
    real, parameter:: q2000_h2o = 2.8E-6
    real, parameter:: q3000_h2o = 3.0E-6
-   !must keep pdc_in as false, no tendency to dribbling
-   logical :: pdc_in = .false.
+   !ini must keep pdc_drib as false, no tendency to dribbling
+   logical :: pdc_drib = .false.
 
    real:: xt, p00, q00
    integer:: isc, iec, jsc, jec, npz
@@ -1926,7 +1925,7 @@ contains
                      Atm(mygrid)%cx, Atm(mygrid)%cy, Atm(mygrid)%ze0, Atm(mygrid)%flagstruct%hybrid_z,    &
                      Atm(mygrid)%gridstruct, Atm(mygrid)%flagstruct,                            &
                      Atm(mygrid)%neststruct, Atm(mygrid)%idiag, Atm(mygrid)%bd, Atm(mygrid)%parent_grid,  &
-                     Atm(mygrid)%domain,Atm(mygrid)%diss_est, Atm(mygrid)%inline_mp,pdc_in,               &
+                     Atm(mygrid)%domain,Atm(mygrid)%diss_est, Atm(mygrid)%inline_mp,pdc_drib,               &
                      Atm(mygrid)%grav_var_h, Atm(mygrid)%grav_var)
 ! Backward
     call fv_dynamics(Atm(mygrid)%npx, Atm(mygrid)%npy, npz,  nq, Atm(mygrid)%ng, -dt_atmos, 0.,      &
@@ -1944,7 +1943,7 @@ contains
                      Atm(mygrid)%cx, Atm(mygrid)%cy, Atm(mygrid)%ze0, Atm(mygrid)%flagstruct%hybrid_z,    &
                      Atm(mygrid)%gridstruct, Atm(mygrid)%flagstruct,                            &
                      Atm(mygrid)%neststruct, Atm(mygrid)%idiag, Atm(mygrid)%bd, Atm(mygrid)%parent_grid,  &
-                     Atm(mygrid)%domain,Atm(mygrid)%diss_est, Atm(mygrid)%inline_mp, pdc_in,              &
+                     Atm(mygrid)%domain,Atm(mygrid)%diss_est, Atm(mygrid)%inline_mp, pdc_drib,              &
                      Atm(mygrid)%grav_var_h, Atm(mygrid)%grav_var)
 !Nudging back to IC
 !$omp parallel do default (none) &
@@ -2023,7 +2022,7 @@ contains
                      Atm(mygrid)%cx, Atm(mygrid)%cy, Atm(mygrid)%ze0, Atm(mygrid)%flagstruct%hybrid_z,    &
                      Atm(mygrid)%gridstruct, Atm(mygrid)%flagstruct,                            &
                      Atm(mygrid)%neststruct, Atm(mygrid)%idiag, Atm(mygrid)%bd, Atm(mygrid)%parent_grid,  &
-                     Atm(mygrid)%domain,Atm(mygrid)%diss_est, Atm(mygrid)%inline_mp, pdc_in,              & 
+                     Atm(mygrid)%domain,Atm(mygrid)%diss_est, Atm(mygrid)%inline_mp, pdc_drib,              & 
                      Atm(mygrid)%grav_var_h, Atm(mygrid)%grav_var)
 ! Forward call
     call fv_dynamics(Atm(mygrid)%npx, Atm(mygrid)%npy, npz,  nq, Atm(mygrid)%ng, dt_atmos, 0.,      &
@@ -2040,7 +2039,7 @@ contains
                      Atm(mygrid)%cx, Atm(mygrid)%cy, Atm(mygrid)%ze0, Atm(mygrid)%flagstruct%hybrid_z,    &
                      Atm(mygrid)%gridstruct, Atm(mygrid)%flagstruct,                            &
                      Atm(mygrid)%neststruct, Atm(mygrid)%idiag, Atm(mygrid)%bd, Atm(mygrid)%parent_grid,  &
-                     Atm(mygrid)%domain,Atm(mygrid)%diss_est, Atm(mygrid)%inline_mp,pdc_in,               &
+                     Atm(mygrid)%domain,Atm(mygrid)%diss_est, Atm(mygrid)%inline_mp,pdc_drib,               &
                      Atm(mygrid)%grav_var_h, Atm(mygrid)%grav_var)
 ! Nudging back to IC
 !$omp parallel do default (none) &
