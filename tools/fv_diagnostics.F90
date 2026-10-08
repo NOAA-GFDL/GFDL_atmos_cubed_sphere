@@ -200,7 +200,7 @@ module fv_diagnostics_mod
  public :: prt_mass, prt_minmax, ppme, fv_diag_init_gn, z_sum, sphum_ll_fix, eqv_pot, qcly0, gn
  public :: prt_height, prt_gb_nh_sh, interpolate_vertical, rh_calc, get_height_field, dbzcalc
  public :: max_vv, get_vorticity, max_uh
- public :: max_vorticity, max_vorticity_hy1, bunkers_vector, helicity_relative_CAPS
+ public :: max_vorticity, max_vorticity_hy1, bunkers_vector, helicity_relative_CAPS, getcape
  public :: cs3_interpolator, get_height_given_pressure
 #ifdef MOVING_NEST
  public :: interpolate_z, get_pressure_given_height

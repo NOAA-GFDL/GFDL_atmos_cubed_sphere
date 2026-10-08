@@ -717,7 +717,8 @@ contains
                       Atm(n)%gridstruct,  Atm(n)%flagstruct,                    &
                       Atm(n)%neststruct,  Atm(n)%idiag, Atm(n)%bd,              &
                       Atm(n)%parent_grid, Atm(n)%domain,Atm(n)%diss_est,        &
-                      Atm(n)%inline_mp, Atm(n)%grav_var_h, Atm(n)%grav_var)
+                      Atm(n)%inline_mp, Atm(n)%flagstruct%pdc_drib,               &
+                      Atm(n)%grav_var_h, Atm(n)%grav_var)
 
      call timing_off('fv_dynamics')
 
@@ -1648,6 +1649,7 @@ contains
          v_dt(i,j,k1) = v_dt(i,j,k1) + (IPD_Stateout%gv0(im,k) - IPD_Statein%vgrs(im,k)) * rdt
 !         t_dt(i,j,k1) = (IPD_Stateout%gt0(im,k) - IPD_Statein%tgrs(im,k)) * rdt
          t_dt(i,j,k1) = t_dt(i,j,k1) + (IPD_Stateout%gt0(im,k) - IPD_Statein%tgrs(im,k)) * rdt
+
 ! SJL notes:
 ! ---- DO not touch the code below; dry mass conservation may change due to 64bit <-> 32bit conversion
 ! DH notes:
@@ -1818,6 +1820,9 @@ contains
    real, parameter:: q1000_h2o = 3.1E-6
    real, parameter:: q2000_h2o = 2.8E-6
    real, parameter:: q3000_h2o = 3.0E-6
+   !ini must keep pdc_drib as false, no tendency to dribbling
+   logical :: pdc_drib = .false.
+
    real:: xt, p00, q00
    integer:: isc, iec, jsc, jec, npz
    integer:: m, n, i,j,k, ngc, n_split_loc, days
@@ -1920,7 +1925,8 @@ contains
                      Atm(mygrid)%cx, Atm(mygrid)%cy, Atm(mygrid)%ze0, Atm(mygrid)%flagstruct%hybrid_z,    &
                      Atm(mygrid)%gridstruct, Atm(mygrid)%flagstruct,                            &
                      Atm(mygrid)%neststruct, Atm(mygrid)%idiag, Atm(mygrid)%bd, Atm(mygrid)%parent_grid,  &
-                     Atm(mygrid)%domain,Atm(mygrid)%diss_est, Atm(mygrid)%inline_mp, Atm(mygrid)%grav_var_h, Atm(mygrid)%grav_var)
+                     Atm(mygrid)%domain,Atm(mygrid)%diss_est, Atm(mygrid)%inline_mp,pdc_drib,               &
+                     Atm(mygrid)%grav_var_h, Atm(mygrid)%grav_var)
 ! Backward
     call fv_dynamics(Atm(mygrid)%npx, Atm(mygrid)%npy, npz,  nq, Atm(mygrid)%ng, -dt_atmos, 0.,      &
                      Atm(mygrid)%flagstruct%fill, Atm(mygrid)%flagstruct%reproduce_sum, kappa, cp_air, zvir,  &
@@ -1937,7 +1943,8 @@ contains
                      Atm(mygrid)%cx, Atm(mygrid)%cy, Atm(mygrid)%ze0, Atm(mygrid)%flagstruct%hybrid_z,    &
                      Atm(mygrid)%gridstruct, Atm(mygrid)%flagstruct,                            &
                      Atm(mygrid)%neststruct, Atm(mygrid)%idiag, Atm(mygrid)%bd, Atm(mygrid)%parent_grid,  &
-                     Atm(mygrid)%domain,Atm(mygrid)%diss_est, Atm(mygrid)%inline_mp, Atm(mygrid)%grav_var_h, Atm(mygrid)%grav_var)
+                     Atm(mygrid)%domain,Atm(mygrid)%diss_est, Atm(mygrid)%inline_mp, pdc_drib,              &
+                     Atm(mygrid)%grav_var_h, Atm(mygrid)%grav_var)
 !Nudging back to IC
 !$omp parallel do default (none) &
 !$omp              shared (pref, npz, jsc, jec, isc, iec, n, sphum, Atm, u0, v0, t0, dp0, xt, zvir, mygrid, nudge_dz, dz0) &
@@ -2015,7 +2022,8 @@ contains
                      Atm(mygrid)%cx, Atm(mygrid)%cy, Atm(mygrid)%ze0, Atm(mygrid)%flagstruct%hybrid_z,    &
                      Atm(mygrid)%gridstruct, Atm(mygrid)%flagstruct,                            &
                      Atm(mygrid)%neststruct, Atm(mygrid)%idiag, Atm(mygrid)%bd, Atm(mygrid)%parent_grid,  &
-                     Atm(mygrid)%domain,Atm(mygrid)%diss_est, Atm(mygrid)%inline_mp, Atm(mygrid)%grav_var_h, Atm(mygrid)%grav_var)
+                     Atm(mygrid)%domain,Atm(mygrid)%diss_est, Atm(mygrid)%inline_mp, pdc_drib,              & 
+                     Atm(mygrid)%grav_var_h, Atm(mygrid)%grav_var)
 ! Forward call
     call fv_dynamics(Atm(mygrid)%npx, Atm(mygrid)%npy, npz,  nq, Atm(mygrid)%ng, dt_atmos, 0.,      &
                      Atm(mygrid)%flagstruct%fill, Atm(mygrid)%flagstruct%reproduce_sum, kappa, cp_air, zvir,  &
@@ -2031,7 +2039,8 @@ contains
                      Atm(mygrid)%cx, Atm(mygrid)%cy, Atm(mygrid)%ze0, Atm(mygrid)%flagstruct%hybrid_z,    &
                      Atm(mygrid)%gridstruct, Atm(mygrid)%flagstruct,                            &
                      Atm(mygrid)%neststruct, Atm(mygrid)%idiag, Atm(mygrid)%bd, Atm(mygrid)%parent_grid,  &
-                     Atm(mygrid)%domain,Atm(mygrid)%diss_est, Atm(mygrid)%inline_mp, Atm(mygrid)%grav_var_h, Atm(mygrid)%grav_var)
+                     Atm(mygrid)%domain,Atm(mygrid)%diss_est, Atm(mygrid)%inline_mp,pdc_drib,               &
+                     Atm(mygrid)%grav_var_h, Atm(mygrid)%grav_var)
 ! Nudging back to IC
 !$omp parallel do default (none) &
 !$omp              shared (nudge_dz,npz, jsc, jec, isc, iec, n, sphum, Atm, u0, v0, t0, dz0, dp0, xt, zvir, mygrid) &
