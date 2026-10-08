@@ -275,8 +275,7 @@ contains
     real, dimension(bd%isd:bd%ied+1,bd%jsd:bd%jed,npz) :: vd_tend_int
     real, dimension(bd%is:bd%ie,npz+1) :: pe1, pe2
     real, dimension(bd%is:bd%ie+1,npz+1) :: pe3, pe4
-    ! real, dimension(bd%is:bd%ie+1) :: bc_int
-    real, dimension(bd%is:bd%ie) :: bc_int
+    real, dimension(bd%is:bd%ie) :: bc_int 
 
 ! Auto 1D & 2D arrays:
     real, dimension(bd%isd:bd%ied,bd%jsd:bd%jed):: ws3, z_rat
@@ -331,6 +330,7 @@ contains
       jed = bd%jed
 
     pdc = pdc_in .and. present(delp_save) .and. present(pt_tend) .and. present(u_tend) .and. present(v_tend)
+    bc_int = 0.0
 
 #ifdef SW_DYNAMICS
     peln1 = 0.
