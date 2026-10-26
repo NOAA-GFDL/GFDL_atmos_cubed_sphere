@@ -302,10 +302,18 @@ module fv_arrays_mod
    integer :: nord_tr=0      !< Order of tracer damping; values mean the same as for 'nord'.
                              !< The default value is 0. Positivity not guaranteed for nord > 0.
                              !< (We really don't recommend using tracer damping.)
+
+   ! KGao: 10/09/2024
+   ! - two new parameters, damp_flag and cs are introduced below for a unified control of the 2nd order damping/diffusion in FV3
+   ! - the new cs parameter replaces dddmp, which should be removed in the future
+   integer :: damp_flag = 0  !< a flag controlling the 2nd order damping used in fv3
+                             !< 0 - default 2nd order Smagorinsky-type divergence damping; applied as divergence damping only
+                             !< 1 - updated Smagorinsky type damping 
+                             !< 2 - 3d-tke based damping; only for turbulent gray-zone or LES applications 
+   real    :: cs = 0         !< A unified dimensionless coefficient for the second-order damping
    real    :: dddmp = 0.0    !< Dimensionless coefficient for the second-order Smagorinsky-type
                              !< divergence damping. The default is value is 0.0. 0.2
                              !< (the Smagorinsky constant) is recommended if ICs are noisy.
-   real    :: smag2d = 0.0   !< Dimensionless coefficient for 2d smag damping. Experimental!!
    real    :: d2_bg = 0.0    !< Coefficient for explicit second-order divergence damping.
                              !< This option remains active even if nord is nonzero. The default
                              !< value is 0.0. The proper range is 0 to 0.02, with 0 strongly recommended

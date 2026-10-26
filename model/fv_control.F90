@@ -106,6 +106,7 @@ module fv_control_mod
      integer, intent(INOUT) :: p_split
      character(100) :: pe_list_name, errstring
      integer :: n, npes, pecounter, i, num_family, ntiles_nest_all, num_tile_top
+     integer :: ntke
      integer, allocatable :: global_pelist(:)
      integer, dimension(MAX_NNEST) :: grid_pes = 0
      integer, dimension(MAX_NNEST) :: grid_coarse = -1
@@ -150,8 +151,9 @@ module fv_control_mod
 
      integer , pointer :: nord
      integer , pointer :: nord_tr
+     integer , pointer :: damp_flag
+     real    , pointer :: cs
      real    , pointer :: dddmp
-     real    , pointer :: smag2d
      real    , pointer :: d2_bg
      real    , pointer :: d4_bg
      real    , pointer :: vtdm4
@@ -638,6 +640,32 @@ module fv_control_mod
 
      ! Finish up initialization; write solver information and damping coefficients
 
+     ! Check value of dddmp when damp_flag = 0
+     if (Atm(this_grid)%flagstruct%damp_flag .eq. 0 .and. Atm(this_grid)%flagstruct%dddmp .gt. 0) then
+        Atm(this_grid)%flagstruct%cs = Atm(this_grid)%flagstruct%dddmp
+        if ( is_master() ) then
+           write(*,*) 'Using the old 2nd order divergence damping'
+           write(*,*) '!!! dddmp is deprecated; please specify cs parameter instead in the future !!!'
+        endif
+     endif
+
+     ! Ensure the inline PBL and 3D-TKE scheme is used correctly
+     if (Atm(this_grid)%flagstruct%do_inline_pbl) then
+        ntke = tm_get_tracer_index(MODEL_ATMOS, 'sgs_tke')
+        if ( ntke < 0 ) call mpp_error(FATAL,'Must define sgs_tke when using inline PBL')
+        n = ncnst - dnats ! index for the 1st tracer that is not to be advected
+        if ( ntke .gt. n) &
+           call mpp_error(FATAL, "Must advect sgs_tke when using inline PBL; check field_table and dnats")
+     endif
+
+     if (Atm(this_grid)%flagstruct%damp_flag .eq. 2) then
+        if (.not. Atm(this_grid)%flagstruct%do_inline_pbl .or. Atm(this_grid)%flagstruct%inline_pbl_flag .ne. 1) &
+           call mpp_error(FATAL, "Must set do_inline_pbl to true and inline_pbl_flag to 1 when using damp_flag=2")
+
+        if (Atm(this_grid)%flagstruct%grid_type < 3 .and. .not. Atm(this_grid)%gridstruct%bounded_domain) &
+           call mpp_error(FATAL, "The inline 3D TKE scheme is not intended to be used for global cubed-sphere grid")
+     endif
+
      if ( is_master() ) then
         write(*,*) ' '
         write(*,300) Atm(this_grid)%flagstruct%hydrostatic, Atm(this_grid)%thermostruct%use_cond, Atm(this_grid)%thermostruct%moist_kappa
@@ -653,7 +681,7 @@ module fv_control_mod
            write(*,*) ' '
            write(*,*) 'Divergence damping Coefficients'
            write(*,*) 'External mode del-2 (m**2/s)=',  Atm(this_grid)%flagstruct%d_ext*Atm(this_grid)%gridstruct%da_min_c/sdt
-           write(*,*) 'Internal mode del-2 SMAG dimensionless coeff=',  Atm(this_grid)%flagstruct%dddmp
+           write(*,*) 'Internal mode del-2 damping dimensionless coeff=',  Atm(this_grid)%flagstruct%cs
            write(*,*) 'Internal mode del-2 background diff=', Atm(this_grid)%flagstruct%d2_bg*Atm(this_grid)%gridstruct%da_min_c/sdt
 
            if (nord==1) then
@@ -696,8 +724,9 @@ module fv_control_mod
        lim_fac                       => Atm%flagstruct%lim_fac
        nord                          => Atm%flagstruct%nord
        nord_tr                       => Atm%flagstruct%nord_tr
+       damp_flag                     => Atm%flagstruct%damp_flag
+       cs                            => Atm%flagstruct%cs
        dddmp                         => Atm%flagstruct%dddmp
-       smag2d                        => Atm%flagstruct%smag2d
        d2_bg                         => Atm%flagstruct%d2_bg
        d4_bg                         => Atm%flagstruct%d4_bg
        vtdm4                         => Atm%flagstruct%vtdm4
@@ -945,7 +974,8 @@ module fv_control_mod
             nudge, do_f3d, external_ic, is_ideal_case, read_increment, &
             ncep_ic, nggps_ic, hrrrv3_ic, ecmwf_ic, do_diss_est, use_gfsO3, fv_diag_ic, &
             external_eta, res_latlon_dynamics, res_latlon_tracers, d2bg_zq, lim_fac, &
-            dddmp, smag2d, d2_bg, d4_bg, vtdm4, trdm2, d_ext, delt_max, beta, non_ortho, n_sponge, &
+            damp_flag, cs, &
+            dddmp, d2_bg, d4_bg, vtdm4, trdm2, d_ext, delt_max, beta, non_ortho, n_sponge, &
             warm_start, adjust_dry_mass, mountain, d_con, prevent_diss_cooling, ke_bg, nord, nord_tr, convert_ke, use_old_omega, &
             dry_mass, grid_type, do_Held_Suarez, &
             consv_te, fill, filter_phys, fill_dp, fill_wz, fill_gfs, consv_am, RF_fast, &
@@ -1152,7 +1182,8 @@ module fv_control_mod
      subroutine read_namelist_integ_phys_nml
 
        integer :: ios, ierr
-       namelist /integ_phys_nml/ do_sat_adj, do_fast_phys, do_intermediate_phys, do_inline_mp, do_inline_pbl, do_inline_cnv, do_inline_gwd, &
+       namelist /integ_phys_nml/ do_sat_adj, do_fast_phys, do_intermediate_phys, do_inline_mp, do_inline_pbl, &
+            do_inline_cnv, do_inline_gwd, &
             inline_pbl_flag, inline_cnv_flag, do_aerosol, do_cosp, consv_checker, te_err, tw_err
 
        read (input_nml_file,integ_phys_nml,iostat=ios)
