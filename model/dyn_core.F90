@@ -2309,6 +2309,7 @@ subroutine diff3d(npx, npy, npz, nq, ua, va, w, tx, q,    &
     integer, intent(in) :: nq, npx, npy, npz
     type(fv_grid_bounds_type), intent(IN) :: bd
     logical, intent(in) :: hdiffq
+    real, intent(in) ::   delp(bd%isd:bd%ied, bd%jsd:bd%jed, npz)
     real, intent(in) ::     ua(bd%isd:bd%ied, bd%jsd:bd%jed, npz)
     real, intent(in) ::     va(bd%isd:bd%ied, bd%jsd:bd%jed, npz)
     real, intent(in) ::      w(bd%isd:bd%ied, bd%jsd:bd%jed, npz)
