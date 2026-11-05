@@ -144,7 +144,7 @@ module external_ic_mod
 ! </table>
 
    use netcdf
-   use external_sst_mod,   only: i_sst, j_sst, sst_ncep
+   use external_sst_mod,   only: i_sst, j_sst
    use fms_mod,            only: write_version_number, check_nml_error
    use fms2_io_mod,        only: file_exists, open_file, close_file, read_data, variable_exists, &
                                  get_variable_size, get_global_attribute, global_att_exists, &
@@ -1669,14 +1669,6 @@ contains
         enddo
         call prt_maxmin('SST_model', Atm%ts, is, ie, js, je, 0, 1, 1.)
 
-! Perform interp to FMS SST format/grid
-#ifndef DYCORE_SOLO
-        call ncep2fms(im, jm, lon, lat, wk2)
-        if( is_master() ) then
-          write(*,*) 'External_ic_mod: i_sst=', i_sst, ' j_sst=', j_sst
-          call pmaxmin( 'SST_ncep_fms',  real(sst_ncep), i_sst, j_sst, 1.)
-        endif
-#endif
       endif  !(read_ts)
 
       deallocate ( wk2 )
@@ -2789,98 +2781,6 @@ contains
   end subroutine get_fv_ic
 !------------------------------------------------------------------
 !------------------------------------------------------------------
-#ifndef DYCORE_SOLO
- subroutine ncep2fms(im, jm, lon, lat, wk)
-
-  integer, intent(in):: im, jm
-  real,    intent(in):: lon(im), lat(jm)
-  real(kind=4),    intent(in):: wk(im,jm)
-! local:
-  real :: rdlon(im)
-  real :: rdlat(jm)
-  real:: a1, b1
-  real:: delx, dely
-  real:: xc, yc    ! "data" location
-  real:: c1, c2, c3, c4
-  integer i,j, i1, i2, jc, i0, j0, it, jt
-
-  do i=1,im-1
-     rdlon(i) = 1. / (lon(i+1) - lon(i))
-  enddo
-     rdlon(im) = 1. / (lon(1) + 2.*pi - lon(im))
-
-  do j=1,jm-1
-     rdlat(j) = 1. / (lat(j+1) - lat(j))
-  enddo
-
-! * Interpolate to "FMS" 1x1 SST data grid
-! lon: 0.5, 1.5, ..., 359.5
-! lat: -89.5, -88.5, ... , 88.5, 89.5
-
-  delx = 360./real(i_sst)
-  dely = 180./real(j_sst)
-
-  jt = 1
-  do 5000 j=1,j_sst
-
-     yc = (-90. + dely * (0.5+real(j-1)))  * deg2rad
-     if ( yc<lat(1) ) then
-            jc = 1
-            b1 = 0.
-     elseif ( yc>lat(jm) ) then
-            jc = jm-1
-            b1 = 1.
-     else
-          do j0=jt,jm-1
-          if ( yc>=lat(j0) .and. yc<=lat(j0+1) ) then
-               jc = j0
-               jt = j0
-               b1 = (yc-lat(jc)) * rdlat(jc)
-               go to 222
-          endif
-          enddo
-     endif
-222  continue
-     it = 1
-
-     do i=1,i_sst
-        xc = delx * (0.5+real(i-1)) * deg2rad
-       if ( xc>lon(im) ) then
-            i1 = im;     i2 = 1
-            a1 = (xc-lon(im)) * rdlon(im)
-       elseif ( xc<lon(1) ) then
-            i1 = im;     i2 = 1
-            a1 = (xc+2.*pi-lon(im)) * rdlon(im)
-       else
-            do i0=it,im-1
-            if ( xc>=lon(i0) .and. xc<=lon(i0+1) ) then
-               i1 = i0;  i2 = i0+1
-               it = i0
-               a1 = (xc-lon(i1)) * rdlon(i0)
-               go to 111
-            endif
-            enddo
-       endif
-111    continue
-
-       if ( a1<0.0 .or. a1>1.0 .or.  b1<0.0 .or. b1>1.0 ) then
-            write(*,*) 'gid=', mpp_pe(), i,j,a1, b1
-       endif
-
-       c1 = (1.-a1) * (1.-b1)
-       c2 =     a1  * (1.-b1)
-       c3 =     a1  *     b1
-       c4 = (1.-a1) *     b1
-! Interpolated surface pressure
-       sst_ncep(i,j) = c1*wk(i1,jc  ) + c2*wk(i2,jc  ) +    &
-                       c3*wk(i2,jc+1) + c4*wk(i1,jc+1)
-     enddo   !i-loop
-5000 continue   ! j-loop
-
- end subroutine ncep2fms
-#endif
-
-
 
  subroutine remap_coef( is, ie, js, je, isd, ied, jsd, jed, &
                         im, jm, lon, lat, id1, id2, jdc, s2c, agrid )

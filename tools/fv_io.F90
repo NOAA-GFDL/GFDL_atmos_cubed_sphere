@@ -36,7 +36,7 @@ module fv_io_mod
 !   </tr>
 !   <tr>
 !     <td>external_sst_mod</td>
-!     <td>sst_ncep, sst_anom, use_ncep_sst</td>
+!     <td>use_ncep_sst</td>
 !   </tr>
 !   <tr>
 !     <td>field_manager_mod</td>
@@ -112,7 +112,7 @@ module fv_io_mod
                                      set_tracer_profile, &
                                      get_tracer_index
   use field_manager_mod,       only: MODEL_ATMOS
-  use external_sst_mod,        only: sst_ncep, sst_anom, use_ncep_sst
+  use external_sst_mod,        only: use_ncep_sst
   use fv_arrays_mod,           only: fv_atmos_type, fv_nest_BC_type_3D
   use fv_eta_mod,              only: set_external_eta
 

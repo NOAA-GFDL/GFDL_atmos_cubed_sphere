@@ -37,7 +37,7 @@
 !   </tr>
 !   <tr>
 !     <td>external_sst_mod</td>
-!     <td>i_sst, j_sst, sst_ncep, sst_anom</td>
+!     <td>i_sst, j_sst</td>
 !   </tr>
 !   <tr>
 !     <td>fv_arrays_mod</td>
@@ -77,7 +77,7 @@
 #include <fms_platform.h>
  use constants_mod,   only: omega, pi=>pi_8, cnst_radius=>radius
  use mpp_mod,         only: FATAL, mpp_error, WARNING
- use external_sst_mod, only: i_sst, j_sst, sst_ncep, sst_anom
+ use external_sst_mod, only: i_sst, j_sst
  use mpp_domains_mod, only: mpp_update_domains, DGRID_NE, mpp_global_sum
  use mpp_domains_mod, only: BITWISE_EXACT_SUM, domain2d, BITWISE_EFP_SUM
  use mpp_parameter_mod, only: AGRID_PARAM=>AGRID, CGRID_NE_PARAM=>CGRID_NE
@@ -115,7 +115,7 @@
         global_mx, unit_vect_latlon,  &
         cubed_to_latlon, c2l_ord2, g_sum, global_qsum, great_circle_dist,  &
         v_prod, get_unit_vect2, project_sphere_v
- public mid_pt_sphere,  mid_pt_cart, vect_cross, grid_utils_init, grid_utils_end, &
+ public mid_pt_sphere,  mid_pt_cart, vect_cross, grid_utils_init, &
         spherical_angle, cell_center2, get_area, inner_prod, fill_ghost, &
         direct_transform, cube_transform, &
         make_eta_level, expand_cell, cart_to_latlon, intp_great_circle, normalize_vect, &
@@ -276,13 +276,6 @@
               endif
            endif
       endif
-
-! NCEP analysis available from amip-Interp (allocate if needed)
-#ifndef DYCORE_SOLO
-      if (.not. allocated(sst_ncep)) allocate (sst_ncep(i_sst,j_sst))
-      if (.not. allocated(sst_anom)) allocate (sst_anom(i_sst,j_sst))
-#endif
-
 
       cos_sg(:,:,:) =  big_number
       sin_sg(:,:,:) = tiny_number
@@ -983,16 +976,6 @@
       nullify(nw_corner)
 
   end subroutine grid_utils_init
-
-
-  subroutine grid_utils_end
-
-! deallocate sst_ncep (if allocated)
-#ifndef DYCORE_SOLO
-      if (allocated(sst_ncep)) deallocate( sst_ncep )
-      if (allocated(sst_anom)) deallocate( sst_anom )
-#endif
-  end subroutine grid_utils_end
 
 !>@brief The subroutine 'direct_transform' performs a direct transformation of the
 !! standard (symmetrical) cubic grid to a locally enhanced high-res grid on the sphere.

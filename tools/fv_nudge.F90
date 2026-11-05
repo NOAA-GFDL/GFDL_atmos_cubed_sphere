@@ -100,7 +100,7 @@ module fv_nwp_nudge_mod
 !   </tr>
 ! </table>
 
- use external_sst_mod,  only: i_sst, j_sst, sst_ncep, sst_anom, forecast_mode
+ use external_sst_mod,  only: i_sst, j_sst, forecast_mode
  use diag_manager_mod,  only: register_diag_field, send_data
 #ifdef OVERLOAD_R4
  use constantsR4_mod,     only: pi=>pi_8, grav, rdgas, cp_air, kappa, cnst_radius =>radius
@@ -1656,12 +1656,6 @@ module fv_nwp_nudge_mod
       enddo
       call prt_maxmin('SST_model', ts, is, ie, js, je, 0, 1, 1.)
 
-#ifndef DYCORE_SOLO
-! Perform interp to FMS SST format/grid
-      call ncep2fms( wk1 )
-      if(master) call pmaxmin( 'SST_ncep', real(sst_ncep), i_sst, j_sst, 1.)
-!     if(nfile/=1 .and. master) call pmaxmin( 'SST_anom', sst_anom, i_sst, j_sst, 1.)
-#endif
        deallocate ( wk1 )
        if (master) write(*,*) 'Done processing NCEP SST'
 
@@ -1877,94 +1871,6 @@ module fv_nwp_nudge_mod
 5000 continue   ! j-loop
 
  end subroutine remap_coef
-
-
-#ifndef DYCORE_SOLO
- subroutine ncep2fms( sst )
-  real(kind=4), intent(in):: sst(im,jm)
-! local:
-  real :: rdlon(im)
-  real :: rdlat(jm)
-  real:: a1, b1
-  real:: delx, dely
-  real:: xc, yc    ! "data" location
-  real:: c1, c2, c3, c4
-  integer i,j, i1, i2, jc, i0, j0, it, jt
-
-  do i=1,im-1
-     rdlon(i) = 1. / (lon(i+1) - lon(i))
-  enddo
-     rdlon(im) = 1. / (lon(1) + 2.*pi - lon(im))
-
-  do j=1,jm-1
-     rdlat(j) = 1. / (lat(j+1) - lat(j))
-  enddo
-
-! * Interpolate to "FMS" 1x1 SST data grid
-! lon: 0.5, 1.5, ..., 359.5
-! lat: -89.5, -88.5, ... , 88.5, 89.5
-
-  delx = 360./real(i_sst)
-  dely = 180./real(j_sst)
-
-  jt = 1
-  do 5000 j=1,j_sst
-
-     yc = (-90. + dely * (0.5+real(j-1)))  * deg2rad
-     if ( yc<lat(1) ) then
-            jc = 1
-            b1 = 0.
-     elseif ( yc>lat(jm) ) then
-            jc = jm-1
-            b1 = 1.
-     else
-          do j0=jt,jm-1
-          if ( yc>=lat(j0) .and. yc<=lat(j0+1) ) then
-               jc = j0
-               jt = j0
-               b1 = (yc-lat(jc)) * rdlat(jc)
-               go to 222
-          endif
-          enddo
-     endif
-222  continue
-     it = 1
-
-     do i=1,i_sst
-        xc = delx * (0.5+real(i-1)) * deg2rad
-       if ( xc>lon(im) ) then
-            i1 = im;     i2 = 1
-            a1 = (xc-lon(im)) * rdlon(im)
-       elseif ( xc<lon(1) ) then
-            i1 = im;     i2 = 1
-            a1 = (xc+2.*pi-lon(im)) * rdlon(im)
-       else
-            do i0=it,im-1
-            if ( xc>=lon(i0) .and. xc<=lon(i0+1) ) then
-               i1 = i0;  i2 = i0+1
-               it = i0
-               a1 = (xc-lon(i1)) * rdlon(i0)
-               go to 111
-            endif
-            enddo
-       endif
-111    continue
-
-!      if ( a1<0.0 .or. a1>1.0 .or.  b1<0.0 .or. b1>1.0 ) then
-!           write(*,*) 'gid=', mpp_pe(), i,j,a1, b1
-!      endif
-       c1 = (1.-a1) * (1.-b1)
-       c2 =     a1  * (1.-b1)
-       c3 =     a1  *     b1
-       c4 = (1.-a1) *     b1
-! Interpolated surface pressure
-       sst_ncep(i,j) = c1*sst(i1,jc  ) + c2*sst(i2,jc  ) +    &
-                       c3*sst(i2,jc+1) + c4*sst(i1,jc+1)
-     enddo   !i-loop
-5000 continue   ! j-loop
-
- end subroutine ncep2fms
-#endif
 
  subroutine get_int_hght(npz, ak, bk, ps, delp, ps0, tv)
   integer, intent(in):: npz
