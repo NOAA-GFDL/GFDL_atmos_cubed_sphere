@@ -133,6 +133,8 @@ module dyn_core_mod
   use fv_arrays_mod,      only: fv_grid_type, fv_flags_type, fv_nest_type, fv_diag_type, &
                                 fv_grid_bounds_type, R_GRID, fv_nest_BC_type_3d
   use fv_arrays_mod,       only: sa3dtke_type ! for SA-3D-TKE (kyf) (modify for data structure)
+  use fv_arrays_mod,       only: leonard_type ! for Leonard term (jhan) (modify for data structure)
+  use fv_arrays_mod,       only: coldpool_type ! for cold pool advection term (jhan) (modify for data structure)
 
   use boundary_mod,         only: extrapolation_BC,  nested_grid_BC_apply_intT
   use fv_regional_mod,      only: regional_boundary_update
@@ -186,6 +188,10 @@ contains
                      uc, vc,                                     &
 !The following variable is for SA-3D-TKE (kyf) (modify for data structure)
                      sa3dtke_var,    &
+!The following variable is for Leonard term (jhan) (modify for data structure)
+                     leonard_var,    &
+!The following variable is for cold pool advection term (jhan) (modify for data structure)
+                     coldpool_var,    &
                      mfx, mfy, cx, cy, pkz, peln, q_con, ak, bk, &
                      ks, gridstruct, flagstruct, neststruct, idiag, bd, domain, &
                      init_step, i_pack, end_step, diss_est,time_total)
@@ -247,6 +253,12 @@ contains
 !The following 2 variables are for SA-3D-TKE (kyf) (modify for data structure)
     type(sa3dtke_type), intent(inout) :: sa3dtke_var
 
+!The following variable is for Leonard term (jhan) (modify for data structure)
+    type(leonard_type), intent(inout) :: leonard_var
+
+!The following variable is for cold pool advection term (jhan) (modify for data structure)
+    type(coldpool_type), intent(inout) :: coldpool_var
+
     real, intent(inout):: q_con(bd%isd:, bd%jsd:, 1:)
 
 ! The Flux capacitors: accumulated Mass flux arrays
@@ -300,8 +312,13 @@ contains
     logical used
     real :: split_timestep_bc
 
-!The following is for SA-3D-TKE
-    integer :: sgs_tke
+!The following is for SA-3D-TKE or Leonard term
+    real :: tx(bd%isd:bd%ied,bd%jsd:bd%jed,npz)
+    real :: pkzf(bd%isd:bd%ied,bd%jsd:bd%jed,npz)
+
+!The following is for buoyancy excess variable in cold pool parameterization
+    integer :: ntbuexs
+    real :: buexs(bd%isd:bd%ied,bd%jsd:bd%jed,npz)
 
     real, dimension(bd%is:bd%ie,bd%js:bd%je,npz) :: rdg
     integer :: is,  ie,  js,  je
@@ -1433,24 +1450,112 @@ contains
   first_call=.false.
 !-----------------------------------------------------
 !The following is for SA-3D-TKE (kyf) (modify for data structure)(update mpi use)
+!    or  Leonard term(jhan)
 !--calculating shear deformation and TKE transport for 3d TKE scheme
-    if(flagstruct%sa3dtke_dyco) then
+!--calculating Leonard term in subgrid turbulent flux calculation
+!
+    if(flagstruct%sa3dtke_dyco .or. flagstruct%leonard_dyco) then
      if ( end_step ) then
-       sgs_tke = get_tracer_index(MODEL_ATMOS, 'sgs_tke')
-       call mpp_update_domains(q(:,:,:,sgs_tke), domain, complete=.false.)
+!
+       pkzf = 0.0
+       do k=1,npz
+         do j=js,je
+            pkzf(is:ie,j,k) = pkz(is:ie,j,k)
+         enddo
+       enddo
+
+                             call timing_on('COMM_TOTAL')
+       call start_group_halo_update(i_pack(2),pkzf,  domain)
+       call complete_group_halo_update(i_pack(2), domain)  ! pkzf
+                             call timing_off('COMM_TOTAL')
+
+      if( flagstruct%nord>0 .and. (.not. (flagstruct%regional))) then
+        do k=1,npz
+        call copy_corners(pkzf(isd,jsd,k), npx, npy, 1, gridstruct%nested, bd, &
+                          gridstruct%sw_corner, gridstruct%se_corner, &
+                          gridstruct%nw_corner, gridstruct%ne_corner)
+        call copy_corners(pkzf(isd,jsd,k), npx, npy, 2, gridstruct%nested, bd, &
+                          gridstruct%sw_corner, gridstruct%se_corner, &
+                          gridstruct%nw_corner, gridstruct%ne_corner)
+        enddo
+      endif
+!
+!$OMP parallel do default(none) shared(npz,isd,ied,jsd,jed, &
+!$OMP                                  pt,q,pkzf,zvir,tx)      &
+!$OMP                          private(k,i,j)
+       do k=1, npz
+         do j=jsd,jed
+            do i=isd,ied
+              tx(i,j,k) = pt(i,j,k) * pkzf(i,j,k)
+#ifdef MULTI_GASES
+              tx(i,j,k) = tx(i,j,k) / virq(q(i,j,k,:))
+#else
+              tx(i,j,k) = tx(i,j,k) / (1+zvir*q(i,j,k,1))
+#endif
+            enddo
+         enddo
+       enddo
+
+       call mpp_update_domains(q(:,:,:,:), domain, complete=.true.)
+       call mpp_update_domains(tx(:,:,:), domain, complete=.true.)
+
+       if(flagstruct%sa3dtke_dyco) then
        call mpp_update_domains(sa3dtke_var%dku3d_e(:,:,:), domain, complete=.true.) ! update dku3d_e at halo
 
-       call diff3d(npx, npy, npz, nq, ua, va, w,        &
-                  q, sa3dtke_var%deform_1, sa3dtke_var%deform_2, &
-                  sa3dtke_var%deform_3, sa3dtke_var%dku3d_e,  &
-                  zh, dp_ref, gridstruct, bd)
+       call diff3d(npx, npy, npz, nq, ua, va, w, tx, q,       &
+                  flagstruct%hdiffq_dyco, delp,               &
+                  sa3dtke_var%deform_1, sa3dtke_var%deform_2, &
+                  sa3dtke_var%deform_3, sa3dtke_var%deform_4, &
+                  sa3dtke_var%dku3d_e, zh, gridstruct, bd)
        call mpp_update_domains(sa3dtke_var%deform_1, domain, complete=.false.)
        call mpp_update_domains(sa3dtke_var%deform_2, domain, complete=.false.)
        call mpp_update_domains(sa3dtke_var%deform_3, domain, complete=.true.)
+       call mpp_update_domains(sa3dtke_var%deform_4, domain, complete=.true.)
+       endif
+!
+       if(flagstruct%leonard_dyco) then
+       call comleonard(npx, npy, npz, nq, ua, va, w, tx, q,   &
+                  leonard_var%leonrd_u, leonard_var%leonrd_v, &
+                  leonard_var%leonrd_t, leonard_var%leonrd_q, &
+                  gridstruct, bd)
+       call mpp_update_domains(leonard_var%leonrd_u, domain, complete=.false.)
+       call mpp_update_domains(leonard_var%leonrd_v, domain, complete=.false.)
+       call mpp_update_domains(leonard_var%leonrd_t, domain, complete=.true.)
+       call mpp_update_domains(leonard_var%leonrd_q, domain, complete=.true.)
+       endif
+!
      endif
     endif
-
-
+!
+!-----------------------------------------------------
+!The following is for cold pool propagation term calculation(jhan)
+!
+    if(flagstruct%coldpool_dyco) then
+     if ( end_step ) then
+!!
+       ntbuexs = get_tracer_index(MODEL_ATMOS, 'buoyexcs')
+!$OMP parallel do default(none) shared(npz,isd,ied,jsd,jed,ntbuexs,q,buexs) &
+!$OMP                          private(k,i,j)
+       do k=1,npz
+         do j=jsd,jed
+            do i=isd,ied
+              buexs(i,j,k)=q(i,j,k,ntbuexs)
+            enddo
+         enddo
+       enddo
+!
+       call mpp_update_domains(buexs(:,:,:), domain, complete=.true.)
+       call mpp_update_domains(coldpool_var%ucp(:,:), domain, complete=.false.) ! update ucp at halo
+       call mpp_update_domains(coldpool_var%vcp(:,:), domain, complete=.true.) ! update vcp at halo
+       call comcpadv(npx, npy, npz, buexs,      &
+                  coldpool_var%ucp, coldpool_var%vcp,   &
+                  coldpool_var%cpadv, gridstruct, bd)
+       call mpp_update_domains(coldpool_var%cpadv, domain, complete=.true.)
+!
+     endif
+    endif
+!
+!-------------------------------------------------------------------
     if ( nq > 0 .and. .not. flagstruct%inline_q ) then
        call timing_on('COMM_TOTAL')
        call timing_on('COMM_TRACER')
@@ -2194,33 +2299,39 @@ enddo    ! end k-loop
 end subroutine one_grad_p
 
 !The following is for SA-3D-TKE
-subroutine diff3d(npx, npy, npz, nq, ua, va, w, q,       &
-                  deform_1, deform_2, deform_3,  dku3d_e,    &
-                  zh, dp_ref, gridstruct, bd)
+subroutine diff3d(npx, npy, npz, nq, ua, va, w, tx, q,    &
+                  hdiffq, delp,                           &
+                  deform_1, deform_2, deform_3, deform_4, &
+                  dku3d_e, zh, gridstruct, bd)
 
     use fv_arrays_mod,      only: fv_grid_type
 
     integer, intent(in) :: nq, npx, npy, npz
     type(fv_grid_bounds_type), intent(IN) :: bd
+    logical, intent(in) :: hdiffq
+    real, intent(in) ::   delp(bd%isd:bd%ied, bd%jsd:bd%jed, npz)
     real, intent(in) ::     ua(bd%isd:bd%ied, bd%jsd:bd%jed, npz)
     real, intent(in) ::     va(bd%isd:bd%ied, bd%jsd:bd%jed, npz)
     real, intent(in) ::      w(bd%isd:bd%ied, bd%jsd:bd%jed, npz)
+    real, intent(in) ::     tx(bd%isd:bd%ied, bd%jsd:bd%jed, npz)
     real, intent(in) ::      q(bd%isd:bd%ied, bd%jsd:bd%jed, npz, nq)
     real, intent(in) ::     zh(bd%isd:bd%ied, bd%jsd:bd%jed, npz+1)
     real, intent(in) ::     dku3d_e(bd%isd:bd%ied  ,bd%jsd:bd%jed,npz)
 
     !real, intent(in) ::     gz(bd%is:,bd%js:,1:) ! KGao: dims may not be right; zh is now used
-    real, intent(in) ::     dp_ref(npz)
 
     real, intent(out) ::    deform_1(bd%isd:bd%ied, bd%jsd:bd%jed, npz)
     real, intent(out) ::    deform_2(bd%isd:bd%ied, bd%jsd:bd%jed, npz)
     real, intent(out) ::    deform_3(bd%isd:bd%ied, bd%jsd:bd%jed, npz)
+    real, intent(out) ::    deform_4(bd%isd:bd%ied, bd%jsd:bd%jed, npz, nq)
     type(fv_grid_type), intent(IN), target :: gridstruct
 
 ! local
 
     real, pointer, dimension(:,:) :: dx, dy, rarea
-    integer :: is, ie, js, je, isd, ied, jsd, jed, i, j, k
+    integer :: is, ie, js, je, isd, ied, jsd, jed, i, j, k, iq
+    integer :: sgs_tke
+
     real:: dudx(bd%isd:bd%ied,bd%jsd:bd%jed,npz)
     real:: dudy(bd%isd:bd%ied,bd%jsd:bd%jed,npz)
     real:: dvdx(bd%isd:bd%ied,bd%jsd:bd%jed,npz)
@@ -2233,16 +2344,14 @@ subroutine diff3d(npx, npy, npz, nq, ua, va, w, q,       &
     real:: ut(bd%isd:bd%ied,bd%jsd:bd%jed)
     real:: vt(bd%isd:bd%ied,bd%jsd:bd%jed)
 
-    integer :: sgs_tke
-    real :: tke_1(bd%isd:bd%ied,bd%jsd:bd%jed)
-    real :: kqdedy(bd%isd:bd%ied,bd%jsd:bd%jed,npz)
-    real :: dkqdedydy(bd%isd:bd%ied,bd%jsd:bd%jed,npz)
-    real :: kqdedx(bd%isd:bd%ied,bd%jsd:bd%jed,npz)
-    real :: dkqdedxdx(bd%isd:bd%ied,bd%jsd:bd%jed,npz)
+    real :: kqdtdy(bd%isd:bd%ied,bd%jsd:bd%jed,npz)
+    real :: dkqdtdydy(bd%isd:bd%ied,bd%jsd:bd%jed,npz)
+    real :: kqdtdx(bd%isd:bd%ied,bd%jsd:bd%jed,npz)
+    real :: dkqdtdxdx(bd%isd:bd%ied,bd%jsd:bd%jed,npz)
     real :: tmp, tmp1, tmp2
 
     real :: dz
-    
+
     dx  => gridstruct%dx
     dy  => gridstruct%dy
     rarea   => gridstruct%rarea
@@ -2256,6 +2365,7 @@ subroutine diff3d(npx, npy, npz, nq, ua, va, w, q,       &
     jsd  = bd%jsd
     jed  = bd%jed
 
+!
 !===========================================================
 ! Calculate deform_1 and deform_2
 ! deform_1 = 2*dw/dz**2+(du/dz**2+dv/dz**2)
@@ -2390,82 +2500,472 @@ subroutine diff3d(npx, npy, npz, nq, ua, va, w, q,       &
 
 !===========================================================
 ! Calculate deform_3
-! deform_3 = d(kqde/dx)/dx + d(kqde/dy)/dy
-! where e is tke
+! deform_3 = d(kqdt/dx)/dx + d(kqdt/dy)/dy
+! where t is temperature
+!===========================================================
+! KGao: make the 2d temporay arrays private - as suggested by Lucas
+
+   if(hdiffq) then
+!
+!$OMP parallel do default(none) shared(npz,is,ie,js,je,tx,dx,dy,rarea, &
+!$OMP                              delp,deform_3,dku3d_e) &
+!$OMP                           private(k,i,j,ut,vt,tmp,tmp1, &
+!$OMP                              kqdtdy,dkqdtdydy,kqdtdx,dkqdtdxdx)
+   do k=1,npz
+!-------------------------------------
+       do j=js-1,je+1
+          do i=is,ie
+             vt(i,j)=tx(i,j,k)*dx(i,j)
+          enddo
+       enddo
+       do j=js-1,je
+          do i=is,ie
+             tmp = 0.5*(dku3d_e(i,j,k)+dku3d_e(i,j+1,k))
+             tmp1 = 0.5*(delp(i,j,k)+delp(i,j+1,k))
+             kqdtdy(i,j,k)=rarea(i,j)*tmp*tmp1*(vt(i,j+1)-vt(i,j))
+          enddo
+       enddo
+       do j=js-1,je
+          do i=is,ie
+             vt(i,j)=kqdtdy(i,j,k)*dx(i,j)
+          enddo
+       enddo
+       do j=js,je
+          do i=is,ie
+             dkqdtdydy(i,j,k)=rarea(i,j)*(vt(i,j)-vt(i,j-1))
+          enddo
+       enddo
+!-------------------------------------
+       do j=js,je
+          do i=is-1,ie+1
+             ut(i,j)=tx(i,j,k)*dy(i,j)
+          enddo
+       enddo
+       do j=js,je
+          do i=is-1,ie
+             tmp = 0.5*(dku3d_e(i,j,k)+dku3d_e(i+1,j,k))
+             tmp1 = 0.5*(delp(i,j,k)+delp(i+1,j,k))
+             kqdtdx(i,j,k)=rarea(i,j)*tmp*tmp1*(ut(i+1,j)-ut(i,j))
+          enddo
+       enddo
+       do j=js,je
+          do i=is-1,ie
+             ut(i,j)=kqdtdx(i,j,k)*dy(i,j)
+          enddo
+       enddo
+       do j=js,je
+          do i=is,ie
+             dkqdtdxdx(i,j,k)=rarea(i,j)*(ut(i,j)-ut(i-1,j))
+          enddo
+       enddo
+!-------------------------------------
+       do j=js,je
+          do i=is,ie
+             deform_3(i,j,k)=dkqdtdxdx(i,j,k)+dkqdtdydy(i,j,k)
+             deform_3(i,j,k)=deform_3(i,j,k)/delp(i,j,k)
+          enddo
+       enddo
+   enddo ! z loop
+!
+   endif
+
+!===========================================================
+! Calculate deform_4
+! deform_4 = d(kqdt/dx)/dx + d(kqdt/dy)/dy
+! where t is moisture, condensate, tracers, or tke
 !===========================================================
 
    sgs_tke = get_tracer_index(MODEL_ATMOS, 'sgs_tke')
 
 ! KGao: make the 2d temporay arrays private - as suggested by Lucas
 
-!$OMP parallel do default(none) shared(npz,is,ie,js,je,ua,va,w,q,dx,dy,rarea, &
-!$OMP                 dku3d_e,kqdedy,dkqdedydy,kqdedx,dkqdedxdx,sgs_tke) &
-!$OMP                           private(ut,vt,tke_1,tmp)
+   if(hdiffq) then
+!
+!$OMP parallel do default(none) shared(npz,is,ie,js,je,nq,q,dx,dy,rarea, &
+!$OMP                              delp,deform_4,dku3d_e) &
+!$OMP                           private(iq,k,i,j,ut,vt,tmp,tmp1, &
+!$OMP                              kqdtdy,dkqdtdydy,kqdtdx,dkqdtdxdx)
+   do iq=1,nq
    do k=1,npz
 !-------------------------------------
        do j=js-1,je+1
-          do i=is-1,ie+1
-             tke_1(i,j)=q(i,j,k,sgs_tke)
-          enddo
-       enddo
-       do j=js-1,je+1
           do i=is,ie
-             vt(i,j)=tke_1(i,j)*dx(i,j)
+             vt(i,j)=q(i,j,k,iq)*dx(i,j)
           enddo
        enddo
        do j=js-1,je
           do i=is,ie
              tmp = 0.5*(dku3d_e(i,j,k)+dku3d_e(i,j+1,k))
-             kqdedy(i,j,k)=rarea(i,j)*tmp*(vt(i,j+1)-vt(i,j))
+             tmp1 = 0.5*(delp(i,j,k)+delp(i,j+1,k))
+             kqdtdy(i,j,k)=rarea(i,j)*tmp*tmp1*(vt(i,j+1)-vt(i,j))
           enddo
        enddo
        do j=js-1,je
           do i=is,ie
-             vt(i,j)=kqdedy(i,j,k)*dx(i,j)
+             vt(i,j)=kqdtdy(i,j,k)*dx(i,j)
           enddo
        enddo
        do j=js,je
           do i=is,ie
-             dkqdedydy(i,j,k)=rarea(i,j)*(vt(i,j)-vt(i,j-1))
+             dkqdtdydy(i,j,k)=rarea(i,j)*(vt(i,j)-vt(i,j-1))
           enddo
        enddo
 !-------------------------------------
        do j=js,je
           do i=is-1,ie+1
-             ut(i,j)=tke_1(i,j)*dy(i,j)
+             ut(i,j)=q(i,j,k,iq)*dy(i,j)
           enddo
        enddo
        do j=js,je
           do i=is-1,ie
              tmp = 0.5*(dku3d_e(i,j,k)+dku3d_e(i+1,j,k))
-             kqdedx(i,j,k)=rarea(i,j)*tmp*(ut(i+1,j)-ut(i,j))
+             tmp1 = 0.5*(delp(i,j,k)+delp(i+1,j,k))
+             kqdtdx(i,j,k)=rarea(i,j)*tmp*tmp1*(ut(i+1,j)-ut(i,j))
           enddo
        enddo
        do j=js,je
           do i=is-1,ie
-             ut(i,j)=kqdedx(i,j,k)*dy(i,j)
+             ut(i,j)=kqdtdx(i,j,k)*dy(i,j)
           enddo
        enddo
        do j=js,je
           do i=is,ie
-             dkqdedxdx(i,j,k)=rarea(i,j)*(ut(i,j)-ut(i-1,j))
+             dkqdtdxdx(i,j,k)=rarea(i,j)*(ut(i,j)-ut(i-1,j))
+          enddo
+       enddo
+!-------------------------------------
+       do j=js,je
+          do i=is,ie
+             deform_4(i,j,k,iq)=dkqdtdxdx(i,j,k)+dkqdtdydy(i,j,k)
+             deform_4(i,j,k,iq)=deform_4(i,j,k,iq)/delp(i,j,k)
           enddo
        enddo
    enddo ! z loop
-!-------------------------------------
-! get deform_3 based on all terms
-
-!$OMP parallel do default(none) shared(npz,is,ie,js,je,deform_3, &
-!$OMP                   dkqdedxdx,dkqdedydy)
+   enddo ! iq loop
+!
+   else
+!
+!$OMP parallel do default(none) shared(npz,is,ie,js,je,nq,q,dx,dy,rarea, &
+!$OMP                              delp,sgs_tke,deform_4,dku3d_e) &
+!$OMP                           private(iq,k,i,j,ut,vt,tmp,tmp1, &
+!$OMP                              kqdtdy,dkqdtdydy,kqdtdx,dkqdtdxdx)
    do k=1,npz
-       do j=js,je
+!-------------------------------------
+       do j=js-1,je+1
           do i=is,ie
-             deform_3(i,j,k)=dkqdedxdx(i,j,k)+dkqdedydy(i,j,k)
+             vt(i,j)=q(i,j,k,sgs_tke)*dx(i,j)
           enddo
        enddo
-   enddo
+       do j=js-1,je
+          do i=is,ie
+             tmp = 0.5*(dku3d_e(i,j,k)+dku3d_e(i,j+1,k))
+             tmp1 = 0.5*(delp(i,j,k)+delp(i,j+1,k))
+             kqdtdy(i,j,k)=rarea(i,j)*tmp*tmp1*(vt(i,j+1)-vt(i,j))
+          enddo
+       enddo
+       do j=js-1,je
+          do i=is,ie
+             vt(i,j)=kqdtdy(i,j,k)*dx(i,j)
+          enddo
+       enddo
+       do j=js,je
+          do i=is,ie
+             dkqdtdydy(i,j,k)=rarea(i,j)*(vt(i,j)-vt(i,j-1))
+          enddo
+       enddo
+!-------------------------------------
+       do j=js,je
+          do i=is-1,ie+1
+             ut(i,j)=q(i,j,k,sgs_tke)*dy(i,j)
+          enddo
+       enddo
+       do j=js,je
+          do i=is-1,ie
+             tmp = 0.5*(dku3d_e(i,j,k)+dku3d_e(i+1,j,k))
+             tmp1 = 0.5*(delp(i,j,k)+delp(i+1,j,k))
+             kqdtdx(i,j,k)=rarea(i,j)*tmp*tmp1*(ut(i+1,j)-ut(i,j))
+          enddo
+       enddo
+       do j=js,je
+          do i=is-1,ie
+             ut(i,j)=kqdtdx(i,j,k)*dy(i,j)
+          enddo
+       enddo
+       do j=js,je
+          do i=is,ie
+             dkqdtdxdx(i,j,k)=rarea(i,j)*(ut(i,j)-ut(i-1,j))
+          enddo
+       enddo
+!-------------------------------------
+       do j=js,je
+       do i=is,ie
+         deform_4(i,j,k,sgs_tke)=dkqdtdxdx(i,j,k)+dkqdtdydy(i,j,k)
+         deform_4(i,j,k,sgs_tke)=deform_4(i,j,k,sgs_tke)/delp(i,j,k)
+       enddo
+       enddo
+   enddo ! z loop
+!
+   endif
 
 end subroutine diff3d
+
+!The following is for Leonard term
+subroutine comleonard(npx, npy, npz, nq, ua, va, w, tx, q,    &
+                  leonrd_u, leonrd_v, leonrd_t, leonrd_q,     &
+                  gridstruct, bd)
+
+    use fv_arrays_mod,      only: fv_grid_type
+
+    integer, intent(in) :: nq, npx, npy, npz
+    type(fv_grid_bounds_type), intent(IN) :: bd
+    real, intent(in) ::     ua(bd%isd:bd%ied, bd%jsd:bd%jed, npz)
+    real, intent(in) ::     va(bd%isd:bd%ied, bd%jsd:bd%jed, npz)
+    real, intent(in) ::      w(bd%isd:bd%ied, bd%jsd:bd%jed, npz)
+    real, intent(in) ::     tx(bd%isd:bd%ied, bd%jsd:bd%jed, npz)
+    real, intent(in) ::      q(bd%isd:bd%ied, bd%jsd:bd%jed, npz, nq)
+
+    real, intent(out) ::    leonrd_u(bd%isd:bd%ied, bd%jsd:bd%jed, npz)
+    real, intent(out) ::    leonrd_v(bd%isd:bd%ied, bd%jsd:bd%jed, npz)
+    real, intent(out) ::    leonrd_t(bd%isd:bd%ied, bd%jsd:bd%jed, npz)
+    real, intent(out) ::    leonrd_q(bd%isd:bd%ied, bd%jsd:bd%jed, npz, nq)
+    type(fv_grid_type), intent(IN), target :: gridstruct
+
+! local
+
+    real, pointer, dimension(:,:) :: dx, dy, rarea
+    integer :: is, ie, js, je, isd, ied, jsd, jed, i, j, k, iq
+    real:: dudx(bd%isd:bd%ied,bd%jsd:bd%jed)
+    real:: dudy(bd%isd:bd%ied,bd%jsd:bd%jed)
+    real:: dvdx(bd%isd:bd%ied,bd%jsd:bd%jed)
+    real:: dvdy(bd%isd:bd%ied,bd%jsd:bd%jed)
+    real:: dtdx(bd%isd:bd%ied,bd%jsd:bd%jed)
+    real:: dtdy(bd%isd:bd%ied,bd%jsd:bd%jed)
+    real:: dqdx(bd%isd:bd%ied,bd%jsd:bd%jed)
+    real:: dqdy(bd%isd:bd%ied,bd%jsd:bd%jed)
+    real:: dwdx(bd%isd:bd%ied,bd%jsd:bd%jed,npz)
+    real:: dwdy(bd%isd:bd%ied,bd%jsd:bd%jed,npz)
+    real:: ut(bd%isd:bd%ied,bd%jsd:bd%jed)
+    real:: vt(bd%isd:bd%ied,bd%jsd:bd%jed)
+
+    real :: dz
+
+    dx  => gridstruct%dx
+    dy  => gridstruct%dy
+    rarea   => gridstruct%rarea
+
+    is  = bd%is
+    ie  = bd%ie
+    js  = bd%js
+    je  = bd%je
+    isd  = bd%isd
+    ied  = bd%ied
+    jsd  = bd%jsd
+    jed  = bd%jed
+
+!
+!===========================================================
+! Calculate leonrd_u, leonrd_v, and leonrd_t
+! leonrd_u = -(dx^2*dw/dx*du/dx+dy^2*dw/dy*du/dy)/12
+! leonrd_v = -(dx^2*dw/dx*dv/dx+dy^2*dw/dy*dv/dy)/12
+! leonrd_t = -(dx^2*dw/dx*dt/dx+dy^2*dw/dy*dt/dy)/12
+!===========================================================
+
+! KGao: make ut and vt private as suggested by Lucas
+
+!$OMP parallel do default(none) shared(npz,is,ie,js,je,ua,va,w,tx,      &
+!$OMP                 dx,dy,rarea,dwdx,dwdy,leonrd_u,leonrd_v,leonrd_t) &
+!$OMP          private(k,i,j,ut,vt,dudx,dudy,dvdx,dvdy,dtdx,dtdy)
+   do k=1,npz
+!-------------------------------------
+! get du/dy and dv/dx
+       do j=js-1,je+1
+          do i=is,ie
+             vt(i,j) = ua(i,j,k)*dx(i,j)
+          enddo
+       enddo
+       do j=js,je
+          do i=is-1,ie+1
+             ut(i,j) = va(i,j,k)*dy(i,j)
+          enddo
+       enddo
+       do j=js,je
+          do i=is,ie
+             dudy(i,j) = 0.5*rarea(i,j)*(vt(i,j+1)-vt(i,j-1))
+             dvdx(i,j) = 0.5*rarea(i,j)*(ut(i+1,j)-ut(i-1,j))
+          enddo
+       enddo
+!-------------------------------------
+! get du/dx and dv/dy
+       do j=js,je
+          do i=is-1,ie+1
+             ut(i,j) = ua(i,j,k)*dy(i,j)
+          enddo
+       enddo
+       do j=js-1,je+1
+          do i=is,ie
+             vt(i,j) = va(i,j,k)*dx(i,j)
+          enddo
+       enddo
+       do j=js,je
+          do i=is,ie
+             dudx(i,j) = 0.5*rarea(i,j)*(ut(i+1,j)-ut(i-1,j))
+             dvdy(i,j) = 0.5*rarea(i,j)*(vt(i,j+1)-vt(i,j-1))
+          enddo
+       enddo
+!-------------------------------------
+! get dt/dx and dt/dy
+       do j=js,je
+          do i=is-1,ie+1
+             ut(i,j) = tx(i,j,k)*dy(i,j)
+          enddo
+       enddo
+       do j=js-1,je+1
+          do i=is,ie
+             vt(i,j) = tx(i,j,k)*dx(i,j)
+          enddo
+       enddo
+       do j=js,je
+          do i=is,ie
+             dtdx(i,j) = 0.5*rarea(i,j)*(ut(i+1,j)-ut(i-1,j))
+             dtdy(i,j) = 0.5*rarea(i,j)*(vt(i,j+1)-vt(i,j-1))
+          enddo
+       enddo
+!-------------------------------------
+! get dw/dx and dw/dy
+       do j=js,je
+          do i=is-1,ie+1
+             ut(i,j) = w(i,j,k)*dy(i,j)
+          enddo
+       enddo
+       do j=js-1,je+1
+          do i=is,ie
+             vt(i,j) = w(i,j,k)*dx(i,j)
+          enddo
+       enddo
+       do j=js,je
+          do i=is,ie
+             dwdx(i,j,k) = 0.5*rarea(i,j)*(ut(i+1,j)-ut(i-1,j))
+             dwdy(i,j,k) = 0.5*rarea(i,j)*(vt(i,j+1)-vt(i,j-1))
+          enddo
+       enddo
+!-------------------------------------
+! get leonrd_u, leonrd_v, and leonrd_t
+!
+       do j=js,je
+         do i=is,ie
+           leonrd_u(i,j,k)=-(dx(i,j)*dx(i,j)*dwdx(i,j,k)*dudx(i,j)+          &
+                             dy(i,j)*dy(i,j)*dwdy(i,j,k)*dudy(i,j))/12.0
+           leonrd_v(i,j,k)=-(dx(i,j)*dx(i,j)*dwdx(i,j,k)*dvdx(i,j)+          &
+                             dy(i,j)*dy(i,j)*dwdy(i,j,k)*dvdy(i,j))/12.0
+           leonrd_t(i,j,k)=-(dx(i,j)*dx(i,j)*dwdx(i,j,k)*dtdx(i,j)+          &
+                             dy(i,j)*dy(i,j)*dwdy(i,j,k)*dtdy(i,j))/12.0
+         enddo
+       enddo
+   enddo   !z loop
+!
+!===========================================================
+! Calculate leonrd_q
+! leonrd_q = -(dx^2*dw/dx*dq/dx+dy^2*dw/dy*dq/dy)/12
+! where q is moisture, condensate, tracers, or tke
+!===========================================================
+!
+!$OMP parallel do default(none) shared(npz,is,ie,js,je,nq,q,dx,dy,rarea, &
+!$OMP                                  dwdx,dwdy,leonrd_q) &
+!$OMP                   private(iq,k,i,j,ut,vt,dqdx,dqdy)
+   do iq=1,nq
+   do k=1,npz
+!-------------------------------------
+       do j=js,je
+          do i=is-1,ie+1
+             ut(i,j)=q(i,j,k,iq)*dy(i,j)
+          enddo
+       enddo
+       do j=js-1,je+1
+          do i=is,ie
+             vt(i,j)=q(i,j,k,iq)*dx(i,j)
+          enddo
+       enddo
+       do j=js,je
+          do i=is,ie
+             dqdx(i,j) = 0.5*rarea(i,j)*(ut(i+1,j)-ut(i-1,j))
+             dqdy(i,j) = 0.5*rarea(i,j)*(vt(i,j+1)-vt(i,j-1))
+          enddo
+       enddo
+       do j=js,je
+         do i=is,ie
+           leonrd_q(i,j,k,iq)=-(dx(i,j)*dx(i,j)*dwdx(i,j,k)*dqdx(i,j)+       &
+                           dy(i,j)*dy(i,j)*dwdy(i,j,k)*dqdy(i,j))/12.0
+         enddo
+       enddo
+   enddo ! z loop
+   enddo ! iq loop
+!
+end subroutine comleonard
+!
+!The following is for cold pool propagation term calculation
+subroutine comcpadv(npx, npy, npz, buexs,  &
+                  ucp, vcp, cpadv, gridstruct, bd)
+
+    use fv_arrays_mod,      only: fv_grid_type
+
+    integer, intent(in) :: npx, npy, npz
+    type(fv_grid_bounds_type), intent(IN) :: bd
+    real, intent(in) ::     buexs(bd%isd:bd%ied, bd%jsd:bd%jed, npz)
+    real, intent(in) ::     ucp(bd%isd:bd%ied, bd%jsd:bd%jed)
+    real, intent(in) ::     vcp(bd%isd:bd%ied, bd%jsd:bd%jed)
+    real, intent(out) ::    cpadv(bd%isd:bd%ied, bd%jsd:bd%jed, npz)
+    type(fv_grid_type), intent(IN), target :: gridstruct
+
+! local
+
+    real, pointer, dimension(:,:) :: dx, dy
+    integer :: is, ie, js, je, isd, ied, jsd, jed, i, j, k
+
+    real :: tem, tem1, tem2
+
+    dx  => gridstruct%dx
+    dy  => gridstruct%dy
+
+    is  = bd%is
+    ie  = bd%ie
+    js  = bd%js
+    je  = bd%je
+    isd  = bd%isd
+    ied  = bd%ied
+    jsd  = bd%jsd
+    jed  = bd%jed
+!
+!========================================================================
+! Calculate buoyancy excess advection for cold pool with upstream scheme
+!   cpadv=-ucp*d(buexs)/dx-vcp*d(buexs)/dy
+!=======================================================================
+!
+!$OMP parallel do default(none) shared(npz,is,ie,js,je,dx,dy,  &
+!$OMP                                  ucp,vcp,buexs,cpadv) &
+!$OMP          private(k,i,j,tem,tem1,tem2)
+     do k=1,npz
+       do j=js,je
+          do i=is,ie
+             if(ucp(i,j) > 0.) then
+               tem = 0.5*(dx(i-1,j)+dx(i,j))
+               tem1 = ucp(i,j)*(buexs(i-1,j,k)-buexs(i,j,k))/tem
+             else
+               tem = 0.5*(dx(i,j)+dx(i+1,j))
+               tem1 = ucp(i,j)*(buexs(i,j,k)-buexs(i+1,j,k))/tem
+             endif
+             if(vcp(i,j) > 0.) then
+               tem = 0.5*(dy(i,j-1)+dy(i,j))
+               tem2 = vcp(i,j)*(buexs(i,j-1,k)-buexs(i,j,k))/tem
+             else
+               tem = 0.5*(dy(i,j)+dy(i,j+1))
+               tem2 = vcp(i,j)*(buexs(i,j,k)-buexs(i,j+1,k))/tem
+             endif
+             cpadv(i,j,k) = tem1+tem2
+          enddo
+       enddo
+     enddo   !z loop
+!
+end subroutine comcpadv
 
 subroutine grad1_p_update(divg2, u, v, pk, gz, dt, ng, gridstruct, bd, npx, npy, npz, ptop, beta, a2b_ord)
 
