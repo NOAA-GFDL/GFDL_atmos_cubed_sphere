@@ -943,7 +943,8 @@ module fv_arrays_mod
   logical :: var_grav = .false.  ! apply variable gravity (4D) to simulations
 !This logical variable is used for SA-3D-TKE
      logical :: sa3dtke_dyco = .false.
-
+     !If use higher oreder of physcis-dynamics coupling
+     logical :: pdc_drib = .false.
   !>Convenience pointers
   integer, pointer :: grid_number
 
@@ -1084,7 +1085,25 @@ module fv_arrays_mod
     real, _ALLOCATABLE :: dku3d_e(:,:,:)   _NULL !< 3D Eddy Diffusivity for TKE
   end type sa3dtke_type
   !3D-SA-TKE-end
+  
+  ! pdc_drib data structure
+    type pdc_save_type
+      real, _ALLOCATABLE :: pt(:,:,:)
+      real, _ALLOCATABLE :: delz(:,:,:)
+      real, _ALLOCATABLE :: delp(:,:,:)
+      real, _ALLOCATABLE :: u(:,:,:)
+      real, _ALLOCATABLE :: v(:,:,:)
+      real, _ALLOCATABLE :: q(:,:,:,:)
+  end type
 
+  type pdc_tend_type
+      real, _ALLOCATABLE :: pt(:,:,:)    _NULL
+      real, _ALLOCATABLE :: u(:,:,:)     _NULL
+      real, _ALLOCATABLE :: v(:,:,:)     _NULL
+      real, _ALLOCATABLE :: q(:,:,:,:)   _NULL
+  end type
+  !pdc_drib_end
+  
   type inline_mp_type
     real, _ALLOCATABLE :: prer(:,:)     _NULL
     real, _ALLOCATABLE :: prei(:,:)     _NULL

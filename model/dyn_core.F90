@@ -133,7 +133,7 @@ module dyn_core_mod
   use fv_arrays_mod,      only: fv_grid_type, fv_flags_type, fv_nest_type, fv_diag_type, &
                                 fv_grid_bounds_type, R_GRID, fv_nest_BC_type_3d
   use fv_arrays_mod,       only: sa3dtke_type ! for SA-3D-TKE (kyf) (modify for data structure)
-
+  use fv_arrays_mod,      only: pdc_tend_type !pdc_drib
   use boundary_mod,         only: extrapolation_BC,  nested_grid_BC_apply_intT
   use fv_regional_mod,      only: regional_boundary_update
   use fv_regional_mod,      only: current_time_in_seconds, bc_time_interval
@@ -150,6 +150,7 @@ module dyn_core_mod
 #endif
   use fv_regional_mod,     only: dump_field, exch_uv, H_STAGGER, U_STAGGER, V_STAGGER
   use fv_regional_mod,     only: a_step, p_step, k_step, n_step
+  use fv_mapz_mod,         only: map1_ppm
 
 implicit none
 private
@@ -172,7 +173,6 @@ public :: dyn_core, del2_cubed, init_ijk_mem
   real, parameter    ::     rad2deg = 180./pi
 
 contains
-
 !-----------------------------------------------------------------------
 !     dyn_core :: FV Lagrangian dynamics driver
 !-----------------------------------------------------------------------
@@ -188,7 +188,8 @@ contains
                      sa3dtke_var,    &
                      mfx, mfy, cx, cy, pkz, peln, q_con, ak, bk, &
                      ks, gridstruct, flagstruct, neststruct, idiag, bd, domain, &
-                     init_step, i_pack, end_step, diss_est,time_total)
+                     init_step, i_pack, end_step, diss_est, &
+                     pdc_in, time_total, delp_save, pdc_tend)
 
     integer, intent(IN) :: npx
     integer, intent(IN) :: npy
@@ -200,6 +201,7 @@ contains
     real   , intent(IN) :: ptop
     logical, intent(IN) :: hydrostatic
     logical, intent(IN) :: init_step, end_step
+    logical, intent(IN) :: pdc_in
     real, intent(in) :: pfull(npz)
     real, intent(in),     dimension(npz+1) :: ak, bk
     integer, intent(IN) :: ks
@@ -217,7 +219,8 @@ contains
     real, intent(inout) :: delp(bd%isd:bd%ied  ,bd%jsd:bd%jed  ,npz)  !< pressure thickness (pascal)
     real, intent(inout) :: grav_var_h(bd%isd:bd%ied,bd%jsd:bd%jed,npz+1)  !< variable gravity
     real, intent(inout) :: q(   bd%isd:bd%ied  ,bd%jsd:bd%jed  ,npz, nq)  !
-    real, intent(in), optional:: time_total  !< total time (seconds) since start
+    real, intent(in), optional :: time_total  !< total time (seconds) since start
+    real, intent(in), optional :: delp_save(bd%isd:bd%ied,bd%jsd:bd%jed,npz)
     real, intent(inout) :: diss_est(bd%isd:bd%ied  ,bd%jsd:bd%jed  ,npz)  !< skeb dissipation estimate
 
 !-----------------------------------------------------------------------
@@ -246,8 +249,11 @@ contains
     real, intent(inout), dimension(bd%isd:bd%ied,bd%jsd:bd%jed,npz):: ua, va
 !The following 2 variables are for SA-3D-TKE (kyf) (modify for data structure)
     type(sa3dtke_type), intent(inout) :: sa3dtke_var
-
+    
     real, intent(inout):: q_con(bd%isd:, bd%jsd:, 1:)
+
+!The PDC tendency dribbling
+   type(pdc_tend_type), intent(in), optional :: pdc_tend
 
 ! The Flux capacitors: accumulated Mass flux arrays
     real, intent(inout)::  mfx(bd%is:bd%ie+1, bd%js:bd%je,   npz)
@@ -263,7 +269,11 @@ contains
     type(fv_diag_type),  intent(IN)            :: idiag
     type(domain2d),      intent(INOUT)         :: domain
 
+    logical :: pdc
     real, allocatable, dimension(:,:,:):: pem, heat_source
+    real, dimension(bd%isd:bd%ied,bd%jsd:bd%jed+1,npz) :: ud_tend_int
+    real, dimension(bd%isd:bd%ied+1,bd%jsd:bd%jed,npz) :: vd_tend_int
+
 ! Auto 1D & 2D arrays:
     real, dimension(bd%isd:bd%ied,bd%jsd:bd%jed):: ws3, z_rat
     real:: dp_ref(npz)
@@ -316,7 +326,7 @@ contains
       jsd = bd%jsd
       jed = bd%jed
 
-
+    pdc = pdc_in .and. present(delp_save) .and. present(pdc_tend)
 #ifdef SW_DYNAMICS
     peln1 = 0.
 #else
@@ -430,6 +440,8 @@ contains
      else
           remap_step = .false.
      endif
+
+
 
      if ( flagstruct%fv_debug ) then
           if(is_master()) write(*,*) 'n_split loop, it=', it
@@ -558,6 +570,13 @@ contains
      if( .not. hydrostatic )  &
           call complete_group_halo_update(i_pack(7), domain)
                                                      call timing_off('COMM_TOTAL')
+
+     if(pdc)then
+             call pdc_add_tend( is, ie, js, je, isd, ied, jsd, jed, npz, &
+                  ptop, pt, u, v, delp, domain,  flagstruct%kord_mt, recip_k_split_n_split, &
+                  delp_save, pdc_tend)
+     endif
+
                                                      
                                                      call timing_on('c_sw')
 !$OMP parallel do default(none) shared(npz,isd,jsd,delpc,delp,ptc,pt,u,v,w,uc,vc,ua,va, &
@@ -573,6 +592,7 @@ contains
                       gridstruct, flagstruct)
       enddo
                                                      call timing_off('c_sw')
+
       if ( flagstruct%nord > 0 ) then
                                                    call timing_on('COMM_TOTAL')
           call start_group_halo_update(i_pack(3), divgd, domain, position=CORNER)
@@ -708,6 +728,7 @@ contains
 #endif
 
       endif   ! end hydro check
+
 
       call p_grad_c(dt2, npz, delpc, pkc, gz, uc, vc, bd, gridstruct%rdxc, gridstruct%rdyc, hydrostatic)
 
@@ -3336,5 +3357,114 @@ do 1000 j=jfirst,jlast
 ! -------------------------------------------------
  return
  end subroutine molecular_diffusion_run
+ subroutine pdc_add_tend( is, ie, js, je, isd, ied, jsd, jed, npz, &
+     ptop, pt, u, v, delp, domain,  kord_mt, kxn_split, &
+      delp_save, pdc_tend)
+
+
+  ! Domain bounds and grid indices
+  integer, intent(in) :: is, ie, js, je, isd, ied, jsd, jed, npz
+  real,    intent(in) :: ptop, kxn_split
+
+  ! Infrastructure types
+  type(domain2d),     intent(inout) :: domain
+  integer, intent(in)    :: kord_mt
+
+  ! State and tendency variables
+  real, intent(inout) :: pt(isd:ied, jsd:jed, npz)
+  real, intent(inout) :: u(isd:ied, jsd:jed+1, npz)
+  real, intent(inout) :: v(isd:ied+1, jsd:jed, npz)
+  real, intent(in)    :: delp(isd:ied, jsd:jed, npz)
+  real, intent(in)    :: delp_save(isd:ied, jsd:jed, npz)
+
+  ! Tendencies
+  type(pdc_tend_type), intent(in) :: pdc_tend
+
+
+  ! PPM mapping work arrays
+  real :: bc_int(is:ie+1)
+  real :: ud_tend_int(isd:ied, jsd:jed+1, npz)
+  real :: vd_tend_int(isd:ied+1, jsd:jed, npz)
+  real, dimension(is:ie,npz+1) :: pe1, pe2
+  real, dimension(is:ie+1,npz+1) :: pe3, pe4
+  ! Local variables
+  integer :: i, j, k
+
+  !-------------------------------------------------------------------
+  ! 1. Apply temperature tendency & initiate halo update
+  !-------------------------------------------------------------------
+!$OMP parallel do default(none) shared(is,ie,js,je,npz,kxn_split,pdc_tend,delp_save,delp,pt)
+  do k = 1, npz
+    do j = js, je
+      do i = is, ie
+        pt(i,j,k) = pt(i,j,k) + kxn_split * pdc_tend%pt(i,j,k) * delp_save(i,j,k) / delp(i,j,k)
+      enddo
+    enddo
+  enddo
+
+  call mpp_update_domains(pt, domain, complete=.true.)
+
+  !-------------------------------------------------------------------
+  ! 2. Vertical remap tendencies (PPM) to current pressure coordinate
+  !-------------------------------------------------------------------
+!$OMP parallel do default(none) shared(is,ie,js,je,npz,ptop,delp_save,delp,pdc_tend,ud_tend_int, &
+!$OMP                                  isd,ied,jsd,jed,kord_mt) &
+!$OMP                           private(i,j,k,pe1,pe2,bc_int)
+  do j = js, je + 1
+    bc_int(is:ie) = 0.0
+    do i = is, ie
+      pe1(i,1) = ptop
+      pe2(i,1) = ptop
+      do k = 2, npz + 1
+        pe1(i,k) = pe1(i,k-1) + 0.5 * (delp_save(i,j-1,k-1) + delp_save(i,j,k-1))
+        pe2(i,k) = pe2(i,k-1) + 0.5 * (delp(i,j-1,k-1)      + delp(i,j,k-1))
+      enddo
+    enddo
+
+    call map1_ppm(npz, pe1(is:ie,:), pdc_tend%u, bc_int(is:ie), &
+                  npz, pe2(is:ie,:), ud_tend_int, &
+                  is, ie, j, isd, ied, jsd, jed+1, -1, kord_mt)
+  end do
+
+!$OMP parallel do default(none) shared(is,ie,js,je,npz,ptop,delp_save,delp,pdc_tend, &
+!$OMP                                  isd,ied,jsd,jed,vd_tend_int,kord_mt) &
+!$OMP                           private(i,j,k,pe3,pe4,bc_int)
+    do j = js, je
+      bc_int(:) = 0.0
+      do i = is, ie + 1
+        pe3(i,1) = ptop
+        pe4(i,1) = ptop
+        do k = 2, npz + 1
+          pe3(i,k) = pe3(i,k-1) + 0.5 * (delp_save(i-1,j,k-1) + delp_save(i,j,k-1))
+          pe4(i,k) = pe4(i,k-1) + 0.5 * (delp(i-1,j,k-1)      + delp(i,j,k-1))
+        enddo
+      enddo
+
+      call map1_ppm(npz, pe3, pdc_tend%v, bc_int, &
+                    npz, pe4, vd_tend_int, &
+                    is, ie+1, j, isd, ied+1, jsd, jed, -1, kord_mt)
+  enddo
+
+  !-------------------------------------------------------------------
+  ! 3. Update velocity fields (u, v) and complete halo updates
+  !-------------------------------------------------------------------
+!$OMP parallel do default(none) shared(is,ie,js,je,u,kxn_split,ud_tend_int,npz,v,vd_tend_int)
+  do k = 1, npz
+    do j = js, je + 1
+      do i = is, ie
+        u(i,j,k) = u(i,j,k) + kxn_split * ud_tend_int(i,j,k)
+      enddo
+    enddo
+    do j = js, je
+      do i = is, ie + 1
+        v(i,j,k) = v(i,j,k) + kxn_split * vd_tend_int(i,j,k)
+      enddo
+    enddo
+  enddo
+
+  call mpp_update_domains(u, v, domain, gridtype=DGRID_NE)
+
+
+end subroutine pdc_add_tend
 
 end module dyn_core_mod
