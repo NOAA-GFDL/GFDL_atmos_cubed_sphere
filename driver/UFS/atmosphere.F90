@@ -711,6 +711,10 @@ contains
                       Atm(n)%vc,                                                &
 !The following variable is used for SA-3D-TKE (kyf) (modify for data structure)
                       Atm(n)%sa3dtke_var,                                       &
+!The following variable is used for Leonard term (jhan) (modify for data structure)
+                      Atm(n)%leonard_var,                                       &
+!The following variable is used for cold pool advection term (jhan) (modify for data structure)
+                      Atm(n)%coldpool_var,                                      &
                       Atm(n)%ak,    Atm(n)%bk, Atm(n)%mfx,                      &
                       Atm(n)%mfy , Atm(n)%cx,    Atm(n)%cy, Atm(n)%ze0,         &
                       Atm(n)%flagstruct%hybrid_z,                               &
@@ -1916,6 +1920,10 @@ contains
                      Atm(mygrid)%q_con, Atm(mygrid)%omga, Atm(mygrid)%ua, Atm(mygrid)%va, Atm(mygrid)%uc, Atm(mygrid)%vc, &
 !The following variable is used for SA-3D-TKE (kyf) (modify for data structure)
                      Atm(mygrid)%sa3dtke_var,                   &
+!The following variable is used for Leonard term (jhan) (modify for data structure)
+                     Atm(mygrid)%leonard_var,                                       &
+!The following variable is used for cold pool advection term (jhan) (modify for data structure)
+                     Atm(mygrid)%coldpool_var,                                       &
                      Atm(mygrid)%ak, Atm(mygrid)%bk, Atm(mygrid)%mfx, Atm(mygrid)%mfy,                    &
                      Atm(mygrid)%cx, Atm(mygrid)%cy, Atm(mygrid)%ze0, Atm(mygrid)%flagstruct%hybrid_z,    &
                      Atm(mygrid)%gridstruct, Atm(mygrid)%flagstruct,                            &
@@ -1933,6 +1941,10 @@ contains
                      Atm(mygrid)%q_con, Atm(mygrid)%omga, Atm(mygrid)%ua, Atm(mygrid)%va, Atm(mygrid)%uc, Atm(mygrid)%vc, &
 !The following three variables are used for SA-3D-TKE (kyf) (modify for data structure)
                      Atm(mygrid)%sa3dtke_var,          &
+!The following variable is used for Leonard term (jhan) (modify for data structure)
+                     Atm(mygrid)%leonard_var,                                       &
+!The following variable is used for cold pool advection term (jhan) (modify for data structure)
+                     Atm(mygrid)%coldpool_var,                                       &
                      Atm(mygrid)%ak, Atm(mygrid)%bk, Atm(mygrid)%mfx, Atm(mygrid)%mfy,                    &
                      Atm(mygrid)%cx, Atm(mygrid)%cy, Atm(mygrid)%ze0, Atm(mygrid)%flagstruct%hybrid_z,    &
                      Atm(mygrid)%gridstruct, Atm(mygrid)%flagstruct,                            &
@@ -2011,6 +2023,10 @@ contains
                      Atm(mygrid)%q_con, Atm(mygrid)%omga, Atm(mygrid)%ua, Atm(mygrid)%va, Atm(mygrid)%uc, Atm(mygrid)%vc, &
 !The following three variables are used for SA-3D-TKE (kyf) (modify for data structure)
                      Atm(mygrid)%sa3dtke_var,       &
+!The following variable is used for Leonard term (jhan) (modify for data structure)
+                     Atm(mygrid)%leonard_var,                                       &
+!The following variable is used for cold pool advection term (jhan) (modify for data structure)
+                     Atm(mygrid)%coldpool_var,                                       &
                      Atm(mygrid)%ak, Atm(mygrid)%bk, Atm(mygrid)%mfx, Atm(mygrid)%mfy,                    &
                      Atm(mygrid)%cx, Atm(mygrid)%cy, Atm(mygrid)%ze0, Atm(mygrid)%flagstruct%hybrid_z,    &
                      Atm(mygrid)%gridstruct, Atm(mygrid)%flagstruct,                            &
@@ -2027,6 +2043,10 @@ contains
                      Atm(mygrid)%q_con, Atm(mygrid)%omga, Atm(mygrid)%ua, Atm(mygrid)%va, Atm(mygrid)%uc, Atm(mygrid)%vc, &
 !The following three variables are used for SA-3D-TKE (kyf) (modify for data structure)
                      Atm(mygrid)%sa3dtke_var,       &
+!The following variable is used for Leonard term (jhan) (modify for data structure)
+                     Atm(mygrid)%leonard_var,                                       &
+!The following variable is used for cold pool advection term (jhan) (modify for data structure)
+                     Atm(mygrid)%coldpool_var,                                       &
                      Atm(mygrid)%ak, Atm(mygrid)%bk, Atm(mygrid)%mfx, Atm(mygrid)%mfy,                    &
                      Atm(mygrid)%cx, Atm(mygrid)%cy, Atm(mygrid)%ze0, Atm(mygrid)%flagstruct%hybrid_z,    &
                      Atm(mygrid)%gridstruct, Atm(mygrid)%flagstruct,                            &
@@ -2181,6 +2201,16 @@ contains
           enddo
         enddo
        endif
+!The following is for cold pool parameterization
+       if(Atm(mygrid)%flagstruct%coldpool_dyco) then
+         do ix = 1, blen
+           i = Atm_block%index(nb)%ii(ix)
+           j = Atm_block%index(nb)%jj(ix)
+           im = IPD_control%chunk_begin(nb)+ix-1
+           Atm(mygrid)%coldpool_var%ucp(i,j) = IPD_Tbd%ucp(im)
+           Atm(mygrid)%coldpool_var%vcp(i,j) = IPD_Tbd%vcp(im)
+         enddo
+       endif
 
      do k = 1, npz
        !Indices for FV's vertical coordinate, for which 1 = top
@@ -2210,6 +2240,19 @@ contains
           IPD_Statein%def_1(im,k) = _DBL_(_RL_(Atm(mygrid)%sa3dtke_var%deform_1(i,j,k1)))
           IPD_Statein%def_2(im,k) = _DBL_(_RL_(Atm(mygrid)%sa3dtke_var%deform_2(i,j,k1)))
           IPD_Statein%def_3(im,k) = _DBL_(_RL_(Atm(mygrid)%sa3dtke_var%deform_3(i,j,k1)))
+          IPD_Statein%def_4(im,k,1:nq) = _DBL_(_RL_(Atm(mygrid)%sa3dtke_var%deform_4(i,j,k1,1:nq)))
+         endif
+
+!The following is for Leonard term (jhan) (modify for data structure)
+         if(Atm(mygrid)%flagstruct%leonard_dyco) then
+          IPD_Statein%leo_u(im,k) = _DBL_(_RL_(Atm(mygrid)%leonard_var%leonrd_u(i,j,k1)))
+          IPD_Statein%leo_v(im,k) = _DBL_(_RL_(Atm(mygrid)%leonard_var%leonrd_v(i,j,k1)))
+          IPD_Statein%leo_t(im,k) = _DBL_(_RL_(Atm(mygrid)%leonard_var%leonrd_t(i,j,k1)))
+          IPD_Statein%leo_q(im,k,1:nq) = _DBL_(_RL_(Atm(mygrid)%leonard_var%leonrd_q(i,j,k1,1:nq)))
+         endif
+!The following variable is used for cold pool advection term (jhan) (modify for data structure)
+         if(Atm(mygrid)%flagstruct%coldpool_dyco) then
+          IPD_Statein%cpadv(im,k) = _DBL_(_RL_(Atm(mygrid)%coldpool_var%cpadv(i,j,k1)))
          endif
 
          if (Atm(mygrid)%flagstruct%do_skeb) IPD_Statein%diss_est(im,k) = _DBL_(_RL_(Atm(mygrid)%diss_est(i,j,k1)))

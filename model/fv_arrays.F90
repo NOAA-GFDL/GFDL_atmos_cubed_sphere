@@ -943,6 +943,13 @@ module fv_arrays_mod
   logical :: var_grav = .false.  ! apply variable gravity (4D) to simulations
 !This logical variable is used for SA-3D-TKE
      logical :: sa3dtke_dyco = .false.
+     logical :: hdiffq_dyco = .false.
+
+!This logical variable is used for Leonard term in turbulent fluxes
+     logical :: leonard_dyco = .false.
+
+!This logical variable is used for cold pool advection term
+     logical :: coldpool_dyco = .false.
 
   !>Convenience pointers
   integer, pointer :: grid_number
@@ -1077,13 +1084,31 @@ module fv_arrays_mod
   
   !3D-SA-TKE (kyf) (modify for data structure)
   type sa3dtke_type
-    real, _ALLOCATABLE :: deform_1(:,:,:)  _NULL !< horizontal deformation
-    real, _ALLOCATABLE :: deform_2(:,:,:)  _NULL !< vertical deformation
-    real, _ALLOCATABLE :: deform_3(:,:,:)  _NULL !< 3D TKE transport & pressure correlation
-    real, _ALLOCATABLE :: dku3d_h(:,:,:)   _NULL !< 3D Horizontal Eddy Diffusivity for Momentum
-    real, _ALLOCATABLE :: dku3d_e(:,:,:)   _NULL !< 3D Eddy Diffusivity for TKE
+    real, _ALLOCATABLE :: deform_1(:,:,:)   _NULL !< horizontal deformation
+    real, _ALLOCATABLE :: deform_2(:,:,:)   _NULL !< vertical deformation
+    real, _ALLOCATABLE :: deform_3(:,:,:)   _NULL !< horizontal diffusion for temperature
+    real, _ALLOCATABLE :: deform_4(:,:,:,:) _NULL !< horizontal diffusion for moisture & tracers
+    real, _ALLOCATABLE :: dku3d_h(:,:,:)    _NULL !< 3D Horizontal Eddy Diffusivity for Momentum
+    real, _ALLOCATABLE :: dku3d_e(:,:,:)    _NULL !< 3D Eddy Diffusivity for scalar fields
   end type sa3dtke_type
   !3D-SA-TKE-end
+
+  !Leonard (jhan)
+  type leonard_type
+    real, _ALLOCATABLE :: leonrd_u(:,:,:)   _NULL !< leonard term for u
+    real, _ALLOCATABLE :: leonrd_v(:,:,:)   _NULL !< leonard term for v
+    real, _ALLOCATABLE :: leonrd_t(:,:,:)   _NULL !< leonard term for temperature
+    real, _ALLOCATABLE :: leonrd_q(:,:,:,:) _NULL !< leonard term for moisture & tracers
+  end type leonard_type
+  !Leonard
+
+  !Cold pool (jhan)
+  type coldpool_type
+    real, _ALLOCATABLE :: cpadv(:,:,:)   _NULL !< cold pool advection term
+    real, _ALLOCATABLE :: ucp(:,:)      _NULL  !< east west propagation speed
+    real, _ALLOCATABLE :: vcp(:,:)      _NULL  !< north south propagation speed
+  end type coldpool_type
+  !Cold pool
 
   type inline_mp_type
     real, _ALLOCATABLE :: prer(:,:)     _NULL
@@ -1397,6 +1422,8 @@ module fv_arrays_mod
   integer :: atmos_axes(4)
 
      type(sa3dtke_type) :: sa3dtke_var ! SA-3D TKE (kyf) (modify for data structure)
+     type(leonard_type) :: leonard_var ! Leonard (jhan) (modify for data structure)
+     type(coldpool_type) :: coldpool_var ! cold pool advection (jhan) (modify for data structure)
      type(inline_mp_type) :: inline_mp
      type(phys_diag_type) :: phys_diag
      type(nudge_diag_type) :: nudge_diag
@@ -1551,10 +1578,28 @@ contains
        allocate (   Atm%sa3dtke_var%deform_1(isd:ied  ,jsd:jed  ,npz) )
        allocate (   Atm%sa3dtke_var%deform_2(isd:ied  ,jsd:jed  ,npz) )
        allocate (   Atm%sa3dtke_var%deform_3(isd:ied  ,jsd:jed  ,npz) )
+       allocate (   Atm%sa3dtke_var%deform_4(isd:ied  ,jsd:jed  ,npz,  nq) )
        allocate (   Atm%sa3dtke_var%dku3d_h(isd:ied  ,jsd:jed, npz) )
        allocate (   Atm%sa3dtke_var%dku3d_e(isd:ied  ,jsd:jed, npz) )
     endif
     !3D-SA-TKE-end
+
+    !Leonard (jhan) (modify for data structure)
+    if ( Atm%flagstruct%leonard_dyco ) then
+       allocate (   Atm%leonard_var%leonrd_u(isd:ied  ,jsd:jed  ,npz) )
+       allocate (   Atm%leonard_var%leonrd_v(isd:ied  ,jsd:jed  ,npz) )
+       allocate (   Atm%leonard_var%leonrd_t(isd:ied  ,jsd:jed  ,npz) )
+       allocate (   Atm%leonard_var%leonrd_q(isd:ied  ,jsd:jed  ,npz,  nq) )
+    endif
+    !Leonard
+
+    !Cold pool (jhan)
+    if ( Atm%flagstruct%coldpool_dyco ) then
+       allocate (   Atm%coldpool_var%cpadv(isd:ied  ,jsd:jed  ,npz) )
+       allocate (   Atm%coldpool_var%ucp(isd:ied  ,jsd:jed) )
+       allocate (   Atm%coldpool_var%vcp(isd:ied  ,jsd:jed) )
+    endif
+    !Cold pool
 
     ! For tracer transport:
     allocate ( Atm%mfx(is:ie+1, js:je,  npz) )
@@ -1618,6 +1663,18 @@ contains
                  Atm%sa3dtke_var%dku3d_e(i,j,k) = 0.
               endif
               !3D-SA-TKE-end
+              !Leonard (jhan) (modify for data structure)
+              if ( Atm%flagstruct%leonard_dyco ) then
+                 Atm%leonard_var%leonrd_u(i,j,k) = 0.
+                 Atm%leonard_var%leonrd_v(i,j,k) = 0.
+                 Atm%leonard_var%leonrd_t(i,j,k) = 0.
+              endif
+              !Leonard
+              !Cold pool (jhan) (modify for data structure)
+              if ( Atm%flagstruct%coldpool_dyco ) then
+                 Atm%coldpool_var%cpadv(i,j,k) = 0.
+              endif
+              !Cold pool
 #ifdef USE_COND
              Atm%q_con(i,j,k) = 0.
 #endif
@@ -1651,6 +1708,16 @@ contains
         do j=jsd, jed
            do i=isd, ied
               Atm%q(i,j,k,n) = real_big
+              !3D-SA-TKE (kyf) (modify for data structure)
+              if ( Atm%flagstruct%sa3dtke_dyco ) then
+                 Atm%sa3dtke_var%deform_4(i,j,k,n) = 0.
+              endif
+              !3D-SA-TKE-end
+              !Leonard (jhan) (modify for data structure)
+              if ( Atm%flagstruct%leonard_dyco ) then
+                 Atm%leonard_var%leonrd_q(i,j,k,n) = 0.
+              endif
+              !Leonard
            enddo
         enddo
         enddo
@@ -1664,6 +1731,12 @@ contains
      enddo
      do j=js, je
         do i=is, ie
+           !Cold pool (jhan) (modify for data structure)
+           if ( Atm%flagstruct%coldpool_dyco ) then
+              Atm%coldpool_var%ucp(i,j) = 0.
+              Atm%coldpool_var%vcp(i,j) = 0.
+           endif
+           !Cold pool
            Atm%inline_mp%prer(i,j) = real_big
            Atm%inline_mp%prei(i,j) = real_big
            Atm%inline_mp%pres(i,j) = real_big
@@ -1936,10 +2009,27 @@ contains
        deallocate ( Atm%sa3dtke_var%deform_1 )
        deallocate ( Atm%sa3dtke_var%deform_2 )
        deallocate ( Atm%sa3dtke_var%deform_3 )
+       deallocate ( Atm%sa3dtke_var%deform_4 )
        deallocate ( Atm%sa3dtke_var%dku3d_h )
        deallocate ( Atm%sa3dtke_var%dku3d_e )
     endif
     !3D-SA-TKE-end
+    !Leonard (jhan) (modify for data structure)
+    if ( Atm%flagstruct%leonard_dyco ) then
+       deallocate ( Atm%leonard_var%leonrd_u )
+       deallocate ( Atm%leonard_var%leonrd_v )
+       deallocate ( Atm%leonard_var%leonrd_t )
+       deallocate ( Atm%leonard_var%leonrd_q )
+    endif
+    !Leonard
+    !Cold pool (jhan)
+    if ( Atm%flagstruct%coldpool_dyco ) then
+       deallocate ( Atm%coldpool_var%cpadv )
+       deallocate ( Atm%coldpool_var%ucp )
+       deallocate ( Atm%coldpool_var%vcp )
+    endif
+    !Cold pool
+
     deallocate ( Atm%mfx )
     deallocate ( Atm%mfy )
     deallocate (  Atm%cx )
