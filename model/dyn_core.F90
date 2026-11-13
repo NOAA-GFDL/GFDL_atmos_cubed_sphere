@@ -2562,7 +2562,6 @@ subroutine diff3d(npx, npy, npz, nq, ua, va, w, tx, q,    &
        do j=js,je
           do i=is,ie
              deform_3(i,j,k)=dkqdtdxdx(i,j,k)+dkqdtdydy(i,j,k)
-             deform_3(i,j,k)=deform_3(i,j,k)/delp(i,j,k)
           enddo
        enddo
    enddo ! z loop
@@ -2637,7 +2636,6 @@ subroutine diff3d(npx, npy, npz, nq, ua, va, w, tx, q,    &
        do j=js,je
           do i=is,ie
              deform_4(i,j,k,iq)=dkqdtdxdx(i,j,k)+dkqdtdydy(i,j,k)
-             deform_4(i,j,k,iq)=deform_4(i,j,k,iq)/delp(i,j,k)
           enddo
        enddo
    enddo ! z loop
@@ -2700,7 +2698,6 @@ subroutine diff3d(npx, npy, npz, nq, ua, va, w, tx, q,    &
        do j=js,je
        do i=is,ie
          deform_4(i,j,k,sgs_tke)=dkqdtdxdx(i,j,k)+dkqdtdydy(i,j,k)
-         deform_4(i,j,k,sgs_tke)=deform_4(i,j,k,sgs_tke)/delp(i,j,k)
        enddo
        enddo
    enddo ! z loop
