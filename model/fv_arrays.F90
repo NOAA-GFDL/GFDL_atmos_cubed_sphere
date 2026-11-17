@@ -688,7 +688,7 @@ module fv_arrays_mod
    real    :: tau_w = 0.      !< Time scale (in days) for Rayleigh friction applied to vertical winds
                               !< This option allows the vertical and horizontal winds use different time
                               !< scales for Rayleigh friction. The default value is 0.0, then tau_w=tau,
-                              !< the same time scale appiled to horizontal and vertical winds.   
+                              !< the same time scale appiled to horizontal and vertical winds.
    real    :: tau = 0.   !< Time scale (in days) for Rayleigh friction applied to horizontal
                          !< and vertical winds; lost kinetic energy is converted to heat, except
                          !< on nested grids. The default value is 0.0, which disables damping.
@@ -935,7 +935,7 @@ module fv_arrays_mod
   integer :: nrows_blend = 0          !< # of blending rows in the outer integration domain.
   logical :: write_restart_with_bcs = .false.   !< Default setting for using DA-updated BC files
   logical :: regional_bcs_from_gsi = .false.    !< Default setting for writing restart files with boundary rows
-  logical :: pass_full_omega_to_physics_in_non_hydrostatic_mode = .false.  !< Default to passing local omega to physics in non-hydrostatic 
+  logical :: pass_full_omega_to_physics_in_non_hydrostatic_mode = .false.  !< Default to passing local omega to physics in non-hydrostatic
 
 !This logical variable is used for SA-3D-TKE
      logical :: sa3dtke_dyco = .false.
@@ -1070,7 +1070,7 @@ module fv_arrays_mod
      logical :: BCfile_ne_is_open=.false.
      logical :: BCfile_sw_is_open=.false.
   end type fv_nest_type
-  
+
   !3D-SA-TKE (kyf) (modify for data structure)
   type sa3dtke_type
     real, _ALLOCATABLE :: deform_1(:,:,:)  _NULL !< horizontal deformation
@@ -1530,14 +1530,14 @@ contains
     ! Allocate others
     allocate ( Atm%diss_est(isd:ied  ,jsd:jed  ,npz) )
     allocate ( Atm%ts(is:ie,js:je) )
-    allocate ( Atm%phis(isd:ied  ,jsd:jed  ) ); Atm%phis=0.  ! zero incl. tile-corner halo points never set by halo updates
+    allocate ( Atm%phis(isd:ied  ,jsd:jed  ) ); Atm%phis=0.
     allocate ( Atm%omga(isd:ied  ,jsd:jed  ,npz) ); Atm%omga=0.
 
     allocate (   Atm%ua(isd:ied  ,jsd:jed  ,npz) )
     allocate (   Atm%va(isd:ied  ,jsd:jed  ,npz) )
     allocate (   Atm%uc(isd:ied+1,jsd:jed  ,npz) )
     allocate (   Atm%vc(isd:ied  ,jsd:jed+1,npz) )
-    
+
     !3D-SA-TKE (kyf) (modify for data structure)
     if ( Atm%flagstruct%sa3dtke_dyco ) then
        allocate (   Atm%sa3dtke_var%deform_1(isd:ied  ,jsd:jed  ,npz) )
@@ -1600,7 +1600,7 @@ contains
                 Atm%va(i,j,k) = real_big
                 Atm%pt(i,j,k) = real_big
               Atm%delp(i,j,k) = real_big
-              
+
               !3D-SA-TKE (kyf) (modify for data structure)
               if ( Atm%flagstruct%sa3dtke_dyco ) then
                  Atm%sa3dtke_var%deform_1(i,j,k) = 0.
